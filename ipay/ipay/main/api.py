@@ -1,6 +1,8 @@
 import frappe 
 import logging
 from ipay.ipay.main.utils.get_sid import get_sid
+from ipay.ipay.main.utils.trigger_stk_push import trigger_stk_push
+from ipay.ipay.main.utils.verify_mpesa_payment import verify_mpesa_payment
 
 
 
@@ -28,6 +30,24 @@ def lipana_mpesa(user_id, phone, amount, oid, type='cart'):
         if not sid:
             frappe.msgprint("Failed to get session id")
             
+        # After success in getting SID, trigger STK push 
+        stk_response = trigger_stk_push(phone, sid, vid, secret_key)
+        
+        # verify the payment made by the stk push
+        if stk_response.get('header_status') == 200:
+            logger.info('Verifying Payment...')
+            frappe.msgprint('Verifying Payment...')
+            
+            # Verify Payment
+            verification_response = verify_mpesa_payment(oid, type, phone, vid, secret_key)
+            
+            if not verification_response:
+                frappe.msgprint('Payment Verification Failed')
+                
+            if verification_response.get('header_status') != 200:
+                frappe.msgprint('Payment Verification Unseccessful')
+                
+                # TODO: Process verification response
             
     except Exception as e:
         frappe.msgprint(str(e))
