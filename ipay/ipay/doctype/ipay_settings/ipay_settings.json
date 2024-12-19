@@ -9,7 +9,7 @@
  "field_order": [
   "vendor_id",
   "api_key",
-  "calback_url",
+  "callback_url",
   "is_live"
  ],
  "fields": [
@@ -28,21 +28,21 @@
    "reqd": 1
   },
   {
-   "fieldname": "calback_url",
-   "fieldtype": "Data",
-   "label": "Calback URL"
-  },
-  {
    "default": "0",
    "fieldname": "is_live",
    "fieldtype": "Check",
    "label": "Is Live"
+  },
+  {
+   "fieldname": "callback_url",
+   "fieldtype": "Data",
+   "label": "Callback URL"
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2024-12-18 16:20:24.150306",
+ "modified": "2024-12-19 23:29:29.318970",
  "modified_by": "Administrator",
  "module": "Ipay",
  "name": "iPay Settings",

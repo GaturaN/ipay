@@ -49,6 +49,35 @@ frappe.ui.form.on("iPay Request", {
                         // logic to handle confirmation
                         frappe.msgprint("iPay Prompted");
                         console.log("values from prompt", values);
+                        // TODO: Call the iPay API
+                        frappe.call({
+                           method: "ipay.ipay.main.api.lipana_mpesa",
+                           args: {
+                              oid: values.invoice_number,
+                              amount: values.amount,
+                              customer_email: values.customer_email,
+                              phone: values.customer_phone,
+                              user_id: values.customer_email,
+                           },
+                           freeze: true,
+                           async: true,
+                           callback: function (r) {
+                              if (r.message) {
+                                 frappe.msgprint({
+                                    title: "Success",
+                                    message: r.message,
+                                    indicator: "green",
+                                 });
+                              }
+                           },
+                           error: (err) => {
+                              frappe.msgprint({
+                                 title: "Error",
+                                 message: "Something went wrong: " + err.message,
+                                 indicator: "red",
+                              });
+                           },
+                        });
                      },
                      () => {
                         frappe.msgprint("iPay Prompt Cancelled");
