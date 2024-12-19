@@ -11,6 +11,7 @@ app_license = "MIT"
 # include js, css files in header of desk.html
 # app_include_css = "/assets/ipay/css/ipay.css"
 # app_include_js = "/assets/ipay/js/ipay.js"
+app_include_js = 'sales_invoice.bundle.js'
 
 # include js, css files in header of web template
 # web_include_css = "/assets/ipay/css/ipay.css"

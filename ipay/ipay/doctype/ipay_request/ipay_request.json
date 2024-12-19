@@ -1,0 +1,127 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "format: iP-REQ-{DD}-{MM}-{YY}-{####}",
+ "creation": "2024-12-19 11:22:25.018211",
+ "default_view": "List",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "payment_request_type",
+  "status",
+  "amended_from",
+  "party_details_section",
+  "customer",
+  "customer_email",
+  "customer_phone",
+  "column_break_mrdws",
+  "transaction_details_section",
+  "sales_invoice",
+  "amount"
+ ],
+ "fields": [
+  {
+   "default": "Mpesa",
+   "fieldname": "payment_request_type",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Payment Request Type",
+   "options": "Mpesa\nCard",
+   "reqd": 1
+  },
+  {
+   "fieldname": "amended_from",
+   "fieldtype": "Link",
+   "label": "Amended From",
+   "no_copy": 1,
+   "options": "iPay Request",
+   "print_hide": 1,
+   "read_only": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "party_details_section",
+   "fieldtype": "Section Break",
+   "label": "Party Details"
+  },
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "label": "Customer",
+   "options": "Customer",
+   "reqd": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fetch_from": "customer.email_id",
+   "fieldname": "customer_email",
+   "fieldtype": "Data",
+   "label": "Customer Email"
+  },
+  {
+   "allow_on_submit": 1,
+   "fetch_from": "customer.mobile_no",
+   "fieldname": "customer_phone",
+   "fieldtype": "Data",
+   "label": "Customer Phone"
+  },
+  {
+   "fieldname": "column_break_mrdws",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "transaction_details_section",
+   "fieldtype": "Section Break",
+   "label": "Transaction Details"
+  },
+  {
+   "fieldname": "sales_invoice",
+   "fieldtype": "Link",
+   "label": "Sales Invoice",
+   "options": "Sales Invoice",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "sales_invoice.outstanding_amount",
+   "fieldname": "amount",
+   "fieldtype": "Data",
+   "label": "Amount"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "\nFailed to complete request\nSuccess\nError"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 1,
+ "links": [],
+ "modified": "2024-12-19 11:52:11.979290",
+ "modified_by": "Administrator",
+ "module": "Ipay",
+ "name": "iPay Request",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "quick_entry": 1,
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
