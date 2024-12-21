@@ -6,12 +6,12 @@ frappe.ui.form.on("Sales Invoice", {
 
       if (submitted && bal && status !== "Paid") {
          frm.add_custom_button(__("iPay Request"), () => {
-            console.log("Button Working");
+            // console.log("Button Working");
             //get values from the sales invoice and create an ipay request
             const customer = frm.doc.customer;
             const salesInvoice = frm.doc.name;
 
-            // call the frappe.client.insert
+            // call the frappe.client.insert to create an ipay request
             frappe.call({
                method: "frappe.client.insert",
                args: {
@@ -26,10 +26,26 @@ frappe.ui.form.on("Sales Invoice", {
                async: true,
                callback: function (r) {
                   if (!r.exc) {
-                     frappe.msgprint(__("iPay Request Created successfully"));
-
-                     //  route to newly created ipay request
-                     frappe.set_route("Form", "iPay Request", r.message.name);
+                     //  frappe.msgprint(__("iPay Request Created successfully"));
+                     // show notification
+                     frappe.show_alert(
+                        {
+                           message: __("iPay Request Created successfully"),
+                           indicator: "green",
+                        },
+                        5
+                     );
+                     //  FEATURE: confirm if user want to be redirected
+                     frappe.msgprint({
+                        title: __("Redirect"),
+                        message: __("Do you want to be redirected to the newly created iPay Request?"),
+                        primary_action: {
+                           action(values) {
+                              //  route to newly created ipay request
+                              frappe.set_route("Form", "iPay Request", r.message.name);
+                           },
+                        },
+                     });
                   } else {
                      frappe.msgprint(__("Failed to create iPay Request"));
                   }
@@ -41,3 +57,5 @@ frappe.ui.form.on("Sales Invoice", {
       }
    },
 });
+
+// TODO: Make cration of ipay request automatic for COD Sales Invoices.

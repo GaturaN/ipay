@@ -45,10 +45,36 @@ def lipana_mpesa(user_id, phone, amount, oid, type='cart'):
                 frappe.msgprint('Payment Verification Failed')
                 
             if verification_response.get('header_status') != 200:
-                frappe.msgprint('Payment Verification Unseccessful')
+                frappe.msgprint('Payment Verification Unsuccessful')
                 
-                # TODO: Process verification response
+            # TODO: Process verification response
+            data = verification_response.get('data', {})
+            response_data = {
+                'order_id': data.get('oid'),
+                'transaction_amount': data.get('transaction_amount'),
+                'transaction_code': data.get('transaction_code'),
+                'payment_mode': data.get('payment_mode'),
+                'paid_at': data.get('paid_at'),
+                'telephone': data.get('telephone'),
+            }
+            
+            return response_data
+        
+        else:
+            raise ValueError("Failed to initiate Payment")
+            frappe.msgprint("Failed to initiate Payment")
             
     except Exception as e:
         frappe.msgprint(str(e))
         logger.error(str(e))
+        
+        
+# Calling the function when the script runs
+if __name__ == "__main__":
+    try: 
+        result = lipana_mpesa("user_id", "phone", "amount", "oid")
+        logger.info(f"Payment Process completed successfully: {result}")
+        frappe.msgprint(f"Payment Process completed successfully: {result}")
+    except Exception as e:
+        logger.error(f"Payment Process failed: {str(e)}")
+        frappe.msgprint(f"Payment Process failed: {str(e)}")

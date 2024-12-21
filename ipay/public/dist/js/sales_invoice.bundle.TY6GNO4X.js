@@ -7,7 +7,6 @@
       const bal = frm.doc.outstanding_amount > 0;
       if (submitted && bal && status !== "Paid") {
         frm.add_custom_button(__("iPay Request"), () => {
-          console.log("Button Working");
           const customer = frm.doc.customer;
           const salesInvoice = frm.doc.name;
           frappe.call({
@@ -24,8 +23,19 @@
             async: true,
             callback: function(r) {
               if (!r.exc) {
-                frappe.msgprint(__("iPay Request Created successfully"));
-                frappe.set_route("Form", "iPay Request", r.message.name);
+                frappe.show_alert({
+                  message: __("iPay Request Created successfully"),
+                  indicator: "green"
+                }, 5);
+                frappe.msgprint({
+                  title: __("Redirect"),
+                  message: __("Do you want to be redirected to the newly created iPay Request?"),
+                  primary_action: {
+                    action(values) {
+                      frappe.set_route("Form", "iPay Request", r.message.name);
+                    }
+                  }
+                });
               } else {
                 frappe.msgprint(__("Failed to create iPay Request"));
               }
@@ -36,4 +46,4 @@
     }
   });
 })();
-//# sourceMappingURL=sales_invoice.bundle.N3IOXKKM.js.map
+//# sourceMappingURL=sales_invoice.bundle.TY6GNO4X.js.map
