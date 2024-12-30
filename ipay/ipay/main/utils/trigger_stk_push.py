@@ -36,5 +36,5 @@ def trigger_stk_push(phone: str, sid: str, vid: str, secret_key: str) -> dict:
     
     except requests.RequestException as error:
         logger.error('Error triggering STK Push: %s', error)
-        frappe.msgprint('Error triggering STK Push')
+        # frappe.msgprint('Error triggering STK Push')
         raise RuntimeError("Error triggering STK Push") from error

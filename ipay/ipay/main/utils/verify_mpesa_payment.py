@@ -35,14 +35,16 @@ def verify_mpesa_payment(oid, type, phone, vid, secret_key):
     initial_delay = 4000
     retry_delay = 2000
     
+    # logger.info(f"OID: {oid}, VID: {vid}, phone: {phone}, type: {type}, secret_key: {secret_key}")
+    
     # Initial delay before verification
     delay(initial_delay)
     
     hash_value = create_hash(oid, vid, secret_key)
     verification_payload = {
         'vid': vid,
-        'oid': oid,
-        'hash': hash_value
+        'hash': hash_value,
+        'oid': oid
     }
     
     attempt = 0
@@ -52,44 +54,39 @@ def verify_mpesa_payment(oid, type, phone, vid, secret_key):
         try:
             attempt += 1
             logger.info(f'Attempt {attempt}: Verifying Payment...')
-            frappe.msgprint(f'Attempt {attempt}: Verifying Payment...')
+            # frappe.msgprint(f'Attempt {attempt}: Verifying Payment...')
             
             # Make the verification call
             verification_response = make_verification_call(verification_payload)
             
             if verification_response.status_code == 200:
                 logger.info('Payment verification successful')
-                frappe.msgprint('Payment verification successful')
+                # frappe.msgprint('Payment verification successful')
                 success = True
                 
-                response_json = verification_response.json() or {}
-                data = response_json.get('data', {})
-                
+                data = verification_response.json().get('data', {})
                 transaction_code = data.get('transaction_code')
                 transaction_amount = data.get('transaction_amount')
+
+                return verification_response.json()                
                 
-                return response_json
             
             else:
                 logger.warning(
                     f"Attempt {attempt}: Payment not found with status code {verification_response.status_code}. Retrying..."
                 )
-                frappe.msgprint(
-                    f"Attempt {attempt}: Payment not found. Retrying..."
-                )
+                # frappe.msgprint(
+                #     f"Attempt {attempt}: Payment not found. Retrying..."
+                # )
                 delay(retry_delay)
         
         except requests.RequestException as error:
             error_message = (
                 error.response.json().get('message')
-                if error.response and error.response.content
-                else str(error)
+                if error.response is not None else str(error)
             )
             logger.error(
-                f"Attempt {attempt}: Error verifying payment: {error_message}. Retrying..."
-            )
-            frappe.msgprint(
-                f"Attempt {attempt}: Error verifying payment: {error_message}. Retrying..."
+                f"Attempt {attempt}: Failed due to an error: {error_message}\nRetrying..."
             )
             delay(retry_delay)
     

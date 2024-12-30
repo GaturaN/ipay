@@ -20,15 +20,17 @@ def lipana_mpesa(user_id, phone, amount, oid, type='cart'):
     # check that secret_key & vid are not empty
     if not secret_key or not vid:
         frappe.msgprint("Please configure your iPay Settings")
+        raise ValueError("Secret key or vendor ID not set")
         
     try:
         # get session id
         response = get_sid(vid, secret_key, amount, oid, phone)
         sid = response.get('data', {}).get('sid')
-        frappe.msgprint(sid)
+        # frappe.msgprint(sid)
         
         if not sid:
             frappe.msgprint("Failed to get session id")
+            raise ValueError("Failed to get session id")
             
         # After success in getting SID, trigger STK push 
         stk_response = trigger_stk_push(phone, sid, vid, secret_key)
@@ -36,16 +38,18 @@ def lipana_mpesa(user_id, phone, amount, oid, type='cart'):
         # verify the payment made by the stk push
         if stk_response.get('header_status') == 200:
             logger.info('Verifying Payment...')
-            frappe.msgprint('Verifying Payment...')
+            # frappe.msgprint('Verifying Payment...')
             
             # Verify Payment
             verification_response = verify_mpesa_payment(oid, type, phone, vid, secret_key)
             
             if not verification_response:
-                frappe.msgprint('Payment Verification Failed')
+                # frappe.msgprint('Payment Verification Failed')
+                raise ValueError("Payment Verification Failed")
                 
             if verification_response.get('header_status') != 200:
-                frappe.msgprint('Payment Verification Unsuccessful')
+                # frappe.msgprint('Payment Verification Unsuccessful')
+                raise ValueError("Payment Verification Unsuccessful")
                 
             # TODO: Process verification response
             data = verification_response.get('data', {})
@@ -62,19 +66,19 @@ def lipana_mpesa(user_id, phone, amount, oid, type='cart'):
         
         else:
             raise ValueError("Failed to initiate Payment")
-            frappe.msgprint("Failed to initiate Payment")
+            # frappe.msgprint("Failed to initiate Payment")
             
-    except Exception as e:
-        frappe.msgprint(str(e))
-        logger.error(str(e))
-        
-        
-# Calling the function when the script runs
+    except Exception as error:
+        # frappe.msgprint(str(e))
+        # logger.error(str(e))
+        logger.error("An error occurred during the payment process: %s", error)
+        # raise RuntimeError("An error occurred during the payment process")        
+
+
+# call the function when the script runs
 if __name__ == "__main__":
-    try: 
-        result = lipana_mpesa("user_id", "phone", "amount", "oid")
-        logger.info(f"Payment Process completed successfully: {result}")
-        frappe.msgprint(f"Payment Process completed successfully: {result}")
+    try:
+        result = lipana_mpesa(user_id, phone, amount, oid, 'cart')
+        logger.info(f"Payment process completed successfully: {result}")
     except Exception as e:
-        logger.error(f"Payment Process failed: {str(e)}")
-        frappe.msgprint(f"Payment Process failed: {str(e)}")
+        logger.error(f"Payment process failed: {e}")

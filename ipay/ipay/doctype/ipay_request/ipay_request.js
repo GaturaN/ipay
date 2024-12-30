@@ -9,7 +9,7 @@ frappe.ui.form.on("iPay Request", {
 
       if (submitted && status) {
          frm.add_custom_button(__("Prompt iPay"), () => {
-            console.log("Payment Prompted");
+            // console.log("Payment Prompted");
             // prompt and confirm customer details
             frappe.prompt(
                [
@@ -25,6 +25,13 @@ frappe.ui.form.on("iPay Request", {
                      fieldname: "invoice_number",
                      fieldtype: "Data",
                      default: frm.doc.sales_invoice,
+                     read_only: 1,
+                  },
+                  {
+                     label: "User ID",
+                     fieldname: "user_id",
+                     fieldtype: "Data",
+                     default: frm.doc.customer_phone,
                      read_only: 1,
                   },
                   {
@@ -47,19 +54,27 @@ frappe.ui.form.on("iPay Request", {
                      "Are you sure you want to prompt iPay?",
                      () => {
                         // logic to handle confirmation
-                        frappe.msgprint("iPay Prompted");
+                        frappe.show_alert(
+                           {
+                              message: "iPay Prompted",
+                              indicator: "green",
+                           },
+                           7
+                        );
+
                         console.log("values from prompt", values);
-                        // TODO: Call the iPay API
+
+                        // call the lipana_mpesa function
                         frappe.call({
-                           method: "ipay.ipay.main.api.lipana_mpesa",
+                           method: "ipay.ipay.main.main.lipana_mpesa",
                            args: {
                               oid: values.invoice_number,
                               amount: values.amount,
                               customer_email: values.customer_email,
                               phone: values.customer_phone,
-                              user_id: values.customer_email,
+                              user_id: values.user_id,
                            },
-                           freeze: true,
+                           freeze: false,
                            async: true,
                            callback: function (r) {
                               if (r.message) {
