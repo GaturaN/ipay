@@ -10,15 +10,14 @@ logger = logging.getLogger(__name__)
 def get_sid(vid: str, secret_key: str, amount: str, oid: str, phone: str) -> dict:
 
     logger.info('oid: %s', oid) 
-    # frappe.msgprint(vid, secret_key, amount, oid, phone)
     try:
         inv = oid
         
         # customer's email address => value from api.py
         eml = frappe.db.get_value("Sales Invoice", inv, "contact_email")
-        # if email is None, set default to 'gatura@bulkbox.co.ke'
+        # if email is None, set default to 'portal@bulkbox.co.ke'
         if not eml:
-            eml = 'gatura@bulkbox.co.ke'
+            eml = 'portal@bulkbox.co.ke'
         
         # callback url for payment status
         cbk = frappe.get_doc("iPay Settings").callback_url
@@ -31,10 +30,10 @@ def get_sid(vid: str, secret_key: str, amount: str, oid: str, phone: str) -> dic
         curr = 'KES'
         
         # Allow customer to receive transaction notifications
-        cst = '1'
+        cst = '0'
         
         # Default to 0 for HTTP/HTTPS callback
-        crl = '1'
+        crl = '0'
         
         # Generate the data string for hashing
         data_string = f'{live}{oid}{inv}{amount}{phone}{eml}{vid}{curr}{cst}{cbk}'

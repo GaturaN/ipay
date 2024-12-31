@@ -31,10 +31,8 @@ def trigger_stk_push(phone: str, sid: str, vid: str, secret_key: str) -> dict:
         # check if the request was successful
         response.raise_for_status()
         logger.info('STK push initiated successfully')
-        frappe.msgprint('STK push initiated successfully')
         return response.json()
     
     except requests.RequestException as error:
         logger.error('Error triggering STK Push: %s', error)
-        # frappe.msgprint('Error triggering STK Push')
         raise RuntimeError("Error triggering STK Push") from error
