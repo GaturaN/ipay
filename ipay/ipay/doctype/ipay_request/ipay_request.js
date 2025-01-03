@@ -31,7 +31,7 @@ frappe.ui.form.on("iPay Request", {
                      label: "User ID",
                      fieldname: "user_id",
                      fieldtype: "Data",
-                     default: frm.doc.customer_phone,
+                     default: frm.doc.customer,
                      read_only: 1,
                   },
                   {

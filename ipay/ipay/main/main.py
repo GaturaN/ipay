@@ -16,7 +16,6 @@ def lipana_mpesa(user_id, phone, amount, oid):
     # Expected output for oid: ACC-SINV-2024-00002 is ACCSINV202400002
     unwanted_characters = r'[-/;:~`!%^*<&_]' 
     oid = re.sub(unwanted_characters, '', oid)
-    logger.info('oid: %s', oid)
     
     # get vendor details
     vendor = frappe.get_doc("iPay Settings")
@@ -63,6 +62,8 @@ def lipana_mpesa(user_id, phone, amount, oid):
                 'telephone': data.get('telephone'),
             }
             
+            logger.info("response_data: %s", response_data)
+            frappe.msgprint("Payment received successfully")
             return response_data
         
         else:

@@ -58,13 +58,10 @@ def verify_mpesa_payment(oid, phone, vid, secret_key):
             
             if verification_response.status_code == 200:
                 logger.info('Payment verification successful')
-                frappe.msgprint('Payment verification successful')
                 success = True
                 
                 data = verification_response.json().get('data', {})
-                logger.info('data: %s', data)
                 transaction_code = data.get('transaction_code')
-                logger.info('Transaction Code: %s', transaction_code)
                 transaction_amount = data.get('transaction_amount')
 
                 return verification_response.json()                

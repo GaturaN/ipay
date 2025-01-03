@@ -9,7 +9,6 @@ logger = logging.getLogger(__name__)
 
 def get_sid(vid: str, secret_key: str, amount: str, oid: str, phone: str) -> dict:
 
-    logger.info('oid: %s', oid) 
     try:
         inv = oid
         
