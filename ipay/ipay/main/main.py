@@ -3,6 +3,7 @@ import logging
 from ipay.ipay.main.utils.get_sid import get_sid
 from ipay.ipay.main.utils.trigger_stk_push import trigger_stk_push
 from ipay.ipay.main.utils.verify_mpesa_payment import verify_mpesa_payment
+from ipay.ipay.main.utils.make_payment_entry import make_payment_entry
 import re
 import requests
 
@@ -89,6 +90,16 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
                 requests.post(call_back_url, json=response_data)
                 
             #TODO: call function to create payment entry
+            payment_entry = make_payment_entry(user_id, customer_email, inv, response_data)
+            
+            if not payment_entry:
+                raise ValueError("Failed to create Payment Entry")
+                
+            # log the payment entry name received from the function
+            logger.info(f"Payment Entry: {payment_entry}")
+            
+            # Show the payment entry to the user and make it clickable to route to the payment entry
+            frappe.msgprint(f"Payment Entry: <a href='/desk#Form/Payment Entry/{payment_entry}'>{payment_entry}</a>") 
             
             return response_data
         
