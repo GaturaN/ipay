@@ -4,18 +4,32 @@ from ipay.ipay.main.utils.get_sid import get_sid
 from ipay.ipay.main.utils.trigger_stk_push import trigger_stk_push
 from ipay.ipay.main.utils.verify_mpesa_payment import verify_mpesa_payment
 import re
-
+import requests
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 @frappe.whitelist()
-def lipana_mpesa(user_id, phone, amount, oid):
+def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
+    # Log the received parameters
+    logger.info(f"Received doc name: {docid}")
+    logger.info(f"Customer Email: {customer_email}")
+    logger.info(f"User ID: {user_id}")
+    logger.info(f"Phone Number: {phone}")
+    logger.info(f"Amount: {amount}")
+    logger.info(f"OID: {oid}")
+    
+    # Variable to maintain the order id
+    inv = oid
+    logger.info(f"Invoice: {inv}")
+    
     # Remove unwanted characters from oid
     # Expected output for oid: ACC-SINV-2024-00002 is ACCSINV202400002
     unwanted_characters = r'[-/;:~`!%^*<&_]' 
     oid = re.sub(unwanted_characters, '', oid)
+    logger.info(f"Cleaned OID: {oid}")
+    
     
     # get vendor details
     vendor = frappe.get_doc("iPay Settings")
@@ -63,7 +77,19 @@ def lipana_mpesa(user_id, phone, amount, oid):
             }
             
             logger.info("response_data: %s", response_data)
+            # set status to success on the ipay request and show success message
+            frappe.db.set_value('iPay Request', docid, 'status', "Success")
+            frappe.db.commit()
             frappe.msgprint("Payment received successfully")
+            
+            # send post request to call back url
+            call_back_url = frappe.get_doc("iPay Settings").callback_url
+            if call_back_url:
+                # send post request to call back url
+                requests.post(call_back_url, json=response_data)
+                
+            #TODO: call function to create payment entry
+            
             return response_data
         
         else:

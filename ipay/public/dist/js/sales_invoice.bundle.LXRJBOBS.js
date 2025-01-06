@@ -27,14 +27,10 @@
                   message: __("iPay Request Created successfully"),
                   indicator: "green"
                 }, 5);
-                frappe.msgprint({
-                  title: __("Redirect"),
-                  message: __("Do you want to be redirected to the newly created iPay Request?"),
-                  primary_action: {
-                    action(values) {
-                      frappe.set_route("Form", "iPay Request", r.message.name);
-                    }
-                  }
+                frappe.confirm(__("Do you want to be redirected to the newly created iPay Request?"), function() {
+                  frappe.set_route("Form", "iPay Request", r.message.name);
+                }, function() {
+                  console.log("User chose not to be redirected.");
                 });
               } else {
                 frappe.msgprint(__("Failed to create iPay Request"));
@@ -46,4 +42,4 @@
     }
   });
 })();
-//# sourceMappingURL=sales_invoice.bundle.TY6GNO4X.js.map
+//# sourceMappingURL=sales_invoice.bundle.LXRJBOBS.js.map

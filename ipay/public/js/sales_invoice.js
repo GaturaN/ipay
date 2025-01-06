@@ -36,16 +36,17 @@ frappe.ui.form.on("Sales Invoice", {
                         5
                      );
                      //  FEATURE: confirm if user want to be redirected
-                     frappe.msgprint({
-                        title: __("Redirect"),
-                        message: __("Do you want to be redirected to the newly created iPay Request?"),
-                        primary_action: {
-                           action(values) {
-                              //  route to newly created ipay request
-                              frappe.set_route("Form", "iPay Request", r.message.name);
-                           },
+                     frappe.confirm(
+                        __("Do you want to be redirected to the newly created iPay Request?"),
+                        function () {
+                           // Action for "Yes"
+                           frappe.set_route("Form", "iPay Request", r.message.name);
                         },
-                     });
+                        function () {
+                           // Action for "No"
+                           console.log("User chose not to be redirected.");
+                        }
+                     );
                   } else {
                      frappe.msgprint(__("Failed to create iPay Request"));
                   }

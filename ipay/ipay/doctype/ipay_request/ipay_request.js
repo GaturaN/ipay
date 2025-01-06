@@ -68,6 +68,7 @@ frappe.ui.form.on("iPay Request", {
                         frappe.call({
                            method: "ipay.ipay.main.main.lipana_mpesa",
                            args: {
+                              docid: frm.doc.name,
                               oid: values.invoice_number,
                               amount: values.amount,
                               customer_email: values.customer_email,

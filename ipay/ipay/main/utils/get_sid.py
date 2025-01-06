@@ -32,7 +32,7 @@ def get_sid(vid: str, secret_key: str, amount: str, oid: str, phone: str) -> dic
         cst = '0'
         
         # Default to 0 for HTTP/HTTPS callback
-        crl = '0'
+        crl = '1'
         
         # Generate the data string for hashing
         data_string = f'{live}{oid}{inv}{amount}{phone}{eml}{vid}{curr}{cst}{cbk}'
