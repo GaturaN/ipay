@@ -5,14 +5,14 @@ frappe.ui.form.on("iPay Request", {
    refresh: function (frm) {
       // add custom button if status is empty
       const submitted = frm.doc.docstatus === 1;
-      const status = frm.doc.status === "";
+      const status = frm.doc.status;
 
       // check if the status is set to "Success" and set the field to read-only
       if (frm.doc.status === "Success") {
          frm.set_df_property("status", "read_only", 1);
       }
 
-      if (submitted && status) {
+      if (submitted && status !== "Success") {
          frm.add_custom_button(__("Prompt iPay"), () => {
             // console.log("Payment Prompted");
             // prompt and confirm customer details
@@ -84,11 +84,16 @@ frappe.ui.form.on("iPay Request", {
                            async: true,
                            callback: function (r) {
                               if (r.message) {
-                                 frappe.msgprint({
-                                    title: "Success",
-                                    message: r.message,
-                                    indicator: "green",
-                                 });
+                                 //  access the response from the server
+                                 const data = r.message;
+                                 // display the transaction code in the success message
+                                 frappe.show_alert(
+                                    {
+                                       message: `iPay Prompted Successfully. Transaction Code: ${data}`,
+                                       indicator: "orange",
+                                    },
+                                    8
+                                 );
                               }
                            },
                            error: (err) => {
