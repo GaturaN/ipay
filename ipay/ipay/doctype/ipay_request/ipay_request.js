@@ -7,6 +7,11 @@ frappe.ui.form.on("iPay Request", {
       const submitted = frm.doc.docstatus === 1;
       const status = frm.doc.status === "";
 
+      // check if the status is set to "Success" and set the field to read-only
+      if (frm.doc.status === "Success") {
+         frm.set_df_property("status", "read_only", 1);
+      }
+
       if (submitted && status) {
          frm.add_custom_button(__("Prompt iPay"), () => {
             // console.log("Payment Prompted");

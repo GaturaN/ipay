@@ -99,7 +99,7 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
             logger.info(f"Payment Entry: {payment_entry}")
             
             # Show the payment entry to the user and make it clickable to route to the payment entry
-            frappe.msgprint(f"Payment Entry: <a href='/desk#Form/Payment Entry/{payment_entry}'>{payment_entry}</a>") 
+            frappe.msgprint(f"Payment Entry: <a href='/desk/payment-entry/{payment_entry}'>{payment_entry}</a>") 
             
             return response_data
         
