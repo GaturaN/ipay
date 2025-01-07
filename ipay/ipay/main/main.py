@@ -109,12 +109,4 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
     except Exception as error:
         logger.error("An error occurred during the payment process: %s", error)
         raise RuntimeError("An error occurred during the payment process")        
-
-
-# # call the function when the script runs
-# if __name__ == "__main__":
-#     try:
-#         result = lipana_mpesa(user_id, phone, amount, oid)
-#         logger.info(f"Payment process completed successfully: {result}")
-#     except Exception as e:
-#         logger.error(f"Payment process failed: {e}")
+        

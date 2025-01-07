@@ -11,13 +11,20 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
         logger.info(f"Customer Email: {customer_email}")
         logger.info(f"User ID: {user_id}")
         logger.info(f"Response Data: {response_data}")
-
+        
         # Fetch the Sales Invoice
         sales_invoice = frappe.get_doc("Sales Invoice", inv)
         if not sales_invoice:
             logger.error(f"Sales Invoice {inv} not found")
             return
 
+        # Fetch the cash account
+        cash_account = frappe.get_value("Account", {"account_type": "Cash","company": sales_invoice.company, "is_group": 0}, "name")
+        logger.info(f"Cash Account: {cash_account}")
+        if not cash_account:
+          logger.error(f"Cash Account not found")
+          frappe.log_error(f"Cash Account not found", "Payment Entry Creation Error")
+        
         # Create a new Payment Entry
         payment_entry = frappe.new_doc("Payment Entry")
         payment_entry.payment_type = "Receive"
@@ -27,7 +34,7 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
         payment_entry.party_type = "Customer"
         payment_entry.party = sales_invoice.customer
         payment_entry.party_name = sales_invoice.customer_name
-        payment_entry.paid_to = "Cash - GD"
+        payment_entry.paid_to = cash_account  #dynamically get the name of the cash account
 
         # Transaction amount
         transaction_amount = float(response_data.get("transaction_amount", 0))
