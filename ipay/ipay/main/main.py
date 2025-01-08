@@ -4,6 +4,7 @@ from ipay.ipay.main.utils.get_sid import get_sid
 from ipay.ipay.main.utils.trigger_stk_push import trigger_stk_push
 from ipay.ipay.main.utils.verify_mpesa_payment import verify_mpesa_payment
 from ipay.ipay.main.utils.make_payment_entry import make_payment_entry
+from ipay.ipay.main.utils.ipay_logs import create_log_entry
 import re
 import requests
 
@@ -20,6 +21,9 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
     logger.info(f"Phone Number: {phone}")
     logger.info(f"Amount: {amount}")
     logger.info(f"OID: {oid}")
+    
+    # log in frappe
+    create_log_entry("INF", f"Received doc name : {docid}")
     
     # Variable to maintain the order id
     inv = oid
@@ -41,6 +45,7 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
     # check that secret_key & vid are not empty
     if not secret_key or not vid:
         raise ValueError("Secret key or vendor ID not set")
+        
         
     try:
         # get session id
@@ -89,7 +94,7 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
                 # send post request to call back url
                 requests.post(call_back_url, json=response_data)
                 
-            #TODO: call function to create payment entry
+            # call function to create payment entry
             payment_entry = make_payment_entry(user_id, customer_email, inv, response_data)
             
             if not payment_entry:
@@ -110,3 +115,6 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
         logger.error("An error occurred during the payment process: %s", error)
         raise RuntimeError("An error occurred during the payment process")        
         
+        
+        
+# TODO: Create scheduler to delete INF logs after 5 days
