@@ -10,7 +10,9 @@ import requests
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
+# making use of frappe logger
+# frappe.utils.logger.set_log_level("INFO")
+# logger = frappe.logger("iPay", allow_site=True, file_count=50)
 
 @frappe.whitelist()
 def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
@@ -23,7 +25,7 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
     logger.info(f"OID: {oid}")
     
     # log in frappe
-    create_log_entry("INF", f"Received doc name : {docid}")
+    create_log_entry("INF", f"Payment prompt initiated for Ipay Request : {docid}")
     
     # Variable to maintain the order id
     inv = oid
@@ -44,6 +46,7 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
     
     # check that secret_key & vid are not empty
     if not secret_key or not vid:
+        create_log_entry("ERR", "Secret Key or vendor ID not set")
         raise ValueError("Secret key or vendor ID not set")
         
         
@@ -53,6 +56,7 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
         sid = response.get('data', {}).get('sid')
         
         if not sid:
+            create_log_entry("ERR", "Failed to get session id")
             raise ValueError("Failed to get session id")
             
         # After success in getting SID, trigger STK push 
@@ -60,15 +64,18 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
         
         # verify the payment made by the stk push
         if stk_response.get('header_status') == 200:
+            create_log_entry("INF", "Verifying Payment")
             logger.info('Verifying Payment...')
             
             # Verify Payment
             verification_response = verify_mpesa_payment(oid, phone, vid, secret_key)
             
             if not verification_response:
+                create_log_entry("ERR", "Payment Verification Failed")
                 raise ValueError("Payment Verification Failed")
                 
             if verification_response.get('header_status') != 200:
+                create_log_entry("ERR", "Payent Verification Unsuccessful")
                 raise ValueError("Payment Verification Unsuccessful")
                 
             # Process verification response
@@ -77,11 +84,13 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
                 'order_id': data.get('oid'),
                 'transaction_amount': data.get('transaction_amount'),
                 'transaction_code': data.get('transaction_code'),
+                'payee': data.get('firstname'),
                 'payment_mode': data.get('payment_mode'),
                 'paid_at': data.get('paid_at'),
                 'telephone': data.get('telephone'),
             }
             
+            create_log_entry("INF", f"Payment received successfully with response_data: {response_data}")
             logger.info("response_data: %s", response_data)
             # set status to success on the ipay request and show success message
             frappe.db.set_value('iPay Request', docid, 'status', "Success")
@@ -91,13 +100,13 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
             # send post request to call back url
             call_back_url = frappe.get_doc("iPay Settings").callback_url
             if call_back_url:
-                # send post request to call back url
                 requests.post(call_back_url, json=response_data)
                 
             # call function to create payment entry
             payment_entry = make_payment_entry(user_id, customer_email, inv, response_data)
             
             if not payment_entry:
+                create_log_entry("ERR", "Failed to create Payment Entry")
                 raise ValueError("Failed to create Payment Entry")
                 
             # log the payment entry name received from the function
@@ -109,12 +118,14 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
             return response_data
         
         else:
+            create_log_entry("ERR", "Failed to initiate payment")
             raise ValueError("Failed to initiate Payment")
             
     except Exception as error:
         logger.error("An error occurred during the payment process: %s", error)
+        create_log_entry("ERR", f"An error occurred during the payment proces: {error}")
         raise RuntimeError("An error occurred during the payment process")        
         
         
         
-# TODO: Create scheduler to delete INF logs after 5 days
+# TODO: Create scheduler to delete INF logs after 5 days and ERR logs after 10 days

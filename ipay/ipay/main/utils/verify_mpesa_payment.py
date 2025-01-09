@@ -63,7 +63,7 @@ def verify_mpesa_payment(oid, phone, vid, secret_key):
                 data = verification_response.json().get('data', {})
                 transaction_code = data.get('transaction_code')
                 transaction_amount = data.get('transaction_amount')
-
+                
                 return verification_response.json()                
                 
             else:

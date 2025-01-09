@@ -20,7 +20,7 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
 
         # Fetch the cash account
         cash_account = frappe.get_value("Account", {"account_type": "Cash","company": sales_invoice.company, "is_group": 0}, "name")
-        logger.info(f"Cash Account: {cash_account}")
+        # logger.info(f"Cash Account: {cash_account}")
         if not cash_account:
           logger.error(f"Cash Account not found")
           frappe.log_error(f"Cash Account not found", "Payment Entry Creation Error")
@@ -47,8 +47,9 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
         payment_entry.unallocated_amount = transaction_amount
         payment_entry.reference_no = response_data.get("transaction_code", "")
         payment_entry.reference_date = response_data.get("paid_at", frappe.utils.today())
+        payment_entry.custom_remarks = 1
         payment_entry.remarks = (
-            f"Amount KES {transaction_amount} received from {response_data.get('names', '')}\n"
+            f"Amount KES {transaction_amount} received from {sales_invoice.customer} - {response_data.get('payee')} against Sales Invoice {sales_invoice.name}\n"
             f"Transaction reference no {response_data.get('transaction_code', '')} dated {response_data.get('paid_at', frappe.utils.today())}"
         )
 

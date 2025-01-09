@@ -89,10 +89,10 @@ frappe.ui.form.on("iPay Request", {
                                  // display the transaction code in the success message
                                  frappe.show_alert(
                                     {
-                                       message: `iPay Prompted Successfully. Transaction Code: ${data}`,
-                                       indicator: "orange",
+                                       message: `iPay Prompted Successfully. The Payment Entry has been created`,
+                                       indicator: "blue",
                                     },
-                                    8
+                                    15
                                  );
                               }
                            },
