@@ -128,13 +128,13 @@ app_include_js = 'sales_invoice.bundle.js'
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
+scheduler_events = {
 # 	"all": [
 # 		"ipay.tasks.all"
 # 	],
-# 	"daily": [
-# 		"ipay.tasks.daily"
-# 	],
+	"daily": [
+		"ipay.ipay.main.utils.log_cleanup.del_old_logs"
+	],
 # 	"hourly": [
 # 		"ipay.tasks.hourly"
 # 	],
@@ -144,7 +144,7 @@ app_include_js = 'sales_invoice.bundle.js'
 # 	"monthly": [
 # 		"ipay.tasks.monthly"
 # 	],
-# }
+}
 
 # Testing
 # -------
