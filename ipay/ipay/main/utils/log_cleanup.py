@@ -2,46 +2,35 @@ import frappe
 from datetime import datetime, timedelta
 
 def del_old_logs():
-    """
-    Deletes iPay logs of type 'INF' that are older than 5 days 
-    and of type 'ERR' that are older than 10 days
-    """ 
     try:
-        # Calculate the threshold days
+        # Calculate thresholds
         inf_threshold = datetime.now() - timedelta(days=5)
         err_threshold = datetime.now() - timedelta(days=10)
         
-        # Find logs of type 'INF' older than 5 days
-        inf_logs_to_delete = frappe.get_all(
-            "iPay Logs",
-            filters={"type": "INF", "time": ["<", inf_threshold]},
-            pluck="name"
-        )
+        # Get logs to delete
+        inf_logs = frappe.get_all("iPay Logs", 
+            filters={"log_type": "INF", "time": ["<", inf_threshold]},
+            pluck="name")
+            
+        err_logs = frappe.get_all("iPay Logs",
+            filters={"log_type": "ERR", "time": ["<", err_threshold]},
+            pluck="name")
+
+        # Batch delete in chunks of 1000
+        batch_size = 1000
         
-        # Find logs of type 'ERR' older than 10 days
-        err_logs_to_delete = frappe.get_all(
-            "iPay Logs",
-            filters={"type": "ERR", "time": ["<", err_threshold]},
-            pluck="name"
-        )
+        for i in range(0, len(inf_logs), batch_size):
+            batch = inf_logs[i:i + batch_size]
+            frappe.db.sql("""DELETE FROM `tabIPay Logs` WHERE name IN %s""", [batch])
+            frappe.db.commit()
         
-        # Delete INF logs
-        if inf_logs_to_delete:
-            for log_name in inf_logs_to_delete:
-                frappe.delete_doc("iPay Logs", log_name, ignore_permissions=True)
-            frappe.db.commit()  # Commit changes after deletion
-            frappe.logger().info(f"Deleted {len(inf_logs_to_delete)} old 'INF' logs.")
-        else:
-            frappe.logger().info("No old 'INF' logs to delete.")
-        
-        # Delete ERR logs
-        if err_logs_to_delete:
-            for log_name in err_logs_to_delete:
-                frappe.delete_doc("iPay Logs", log_name, ignore_permissions=True)
-            frappe.db.commit()  # Commit changes after deletion
-            frappe.logger().info(f"Deleted {len(err_logs_to_delete)} old 'ERR' logs.")
-        else:
-            frappe.logger().info("No old 'ERR' logs to delete.")
-    
+        for i in range(0, len(err_logs), batch_size):
+            batch = err_logs[i:i + batch_size]
+            frappe.db.sql("""DELETE FROM `tabIPay Logs` WHERE name IN %s""", [batch])
+            frappe.db.commit()
+
+        # Log results
+        frappe.logger().info(f"Deleted {len(inf_logs)} INF logs and {len(err_logs)} ERR logs")
+
     except Exception as e:
         frappe.log_error(f"Error deleting old logs: {str(e)}", "Log Cleanup Error")
