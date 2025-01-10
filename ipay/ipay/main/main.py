@@ -10,9 +10,6 @@ import requests
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-# making use of frappe logger
-# frappe.utils.logger.set_log_level("INFO")
-# logger = frappe.logger("iPay", allow_site=True, file_count=50)
 
 @frappe.whitelist()
 def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
@@ -40,7 +37,7 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
     
     # get vendor details
     vendor = frappe.get_doc("iPay Settings")
-    vid = vendor.vendor_id
+    vid = vendor.vendor_id.lower()   #must be lowercase
     secret_key = vendor.api_key
     
     
@@ -124,8 +121,4 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
     except Exception as error:
         logger.error("An error occurred during the payment process: %s", error)
         create_log_entry("ERR", f"An error occurred during the payment proces: {error}")
-        raise RuntimeError("An error occurred during the payment process")        
-        
-        
-        
-# TODO: Create scheduler to delete INF logs after 5 days and ERR logs after 10 days
+        raise RuntimeError("An error occurred during the payment process")
