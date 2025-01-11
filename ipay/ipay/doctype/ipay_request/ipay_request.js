@@ -64,7 +64,12 @@ frappe.ui.form.on("iPay Request", {
 
                         // compare the phone numbers, and if different save the prompted number in a different field
                         if (customerPhoneLast8 !== promptedPhoneLast8) {
-                           frm.set_value("prompted_number", values.customer_phone);
+                           frappe.db.set_value("iPay Request", frm.doc.name, "prompted_number", values.customer_phone);
+                        }
+
+                        // if prompted again and prompted number is same as customer number, prompted number blank
+                        if (frm.doc.prompted_number && customerPhoneLast8 === promptedPhoneLast8) {
+                           frappe.db.set_value("iPay Request", frm.doc.name, "prompted_number", null);
                         }
 
                         // show UI alert

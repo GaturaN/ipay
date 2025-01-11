@@ -116,9 +116,13 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
         
         else:
             create_log_entry("ERR", "Failed to initiate payment")
+            # set status to 'Failed to complete request'
+            frappe.db.set_value('iPay Request', docid, 'status', 'Failed to complete request')
             raise ValueError("Failed to initiate Payment")
             
     except Exception as error:
         logger.error("An error occurred during the payment process: %s", error)
         create_log_entry("ERR", f"An error occurred during the payment proces: {error}")
+        # set status to error
+        frappe.db.set_value('iPay Request', docid, 'status', 'Error')
         raise RuntimeError("An error occurred during the payment process")
