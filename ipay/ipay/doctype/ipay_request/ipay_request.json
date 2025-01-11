@@ -15,6 +15,8 @@
   "customer",
   "customer_email",
   "customer_phone",
+  "column_break_1mkgo",
+  "prompted_number",
   "column_break_mrdws",
   "transaction_details_section",
   "sales_invoice",
@@ -93,13 +95,25 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "\nFailed to complete request\nSuccess\nError"
+   "options": "\nFailed to complete request\nSuccess\nError",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_1mkgo",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "prompted_number",
+   "fieldtype": "Data",
+   "label": "Prompted Number",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2024-12-19 11:52:11.979290",
+ "modified": "2025-01-11 10:19:41.875528",
  "modified_by": "Administrator",
  "module": "Ipay",
  "name": "iPay Request",

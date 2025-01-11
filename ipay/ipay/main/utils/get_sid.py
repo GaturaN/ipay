@@ -14,9 +14,9 @@ def get_sid(vid: str, secret_key: str, amount: str, oid: str, phone: str) -> dic
         
         # customer's email address => value from api.py
         eml = frappe.db.get_value("Sales Invoice", inv, "contact_email")
-        # if email is None, set default to 'portal@bulkbox.co.ke'
+        # if email is None, set a default
         if not eml:
-            eml = 'portal@bulkbox.co.ke'
+            eml = 'gaturanjenga@gmail.com'
         
         # callback url for payment status
         cbk = frappe.get_doc("iPay Settings").callback_url

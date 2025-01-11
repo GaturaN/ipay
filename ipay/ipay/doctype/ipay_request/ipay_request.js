@@ -58,7 +58,16 @@ frappe.ui.form.on("iPay Request", {
                   frappe.confirm(
                      "Are you sure you want to prompt iPay?",
                      () => {
-                        // logic to handle confirmation
+                        // Extract the last 8 digits of the phone numbers
+                        const customerPhoneLast8 = frm.doc.customer_phone.slice(-8);
+                        const promptedPhoneLast8 = values.customer_phone.slice(-8);
+
+                        // compare the phone numbers, and if different save the prompted number in a different field
+                        if (customerPhoneLast8 !== promptedPhoneLast8) {
+                           frm.set_value("prompted_number", values.customer_phone);
+                        }
+
+                        // show UI alert
                         frappe.show_alert(
                            {
                               message: "iPay Prompted",
