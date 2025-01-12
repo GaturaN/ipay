@@ -3,7 +3,8 @@ import hmac
 import hashlib
 import time
 import logging
-import frappe  
+import frappe 
+from requests.exceptions import RequestException 
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -70,6 +71,7 @@ def verify_mpesa_payment(oid, phone, vid, secret_key):
                 logger.warning(
                     f"Attempt {attempt}: Payment not found with status code {verification_response.status_code}. Retrying..."
                 )
+                
                 delay(retry_delay)
         
         except requests.RequestException as error:
@@ -77,6 +79,12 @@ def verify_mpesa_payment(oid, phone, vid, secret_key):
                 error.response.json().get('message')
                 if error.response is not None else str(error)
             )
+            
+            # check if the request was canceled by the user
+            if "The request was canceled by the user" in error_message:
+              logger.info("The request was canceled by the user. Exiting verification loop.")
+              raise UserCancelledException("The request was canceled by the user.")
+            
             logger.error(
                 f"Attempt {attempt}: Failed due to an error: {error_message}\nRetrying..."
             )
@@ -86,3 +94,9 @@ def verify_mpesa_payment(oid, phone, vid, secret_key):
         logger.error("Max retries reached. Payment verification failed.")
         frappe.msgprint("Max retries reached. Payment verification failed.")
         return None
+      
+      
+class UserCancelledException(Exception):
+    """Exception raised when the user cancels the payment process."""
+    pass
+

@@ -14,6 +14,7 @@
  "fields": [
   {
    "bold": 1,
+   "default": "INF",
    "fieldname": "log_type",
    "fieldtype": "Select",
    "in_filter": 1,
@@ -47,7 +48,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-01-09 21:06:52.481988",
+ "modified": "2025-01-11 10:55:25.826283",
  "modified_by": "Administrator",
  "module": "Ipay",
  "name": "iPay Logs",

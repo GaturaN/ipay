@@ -1,5 +1,9 @@
 import frappe
 from datetime import datetime
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def create_log_entry(log_type, description):
   """
@@ -9,6 +13,9 @@ def create_log_entry(log_type, description):
       log_type (str): The type of the log (INF, ERR)
       description (str): The description of the log 
   """
+  
+  logger.info(f"log type: {log_type}")
+  logger.info(f"description: {description}")
   
   try:
     log_entry = frappe.get_doc({

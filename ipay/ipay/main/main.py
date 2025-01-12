@@ -5,6 +5,7 @@ from ipay.ipay.main.utils.trigger_stk_push import trigger_stk_push
 from ipay.ipay.main.utils.verify_mpesa_payment import verify_mpesa_payment
 from ipay.ipay.main.utils.make_payment_entry import make_payment_entry
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
+from ipay.ipay.main.utils.verify_mpesa_payment import UserCancelledException
 import re
 import requests
 
@@ -44,7 +45,8 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
     # check that secret_key & vid are not empty
     if not secret_key or not vid:
         create_log_entry("ERR", "Secret Key or vendor ID not set")
-        raise ValueError("Secret key or vendor ID not set")
+        # raise ValueError("Secret key or vendor ID not set")
+        frappe.throw("Secret key or vendor ID not set")
         
         
     try:
@@ -54,7 +56,8 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
         
         if not sid:
             create_log_entry("ERR", "Failed to get session id")
-            raise ValueError("Failed to get session id")
+            # raise ValueError("Failed to get session id")
+            frappe.throw("Failed to get session id")
             
         # After success in getting SID, trigger STK push 
         stk_response = trigger_stk_push(phone, sid, vid, secret_key)
@@ -64,16 +67,19 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
             create_log_entry("INF", "Verifying Payment")
             logger.info('Verifying Payment...')
             
-            # Verify Payment
-            verification_response = verify_mpesa_payment(oid, phone, vid, secret_key)
+            try:
+                # Verify Payment
+                verification_response = verify_mpesa_payment(oid, phone, vid, secret_key)
+            except UserCancelledException as cancel_error:
+                create_log_entry("ERR", "Payment process was canceled by the user.")
+                logger.info("Payment process was canceled by the user.")
+                frappe.throw("The payment process was canceled by the user.")
+                return {"status": "canceled", "message": str(cancel_error)}
             
             if not verification_response:
                 create_log_entry("ERR", "Payment Verification Failed")
-                raise ValueError("Payment Verification Failed")
-                
-            if verification_response.get('header_status') != 200:
-                create_log_entry("ERR", "Payent Verification Unsuccessful")
-                raise ValueError("Payment Verification Unsuccessful")
+                # raise ValueError("Payment Verification Failed")
+                frappe.throw("Payment Verification Failed")
                 
             # Process verification response
             data = verification_response.get('data', {})
@@ -104,7 +110,8 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
             
             if not payment_entry:
                 create_log_entry("ERR", "Failed to create Payment Entry")
-                raise ValueError("Failed to create Payment Entry")
+                # raise ValueError("Failed to create Payment Entry")
+                frappe.throw("Failed to create Payment Entry")
                 
             # log the payment entry name received from the function
             logger.info(f"Payment Entry: {payment_entry}")
@@ -118,11 +125,15 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
             create_log_entry("ERR", "Failed to initiate payment")
             # set status to 'Failed to complete request'
             frappe.db.set_value('iPay Request', docid, 'status', 'Failed to complete request')
-            raise ValueError("Failed to initiate Payment")
+            frappe.db.commit()
+            # raise ValueError("Failed to initiate Payment")
+            frappe.throw("Failed to initiate Payment")
             
     except Exception as error:
         logger.error("An error occurred during the payment process: %s", error)
         create_log_entry("ERR", f"An error occurred during the payment proces: {error}")
         # set status to error
         frappe.db.set_value('iPay Request', docid, 'status', 'Error')
-        raise RuntimeError("An error occurred during the payment process")
+        frappe.db.commit()
+        # raise RuntimeError("An error occurred during the payment process")
+        frappe.throw("An error occurred during the payment process")
