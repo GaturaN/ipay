@@ -34,7 +34,7 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
         payment_entry.party_type = "Customer"
         payment_entry.party = sales_invoice.customer
         payment_entry.party_name = sales_invoice.customer_name
-        payment_entry.paid_to = cash_account  #dynamically get the name of the cash account
+        payment_entry.paid_to = cash_account
 
         # Transaction amount
         transaction_amount = float(response_data.get("transaction_amount", 0))
