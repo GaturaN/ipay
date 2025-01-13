@@ -32,7 +32,7 @@ def make_verification_call(verification_payload):
 
 # Handle payment verification
 def verify_mpesa_payment(oid, phone, vid, secret_key):
-    max_retries = 30
+    max_retries = 20
     initial_delay = 4000
     retry_delay = 2000
     

@@ -129,5 +129,78 @@ frappe.ui.form.on("iPay Request", {
             .addClass("btn-success")
             .removeClass("btn-default");
       }
+      if (submitted && status && status !== "Success") {
+         frm.add_custom_button(__("Verify Payment"), () => {
+            console.log("Verifying Payment");
+
+            // get the parameters from the form
+            const docid = frm.doc.name;
+            const user_id = frm.doc.customer;
+            const phone = frm.doc.customer_phone;
+            const amount = frm.doc.amount;
+            const order = frm.doc.sales_invoice;
+            const customer_email = frm.doc.customer_email;
+
+            // call the verify_payment function
+            frappe.call({
+               method: "ipay.ipay.main.utils.confirm_payment.confirm_payment",
+               args: {
+                  docid: docid,
+                  user_id: user_id,
+                  phone: phone,
+                  amount: amount,
+                  order: order,
+                  customer_email: customer_email,
+               },
+               freeze: true,
+               async: true,
+               callback: function (r) {
+                  if (r.message) {
+                     const { status, message, data } = r.message;
+
+                     if (status === "success") {
+                        //  access the response from the server
+                        const transactionCode = data?.transaction_code || "N/A";
+                        const paymentMode = data?.payment_mode || "N/A";
+                        const paidAt = data?.paid_at || "N/A";
+
+                        frappe.msgprint({
+                           title: __("Payment Verified"),
+                           message: `
+                           <p><strong>Status:</strong> The payment has been verified successfully.</p>
+                           <p><strong>Transaction Code:</strong> ${transactionCode}</p>
+                           <p><strong>Payment Mode:</strong> ${paymentMode}</p>
+                           <p><strong>Paid At:</strong> ${paidAt}</p>
+                        `,
+                           indicator: "green",
+                        });
+                     } else if (status === "error") {
+                        frappe.msgprint({
+                           title: __("Verification Failed"),
+                           message: __(`Error: ${message}`),
+                           indicator: "red",
+                        });
+                     }
+                  } else {
+                     frappe.msgprint({
+                        title: __("Verification Error"),
+                        message: __("No response from the server. Please try again."),
+                        indicator: "orange",
+                     });
+                  }
+               },
+               error: function (err) {
+                  frappe.msgprint({
+                     title: __("Verification Error"),
+                     message: __("An error occurred while verifying the payment. Please check the logs."),
+                     indicator: "red",
+                  });
+                  console.error("Verification Error:", err);
+               },
+            });
+         })
+            .addClass("btn-primary")
+            .removeClass("btn-default");
+      }
    },
 });
