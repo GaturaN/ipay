@@ -136,7 +136,7 @@ frappe.ui.form.on("iPay Request", {
             // get the parameters from the form
             const docid = frm.doc.name;
             const user_id = frm.doc.customer;
-            const phone = frm.doc.customer_phone;
+            const phone = frm.doc.prompted_number || frm.doc.customer_phone;
             const amount = frm.doc.amount;
             const order = frm.doc.sales_invoice;
             const customer_email = frm.doc.customer_email;
