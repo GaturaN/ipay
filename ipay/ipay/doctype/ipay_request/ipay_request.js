@@ -53,6 +53,14 @@ frappe.ui.form.on("iPay Request", {
                      default: frm.doc.customer_email,
                      read_only: 0,
                   },
+                  {
+                     label: "Payment Method",
+                     fieldname: "payment_request_type",
+                     fieldtype: "Select",
+                     options: "Mpesa Express\nMpesa Paybill",
+                     default: frm.doc.payment_request_type,
+                     read_only: 0,
+                  },
                ],
                (values) => {
                   frappe.confirm(
@@ -93,6 +101,7 @@ frappe.ui.form.on("iPay Request", {
                               customer_email: values.customer_email,
                               phone: values.customer_phone,
                               user_id: values.user_id,
+                              payment_request_type: values.payment_request_type,
                            },
                            freeze: false,
                            async: true,

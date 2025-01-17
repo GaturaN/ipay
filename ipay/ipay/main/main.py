@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 @frappe.whitelist()
-def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
+def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email, payment_request_type):
     # Log the received parameters
     logger.info(f"Received doc name: {docid}")
     logger.info(f"Customer Email: {customer_email}")
@@ -21,6 +21,7 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
     logger.info(f"Phone Number: {phone}")
     logger.info(f"Amount: {amount}")
     logger.info(f"OID: {oid}")
+    logger.info(f"Payment Request Type: {payment_request_type}")
     
     # log in frappe
     create_log_entry("INF", f"Payment prompt initiated for Ipay Request : {docid}")
@@ -53,6 +54,7 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email):
         # get session id
         response = get_sid(vid, secret_key, amount, oid, phone)
         sid = response.get('data', {}).get('sid')
+        # logger.info(f"Session ID: {sid}")
         
         if not sid:
             create_log_entry("ERR", "Failed to get session id")

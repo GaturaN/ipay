@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_guest_to_view": 1,
  "allow_rename": 1,
  "autoname": "format: iP-REQ-{DD}-{MM}-{YY}-{####}",
  "creation": "2024-12-19 11:22:25.018211",
@@ -20,16 +21,16 @@
   "column_break_mrdws",
   "transaction_details_section",
   "sales_invoice",
-  "amount"
+  "amount",
+  "route"
  ],
  "fields": [
   {
-   "default": "Mpesa",
    "fieldname": "payment_request_type",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Payment Request Type",
-   "options": "Mpesa\nCard",
+   "options": "Mpesa Express\nMpesa Paybill",
    "reqd": 1
   },
   {
@@ -80,6 +81,9 @@
   {
    "fieldname": "sales_invoice",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_standard_filter": 1,
    "label": "Sales Invoice",
    "options": "Sales Invoice",
    "reqd": 1
@@ -108,12 +112,16 @@
    "fieldtype": "Data",
    "label": "Prompted Number",
    "read_only": 1
+  },
+  {
+   "fieldname": "route",
+   "fieldtype": "Data",
+   "label": "Route"
   }
  ],
- "index_web_pages_for_search": 1,
  "is_submittable": 1,
  "links": [],
- "modified": "2025-01-11 10:19:41.875528",
+ "modified": "2025-01-16 16:30:22.774581",
  "modified_by": "Administrator",
  "module": "Ipay",
  "name": "iPay Request",
