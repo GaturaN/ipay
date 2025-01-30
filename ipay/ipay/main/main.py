@@ -15,13 +15,15 @@ logger = logging.getLogger(__name__)
 @frappe.whitelist()
 def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email, payment_request_type):
     # Log the received parameters
-    logger.info(f"Received doc name: {docid}")
-    logger.info(f"Customer Email: {customer_email}")
-    logger.info(f"User ID: {user_id}")
-    logger.info(f"Phone Number: {phone}")
-    logger.info(f"Amount: {amount}")
-    logger.info(f"OID: {oid}")
-    logger.info(f"Payment Request Type: {payment_request_type}")
+    logger.info(
+        f"Received doc name: {docid}, Customer Email: {customer_email}, "
+        f"User ID: {user_id}, Phone Number: {phone}, Amount: {amount}, "
+        f"OID: {oid}, Payment Request Type: {payment_request_type}"
+    )
+  
+    # set payment request type
+    frappe.db.set_value('iPay Request', docid, 'payment_request_type', payment_request_type)
+    frappe.db.commit()
     
     # log in frappe
     create_log_entry("INF", f"Payment prompt initiated for Ipay Request : {docid}")

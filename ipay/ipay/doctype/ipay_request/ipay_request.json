@@ -26,12 +26,12 @@
  ],
  "fields": [
   {
+   "default": "Mpesa Express",
    "fieldname": "payment_request_type",
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Payment Request Type",
-   "options": "Mpesa Express\nMpesa Paybill",
-   "reqd": 1
+   "options": "\nMpesa Express\nMpesa Paybill"
   },
   {
    "fieldname": "amended_from",
@@ -121,7 +121,7 @@
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-01-16 16:30:22.774581",
+ "modified": "2025-01-29 10:33:19.552038",
  "modified_by": "Administrator",
  "module": "Ipay",
  "name": "iPay Request",
