@@ -72,9 +72,3 @@ def get_sid(vid: str, secret_key: str, amount: str, oid: str, phone: str) -> dic
     except requests.RequestException as error:
         logger.error("Error getting SID: %s", error)
         raise RuntimeError("Error getting SID") from error
-      
-      
-      
-
-# 16:23:58 web.1         | INFO:ipay.ipay.main.utils.get_sid:{'header_status': 200, 'status': 1, 'data': {'sid': 'ACCBUL317051737028143174051052BULKBOX', 'oid': 'ACCSINV202500026', 'amount': '1', 'account': 'JT515144903L07', 'payment_channels': [{'name': 'MPESA', 'paybill': '510800'}, {'name': 'AIRTEL', 'paybill': '510800'}, {'name': 'EQUITEL', 'paybill': '510800'}], 'hash': '465ec2ddae64df78bd10d339e404d111bd3d6d840312b276ae712b1334e373a0'}}
-# 
