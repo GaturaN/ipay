@@ -82,8 +82,9 @@ def verify_mpesa_payment(oid, phone, vid, secret_key):
             
             # check if the request was canceled by the user
             if "The request was canceled by the user" in error_message:
-              logger.info("The request was canceled by the user. Exiting verification loop.")
-              raise UserCancelledException("The request was canceled by the user.")
+              pass
+              # logger.info("The request was canceled by the user. Exiting verification loop.")
+              # raise UserCancelledException("The request was canceled by the user.")
             
             logger.error(
                 f"Attempt {attempt}: Failed due to an error: {error_message}\nRetrying..."
@@ -96,7 +97,7 @@ def verify_mpesa_payment(oid, phone, vid, secret_key):
         return None
       
       
-class UserCancelledException(Exception):
-    """Exception raised when the user cancels the payment process."""
-    pass
+# class UserCancelledException(Exception):
+#     """Exception raised when the user cancels the payment process."""
+#     pass
 

@@ -66,6 +66,7 @@ def get_sid(vid: str, secret_key: str, amount: str, oid: str, phone: str) -> dic
         # raise HTTP error for bad responses
         response.raise_for_status()
         logger.info('SID served successfully')
+        logger.info(response.json())
         return response.json()
         
     except requests.RequestException as error:
