@@ -142,15 +142,17 @@ frappe.ui.form.on('iPay Request', {
                                  if (r.message) {
                                     //  handle response for Mpesa Paybill
                                     const message = r.message;
-                                    if (Array.isArray(message) && message.length === 2) {
+                                    if (Array.isArray(message) && message.length === 3) {
                                        const paybill = message[0];
                                        const account = message[1];
+                                       const amount = message[2];
                                        frappe.msgprint({
                                           title: 'Payment Details',
                                           message: ` <p><strong>Use the following details to make the payment</strong></p>
                                           <br><br>
                                           <p><strong>Paybill:</strong> ${paybill}</p>
                                           <p><strong>Account Number:</strong> ${account}</p>
+                                          <p><strong>Amount:</strong> ${amount}</p>
                                           <br><br>
                                           <br><br>
                                           <p style="font-style: italic; text-align: center;">Wait for a minute or two before confirming payment.</p>
