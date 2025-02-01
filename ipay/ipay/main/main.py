@@ -151,4 +151,4 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email, payment_req
           # set status to error
           frappe.db.set_value('iPay Request', docid, 'status', 'Error')
           frappe.db.commit()
-          frappe.throw("An error occurred during the payment process")
+          # frappe.throw("An error occurred during the payment process")
