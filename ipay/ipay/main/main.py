@@ -5,8 +5,6 @@ from ipay.ipay.main.utils.trigger_stk_push import trigger_stk_push
 from ipay.ipay.main.utils.verify_mpesa_payment import verify_mpesa_payment
 from ipay.ipay.main.utils.make_payment_entry import make_payment_entry
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
-# from ipay.ipay.main.utils.verify_mpesa_payment import UserCancelledException
-
 import re
 import requests
 
@@ -71,7 +69,8 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email, payment_req
               mpesa_paybill = channel.get('paybill')
               break
       logger.info(f"Account Number: {account_number}, Paybill: {mpesa_paybill}")
-      return mpesa_paybill, account_number
+      
+      return mpesa_paybill, account_number, amount
      
     else:
         
