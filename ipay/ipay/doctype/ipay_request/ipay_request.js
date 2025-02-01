@@ -175,11 +175,13 @@ frappe.ui.form.on('iPay Request', {
                                  }
                               },
                               error: (err) => {
-                                 frappe.msgprint({
-                                    title: 'Error',
-                                    message: 'Something went wrong: ' + err.message,
-                                    indicator: 'red',
-                                 });
+                                 frappe.show_alert(
+                                    {
+                                       message: 'Something went wrong: ' + err.message,
+                                       indicator: 'red',
+                                    },
+                                    10
+                                 );
                               },
                            });
                         },

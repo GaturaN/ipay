@@ -61,9 +61,9 @@ def verify_mpesa_payment(oid, phone, vid, secret_key):
                 logger.info('Payment verification successful')
                 success = True
                 
-                data = verification_response.json().get('data', {})
-                transaction_code = data.get('transaction_code')
-                transaction_amount = data.get('transaction_amount')
+                # data = verification_response.json().get('data', {})
+                # transaction_code = data.get('transaction_code')
+                # transaction_amount = data.get('transaction_amount')
                 
                 return verification_response.json()                
                 
@@ -82,22 +82,26 @@ def verify_mpesa_payment(oid, phone, vid, secret_key):
             
             # check if the request was canceled by the user
             if "The request was canceled by the user" in error_message:
-              pass
-              # logger.info("The request was canceled by the user. Exiting verification loop.")
-              # raise UserCancelledException("The request was canceled by the user.")
+              message = "The request was canceled by the user"
+              frappe.throw(message)
+              # return message 
+            
+            elif "Incorrect pin has been entered" in error_message:
+              message = "Incorrect pin has been entered"
+              frappe.throw(message)
+              
+            elif "The User Wallet balance is insufficient for the transaction" in error_message:
+              message = "The User has insufficient funds"
+              frappe.throw(message)
             
             logger.error(
                 f"Attempt {attempt}: Failed due to an error: {error_message}\nRetrying..."
             )
+            
+            
             delay(retry_delay)
     
     if not success:
         logger.error("Max retries reached. Payment verification failed.")
         frappe.msgprint("Max retries reached. Payment verification failed.")
         return None
-      
-      
-# class UserCancelledException(Exception):
-#     """Exception raised when the user cancels the payment process."""
-#     pass
-
