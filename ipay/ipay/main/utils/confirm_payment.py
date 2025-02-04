@@ -63,12 +63,22 @@ def confirm_payment(docid, user_id, phone, amount, order, customer_email):
                 amount_float = float(amount)
                 if abs(transaction_amount_float - amount_float) < 1e-2:  # Allow small precision differences
                     logger.info("Payment verification successful")
-                    # frappe.msgprint("Payment verification successful")
                     # logging the transaction details
                     create_log_entry("INF", f"Payment confirmed for Ipay Request : {docid} - {data}")
                     # change the status of the iPay request
                     frappe.db.set_value("iPay Request", docid, "status", "Success")
                     frappe.db.commit()
+                    
+                    # parse the response_data
+                    data = {
+                       'order_id': data.get('oid'),
+                       'transaction_amount': data.get('transaction_amount'),
+                       'transaction_code': data.get('transaction_code'),
+                       'payee': data.get('firstname'),
+                       'payment_mode': data.get('payment_mode'),
+                       'paid_at': data.get('paid_at'),
+                       'telephone': data.get('telephone'),
+                      }
                     
                     return {"status": "success", "message": "Payment verified", "data": data}
                   
