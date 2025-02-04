@@ -1,9 +1,11 @@
 import frappe
 import logging
+import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+@frappe.whitelist()
 def make_payment_entry(user_id, customer_email, inv, response_data):
     try:
         # Log the received parameters
@@ -11,6 +13,10 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
         logger.info(f"Customer Email: {customer_email}")
         logger.info(f"User ID: {user_id}")
         logger.info(f"Response Data: {response_data}")
+        
+        # Ensure response_data is a dictionary
+        if isinstance(response_data, str):  
+            response_data = json.loads(response_data)
         
         # Fetch the Sales Invoice
         sales_invoice = frappe.get_doc("Sales Invoice", inv)

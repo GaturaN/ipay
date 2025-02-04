@@ -249,6 +249,20 @@ function confirmPayment(frm) {
                     `,
                   indicator: 'green',
                });
+
+               const inv = order;
+               const response_data = data;
+               
+               frappe.call({
+                  method: 'ipay.ipay.main.utils.make_payment_entry.make_payment_entry',
+                  args: { user_id, customer_email, inv, response_data },
+                  freeze: false,
+                  async: true,
+
+                  callback: function (r) {
+                     console.log('This is working');
+                  },
+               });
             } else {
                // Handle verification failure
                frappe.msgprint({
