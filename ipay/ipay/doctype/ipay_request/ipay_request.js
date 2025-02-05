@@ -252,7 +252,7 @@ function confirmPayment(frm) {
 
                const inv = order;
                const response_data = data;
-               
+
                frappe.call({
                   method: 'ipay.ipay.main.utils.make_payment_entry.make_payment_entry',
                   args: { user_id, customer_email, inv, response_data },
@@ -260,7 +260,8 @@ function confirmPayment(frm) {
                   async: true,
 
                   callback: function (r) {
-                     console.log('This is working');
+                     const payment_entry = r.message;
+                     frappe.msgprint(`Payment Entry: <a href='/desk/payment-entry/${payment_entry}'>${payment_entry}</a>`);
                   },
                });
             } else {
