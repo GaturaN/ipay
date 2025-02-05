@@ -5,6 +5,9 @@ app_description = "Ipay payment prompt to customer"
 app_email = "gaturanjenga@gmail.com"
 app_license = "MIT"
 
+
+fixtures = ["Mode of Payment"]
+
 # Includes in <head>
 # ------------------
 
