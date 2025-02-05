@@ -36,7 +36,7 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
         payment_entry.payment_type = "Receive"
         payment_entry.payment_order_status = "Initiated"
         payment_entry.posting_date = frappe.utils.today()
-        payment_entry.mode_of_payment = "MPESA"
+        payment_entry.mode_of_payment = "Ipay Mpesa"
         payment_entry.party_type = "Customer"
         payment_entry.party = sales_invoice.customer
         payment_entry.party_name = sales_invoice.customer_name
