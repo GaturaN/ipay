@@ -6,29 +6,36 @@ frappe.ui.form.on('Sales Invoice', {
 
       if (submitted && bal && status !== 'Paid') {
          frm.add_custom_button(__('iPay Request'), () => {
-            // Get values from the sales invoice
             const customer = frm.doc.customer;
             const salesInvoice = frm.doc.name;
 
-            // Check if an iPay Request already exists using get_list
+            // Check if an iPay Request already exists
             frappe.call({
                method: 'frappe.client.get_list',
                args: {
                   doctype: 'iPay Request',
-                  filters: {
-                     sales_invoice: salesInvoice,
-                     docstatus: 1,
-                  },
-                  limit_page_length: 1, // Limit to one record for efficiency
+                  filters: { sales_invoice: salesInvoice, docstatus: 1 },
                   fields: ['name'],
+                  limit_page_length: 1,
                },
                callback: function (response) {
                   if (response.message.length > 0) {
-                     frappe.msgprint(__('An iPay Request for this Sales Invoice already exists'));
+                     const ipay_request_name = response.message[0].name;
+                     const ipay_request_url = `/app/ipay-request/${ipay_request_name}`;
+
+                     frappe.msgprint({
+                        title: __('iPay Request Exists'),
+                        message: __(
+                           `An iPay Request for this Sales Invoice already exists. 
+                          <a href="${ipay_request_url}" target="_blank" style="font-weight:bold; color:#007bff;">Click here to view</a>`
+                        ),
+                        indicator: 'green',
+                     });
+
                      return;
                   }
 
-                  // If no existing request, proceed to create a new one
+                  // If no existing request, create a new iPay Request
                   frappe.call({
                      method: 'frappe.client.insert',
                      args: {
@@ -42,15 +49,19 @@ frappe.ui.form.on('Sales Invoice', {
                      freeze: true,
                      callback: function (r) {
                         if (!r.exc) {
+                           const ipay_request_name = r.message.name;
+
                            frappe.show_alert({
                               message: __('iPay Request Created successfully'),
                               indicator: 'green',
                            });
 
-                           // Confirm if user wants to be redirected
                            frappe.confirm(__('Do you want to be redirected to the newly created iPay Request?'), function () {
-                              frappe.set_route('Form', 'iPay Request', r.message.name);
+                              frappe.set_route('Form', 'iPay Request', ipay_request_name);
                            });
+
+                           // Store iPay Request name in frm for later use
+                           frm.doc.ipay_request = ipay_request_name;
                         } else {
                            frappe.msgprint(__('Failed to create iPay Request'));
                         }
@@ -67,9 +78,7 @@ frappe.ui.form.on('Sales Invoice', {
    on_submit: function (frm) {
       frappe.call({
          method: 'ipay.ipay.main.utils.cod_create_request.create_request',
-         args: {
-            inv: frm.doc.name,
-         },
+         args: { inv: frm.doc.name },
          callback: function (r) {
             if (!r.message) {
                frappe.show_alert({
@@ -79,12 +88,25 @@ frappe.ui.form.on('Sales Invoice', {
                return;
             }
 
-            const { status, message } = r.message;
+            const { status, message: ipay_request_name } = r.message;
 
             if (status === 'success') {
                frappe.show_alert({
-                  message: __(`iPay Request <a href="/app/ipay-request/${message}" target="_blank" style="font-weight:bold; color:white; text-decoration:underline;">${message}</a> created successfully.`),
+                  message: __(`iPay Request <a href="/app/ipay-request/${ipay_request_name}" target="_blank" style="font-weight:bold; color:white; text-decoration:underline;">${ipay_request_name}</a> created successfully.`),
                   indicator: 'green',
+               });
+
+               frappe.call({
+                  method: 'ipay.ipay.main.utils.driver.update_driver',
+                  args: { request_name: ipay_request_name },
+                  callback: function (r) {
+                     if (r.message && r.message.status === 'success') {
+                        frappe.show_alert({
+                           message: __('Driver updated: ' + r.message.driver_name),
+                           indicator: 'blue',
+                        });
+                     }
+                  },
                });
             }
          },
