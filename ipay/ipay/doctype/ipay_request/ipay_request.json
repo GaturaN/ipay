@@ -11,6 +11,8 @@
   "payment_request_type",
   "status",
   "amended_from",
+  "driver",
+  "driver_name",
   "party_details_section",
   "customer",
   "customer_email",
@@ -116,11 +118,27 @@
    "fieldname": "route",
    "fieldtype": "Data",
    "label": "Route"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "driver",
+   "fieldtype": "Link",
+   "label": "Driver",
+   "options": "Driver",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fetch_from": "driver.full_name",
+   "fieldname": "driver_name",
+   "fieldtype": "Data",
+   "label": "Driver Name",
+   "read_only": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-02-27 09:33:10.842637",
+ "modified": "2025-02-27 12:19:37.382925",
  "modified_by": "Administrator",
  "module": "Ipay",
  "name": "iPay Request",
