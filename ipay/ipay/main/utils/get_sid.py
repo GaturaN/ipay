@@ -7,7 +7,7 @@ import frappe
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_sid(vid: str, secret_key: str, amount: str, oid: str, phone: str) -> dict:
+def get_sid(vid: str, secret_key: str, amount: str, oid: str, phone: str) -> dict: 
 
     try:
         inv = oid
@@ -16,11 +16,11 @@ def get_sid(vid: str, secret_key: str, amount: str, oid: str, phone: str) -> dic
         eml = frappe.db.get_value("Sales Invoice", inv, "contact_email")
         # if email is None, set a default
         if not eml:
-            eml = 'gaturanjenga@gmail.com'
+            eml = 'gatura@bulkbox.co.ke'
         
         # callback url for payment status
-        cbk = frappe.get_doc("iPay Settings").callback_url
-        
+        cbk = frappe.get_doc("iPay Settings").callback_url 
+                
         # set to 1 for live, make sure it is string
         isLive = frappe.get_doc("iPay Settings").is_live
         live = str(isLive)
