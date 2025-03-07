@@ -2,7 +2,6 @@
  "actions": [],
  "allow_rename": 1,
  "creation": "2024-12-18 16:20:24.150306",
- "default_view": "List",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -10,7 +9,8 @@
   "vendor_id",
   "api_key",
   "callback_url",
-  "is_live"
+  "is_live",
+  "request_for_cod"
  ],
  "fields": [
   {
@@ -37,12 +37,18 @@
    "fieldname": "callback_url",
    "fieldtype": "Data",
    "label": "Callback URL"
+  },
+  {
+   "default": "0",
+   "fieldname": "request_for_cod",
+   "fieldtype": "Check",
+   "label": "Automatically Create iPay Request for COD Customers Enabled"
   }
  ],
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2024-12-19 23:29:29.318970",
+ "modified": "2025-02-26 20:53:06.907963",
  "modified_by": "Administrator",
  "module": "Ipay",
  "name": "iPay Settings",
@@ -60,6 +66,5 @@
   }
  ],
  "sort_field": "modified",
- "sort_order": "DESC",
- "states": []
+ "sort_order": "DESC"
 }

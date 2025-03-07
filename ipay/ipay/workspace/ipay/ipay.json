@@ -1,0 +1,51 @@
+{
+ "category": "Modules",
+ "charts": [],
+ "creation": "2025-02-28 15:43:09.254849",
+ "developer_mode_only": 0,
+ "disable_user_customization": 0,
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "extends_another_page": 0,
+ "hide_custom": 0,
+ "icon": "expenses",
+ "idx": 0,
+ "is_default": 0,
+ "is_standard": 1,
+ "label": "iPay",
+ "links": [],
+ "modified": "2025-03-05 19:11:55.142662",
+ "modified_by": "Administrator",
+ "module": "Ipay",
+ "name": "iPay",
+ "owner": "Administrator",
+ "pin_to_bottom": 0,
+ "pin_to_top": 0,
+ "shortcuts": [
+  {
+   "doc_view": "List",
+   "label": "iPay Settings",
+   "link_to": "iPay Settings",
+   "type": "DocType"
+  },
+  {
+   "doc_view": "List",
+   "label": "iPay Request",
+   "link_to": "iPay Request",
+   "type": "DocType"
+  },
+  {
+   "doc_view": "List",
+   "label": "iPay Logs",
+   "link_to": "iPay Logs",
+   "type": "DocType"
+  },
+  {
+   "doc_view": "List",
+   "label": "Sales Invoice",
+   "link_to": "Sales Invoice",
+   "type": "DocType"
+  }
+ ],
+ "shortcuts_label": "iPay Doctypes"
+}

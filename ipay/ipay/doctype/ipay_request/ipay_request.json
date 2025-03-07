@@ -2,9 +2,8 @@
  "actions": [],
  "allow_guest_to_view": 1,
  "allow_rename": 1,
- "autoname": "format: iP-REQ-{DD}-{MM}-{YY}-{####}",
+ "autoname": "IPREQ.#####",
  "creation": "2024-12-19 11:22:25.018211",
- "default_view": "List",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -12,6 +11,8 @@
   "payment_request_type",
   "status",
   "amended_from",
+  "driver",
+  "driver_name",
   "party_details_section",
   "customer",
   "customer_email",
@@ -51,6 +52,10 @@
   {
    "fieldname": "customer",
    "fieldtype": "Link",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Customer",
    "options": "Customer",
    "reqd": 1
@@ -83,6 +88,7 @@
    "fieldtype": "Link",
    "in_filter": 1,
    "in_list_view": 1,
+   "in_preview": 1,
    "in_standard_filter": 1,
    "label": "Sales Invoice",
    "options": "Sales Invoice",
@@ -92,6 +98,10 @@
    "fetch_from": "sales_invoice.outstanding_amount",
    "fieldname": "amount",
    "fieldtype": "Data",
+   "in_filter": 1,
+   "in_list_view": 1,
+   "in_preview": 1,
+   "in_standard_filter": 1,
    "label": "Amount"
   },
   {
@@ -117,15 +127,33 @@
    "fieldname": "route",
    "fieldtype": "Data",
    "label": "Route"
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "driver",
+   "fieldtype": "Link",
+   "in_filter": 1,
+   "in_standard_filter": 1,
+   "label": "Driver",
+   "options": "Driver",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fetch_from": "driver.full_name",
+   "fieldname": "driver_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Driver Name",
+   "read_only": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2025-01-29 10:33:19.552038",
+ "modified": "2025-02-27 12:48:19.542424",
  "modified_by": "Administrator",
  "module": "Ipay",
  "name": "iPay Request",
- "naming_rule": "Expression",
  "owner": "Administrator",
  "permissions": [
   {
@@ -144,6 +172,5 @@
  "quick_entry": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": [],
  "track_changes": 1
 }
