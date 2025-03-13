@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 @frappe.whitelist()
 def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email, payment_request_type):
-    # Log the received parameters
+  
     logger.info(
         f"Received doc name: {docid}, Customer Email: {customer_email}, "
         f"User ID: {user_id}, Phone Number: {phone}, Amount: {amount}, "
@@ -112,6 +112,7 @@ def lipana_mpesa(docid, user_id, phone, amount, oid, customer_email, payment_req
               
               create_log_entry("INF", f"Payment received successfully with response_data: {response_data}")
               logger.info("response_data: %s", response_data)
+              
               # set status to success on the ipay request and show success message
               frappe.db.set_value('iPay Request', docid, 'status', "Success")
               frappe.db.commit()

@@ -1,6 +1,5 @@
 {
  "actions": [],
- "allow_guest_to_view": 1,
  "allow_rename": 1,
  "autoname": "IPREQ.#####",
  "creation": "2024-12-19 11:22:25.018211",
@@ -9,17 +8,18 @@
  "engine": "InnoDB",
  "field_order": [
   "payment_request_type",
-  "status",
-  "amended_from",
   "driver",
   "driver_name",
+  "column_break_sqpd",
+  "status",
+  "published",
+  "amended_from",
   "party_details_section",
   "customer",
   "customer_email",
   "customer_phone",
   "column_break_1mkgo",
   "prompted_number",
-  "column_break_mrdws",
   "transaction_details_section",
   "sales_invoice",
   "amount",
@@ -73,10 +73,6 @@
    "fieldname": "customer_phone",
    "fieldtype": "Data",
    "label": "Customer Phone"
-  },
-  {
-   "fieldname": "column_break_mrdws",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "transaction_details_section",
@@ -146,14 +142,27 @@
    "in_list_view": 1,
    "label": "Driver Name",
    "read_only": 1
+  },
+  {
+   "fieldname": "column_break_sqpd",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "fieldname": "published",
+   "fieldtype": "Check",
+   "label": "Published"
   }
  ],
+ "has_web_view": 1,
+ "is_published_field": "published",
  "is_submittable": 1,
  "links": [],
- "modified": "2025-02-27 12:48:19.542424",
+ "modified": "2025-03-13 10:16:09.961893",
  "modified_by": "Administrator",
  "module": "Ipay",
  "name": "iPay Request",
+ "naming_rule": "Expression (old style)",
  "owner": "Administrator",
  "permissions": [
   {
@@ -170,7 +179,9 @@
   }
  ],
  "quick_entry": 1,
+ "route": "ipay-request",
  "sort_field": "modified",
  "sort_order": "DESC",
+ "states": [],
  "track_changes": 1
 }
