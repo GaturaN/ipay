@@ -63,7 +63,8 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
         payment_entry.append("references", {
             "reference_doctype": "Sales Invoice",
             "reference_name": sales_invoice.name,
-            "allocated_amount": transaction_amount
+            "allocated_amount": transaction_amount,
+            "payment_term": "Cash on Delivery"
         })
 
         # Add deductions (if any)
