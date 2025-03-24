@@ -20,9 +20,15 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
         
         # Fetch the Sales Invoice
         sales_invoice = frappe.get_doc("Sales Invoice", inv)
-        if not sales_invoice:
-            logger.error(f"Sales Invoice {inv} not found")
-            return
+        
+        # Get the payment term from the sales invoice
+        payment_terms = getattr(sales_invoice, "payment_terms_template", None)
+
+        if not payment_terms:
+            logger.warning(f"Payment Terms not found for Sales Invoice {inv}, defaulting to 'Cash on Delivery'")
+            payment_terms = "Cash on Delivery"
+        
+        logger.info(f"Sales Invoice {inv} - Payment Terms: {payment_terms}")
 
         # Fetch the cash account
         cash_account = frappe.get_value("Account", {"account_type": "Cash","company": sales_invoice.company, "is_group": 0}, "name")
@@ -30,7 +36,9 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
         if not cash_account:
           logger.error(f"Cash Account not found")
           frappe.log_error(f"Cash Account not found", "Payment Entry Creation Error")
-        
+          
+          
+          
         # Create a new Payment Entry
         payment_entry = frappe.new_doc("Payment Entry")
         payment_entry.payment_type = "Receive"
@@ -64,7 +72,7 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
             "reference_doctype": "Sales Invoice",
             "reference_name": sales_invoice.name,
             "allocated_amount": transaction_amount,
-            "payment_term": "Cash on Delivery"
+            "payment_term": payment_terms
         })
 
         # Add deductions (if any)
