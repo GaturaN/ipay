@@ -148,15 +148,17 @@ frappe.ui.form.on('iPay Request', {
                                        const amount = message[2];
                                        frappe.msgprint({
                                           title: 'Payment Details',
-                                          message: ` <p><strong>Use the following details to make the payment</strong></p>
-                                          <br><br>
-                                          <p><strong>Paybill:</strong> ${paybill}</p>
-                                          <p><strong>Account Number:</strong> ${account}</p>
-                                          <p><strong>Amount:</strong> ${amount}</p>
-                                          <br><br>
-                                          <br><br>
-                                          <p style="font-style: italic; text-align: center;">Wait for a minute or two before confirming payment.</p>
-                                        `,
+                                          message: `<p><strong>Use the following details to make the payment</strong></p>
+                                                    <br><br>
+                                                    <p><strong>Paybill:</strong> ${paybill}</p>
+                                                    <p><strong>Account Number:</strong> ${account}</p>
+                                                    <p><strong>Amount:</strong> ${amount}</p>
+                                                    <br><br>
+                                                    <p style="color: red; font-weight: bold; text-align: center;">
+                                                      ⚠️ Only Use MPESA, AIRTEL, OR EQUITEL. Only pay the exact amount.
+                                                    </p>
+                                                    <br><br>
+                                                    <p style="font-style: italic; text-align: center;">Wait for a minute or two before confirming payment.</p>`,
                                           primary_action: {
                                              label: __('Confirm Payment'),
                                              action() {
@@ -260,8 +262,27 @@ function confirmPayment(frm) {
                   async: true,
 
                   callback: function (r) {
-                     const payment_entry = r.message;
-                     frappe.msgprint(`Payment Entry: <a href='/desk/payment-entry/${payment_entry}'>${payment_entry}</a>`);
+                     const res = r.message;
+                     if (res.status === 'duplicate') {
+                        frappe.msgprint({
+                           title: __('Duplicate Payment Entry'),
+                           message: `A Payment Entry with the same transaction code already exists: 
+                                    <a href="/app/payment-entry/${res.payment_entry}" target="_blank">${res.payment_entry}</a>`,
+                           indicator: 'orange',
+                        });
+                     } else if (res.status === 'success') {
+                        frappe.msgprint({
+                           title: __('Payment Entry Created'),
+                           message: `Payment Entry: <a href="/app/payment-entry/${res.payment_entry}" target="_blank">${res.payment_entry}</a>`,
+                           indicator: 'green',
+                        });
+                     } else {
+                        frappe.msgprint({
+                           title: __('Payment Entry Error'),
+                           message: __(res.message || 'An unknown error occurred while creating the payment entry.'),
+                           indicator: 'red',
+                        });
+                     }
                   },
                });
             } else {
