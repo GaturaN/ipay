@@ -5,6 +5,7 @@
       const submitted = frm.doc.docstatus === 1;
       const status = frm.doc.status;
       const bal = frm.doc.outstanding_amount > 0;
+      const is_return = frm.doc.is_return == 1;
       if (submitted && bal && status !== "Paid") {
         frm.add_custom_button(__("iPay Request"), () => {
           const customer = frm.doc.customer;
@@ -99,4 +100,4 @@
     }
   });
 })();
-//# sourceMappingURL=sales_invoice.bundle.P3VHUPMA.js.map
+//# sourceMappingURL=sales_invoice.bundle.4IT6JY7K.js.map
