@@ -23,7 +23,8 @@
    "in_standard_filter": 1,
    "label": "Log type",
    "options": "\nINF\nERR",
-   "read_only": 1
+   "read_only": 1,
+   "sort_options": 1
   },
   {
    "fieldname": "description",
@@ -48,7 +49,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-03-20 13:19:53.119722",
+ "modified": "2025-04-08 16:32:39.477359",
  "modified_by": "Administrator",
  "module": "Ipay",
  "name": "iPay Logs",

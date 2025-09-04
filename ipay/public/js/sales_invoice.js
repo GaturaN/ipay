@@ -3,6 +3,7 @@ frappe.ui.form.on('Sales Invoice', {
       const submitted = frm.doc.docstatus === 1;
       const status = frm.doc.status;
       const bal = frm.doc.outstanding_amount > 0;
+      const is_return = frm.doc.is_return == 1;
 
       if (submitted && bal && status !== 'Paid') {
          frm.add_custom_button(__('iPay Request'), () => {
