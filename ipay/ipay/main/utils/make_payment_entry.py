@@ -17,76 +17,62 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
 
         # Ensure response_data is a dictionary
         if isinstance(response_data, str):
-            try:
-                response_data = json.loads(response_data)
-            except json.JSONDecodeError:
-                logger.error("Invalid JSON in response_data")
-                return {"status": "error", "message": "Invalid JSON in response_data"}
-
-        # Extract transaction code
-        transaction_code = response_data.get("transaction_code")
-        if transaction_code:
-            existing_payment = frappe.db.exists(
-                "Payment Entry", {"reference_no": transaction_code}
-            )
-            if existing_payment:
-                logger.warning(f"Duplicate Payment Entry found: {existing_payment}")
-                return {
-                    "status": "duplicate",
-                    "message": f"Payment Entry already exists with transaction code {transaction_code}",
-                    "payment_entry": existing_payment,
-                }
+            response_data = json.loads(response_data)
 
         # Fetch the Sales Invoice
         sales_invoice = frappe.get_doc("Sales Invoice", inv)
-        payment_terms = (
-            getattr(sales_invoice, "payment_terms_template", None) or "Cash on Delivery"
-        )
+
+        # Get the payment term from the sales invoice
+        payment_terms = getattr(sales_invoice, "payment_terms_template", None)
+
+        if not payment_terms:
+            logger.warning(
+                f"Payment Terms not found for Sales Invoice {inv}, defaulting to 'Cash on Delivery'"
+            )
+            payment_terms = "Cash on Delivery"
+
         logger.info(f"Sales Invoice {inv} - Payment Terms: {payment_terms}")
 
         # Fetch the cash account
-        cash_account = frappe.get_value(
-            "Account",
-            {"account_type": "Cash", "company": sales_invoice.company, "is_group": 0},
-            "name",
-        )
+        # cash_account = frappe.get_value("Account", {"account_type": "Cash","company": sales_invoice.company, "is_group": 0}, "name")
+        cash_account = "Cash - TSL"
 
+        # logger.info(f"Cash Account: {cash_account}")
         if not cash_account:
-            logger.error("Cash Account not found")
-            frappe.log_error("Cash Account not found", "Payment Entry Creation Error")
-            return {"status": "error", "message": "Cash Account not found"}
+            logger.error(f"Cash Account not found")
+            frappe.log_error(f"Cash Account not found", "Payment Entry Creation Error")
 
-        # Create Payment Entry
-        transaction_amount = float(response_data.get("transaction_amount", 0))
+        # Create a new Payment Entry
         payment_entry = frappe.new_doc("Payment Entry")
-        payment_entry.update(
-            {
-                "payment_type": "Receive",
-                "payment_order_status": "Initiated",
-                "posting_date": frappe.utils.today(),
-                "mode_of_payment": "Ipay Mpesa",
-                "party_type": "Customer",
-                "party": sales_invoice.customer,
-                "party_name": sales_invoice.customer_name,
-                "paid_to": cash_account,
-                "paid_amount": transaction_amount,
-                "base_paid_amount": transaction_amount,
-                "received_amount": transaction_amount,
-                "base_received_amount": transaction_amount,
-                "source_exchange_rate": 1.0,
-                "target_exchange_rate": 1.0,
-                "unallocated_amount": transaction_amount,
-                "reference_no": transaction_code,
-                "reference_date": response_data.get("paid_at", frappe.utils.today()),
-                "custom_remarks": 1,
-                "remarks": (
-                    f"Amount KES {transaction_amount} received from {sales_invoice.customer} - {response_data.get('payee')} "
-                    f"against Sales Invoice {sales_invoice.name}\n"
-                    f"Transaction reference no {transaction_code} dated {response_data.get('paid_at', frappe.utils.today())}"
-                ),
-            }
+        payment_entry.payment_type = "Receive"
+        payment_entry.payment_order_status = "Initiated"
+        payment_entry.posting_date = frappe.utils.today()
+        payment_entry.mode_of_payment = "MPESA"
+        payment_entry.party_type = "Customer"
+        payment_entry.party = sales_invoice.customer
+        payment_entry.party_name = sales_invoice.customer_name
+        payment_entry.paid_to = cash_account
+
+        # Transaction amount
+        transaction_amount = float(response_data.get("transaction_amount", 0))
+        payment_entry.paid_amount = transaction_amount
+        payment_entry.source_exchange_rate = 1.0
+        payment_entry.base_paid_amount = transaction_amount
+        payment_entry.received_amount = transaction_amount
+        payment_entry.target_exchange_rate = 1.0
+        payment_entry.base_received_amount = transaction_amount
+        payment_entry.unallocated_amount = transaction_amount
+        payment_entry.reference_no = response_data.get("transaction_code", "")
+        payment_entry.reference_date = response_data.get(
+            "paid_at", frappe.utils.today()
+        )
+        payment_entry.custom_remarks = 1
+        payment_entry.remarks = (
+            f"Amount KES {transaction_amount} received from {sales_invoice.customer} - {response_data.get('payee')} against Sales Invoice {sales_invoice.name}\n"
+            f"Transaction reference no {response_data.get('transaction_code', '')} dated {response_data.get('paid_at', frappe.utils.today())}"
         )
 
+        # Add references (linked Sales Invoice)
         payment_entry.append(
             "references",
             {
@@ -97,14 +83,21 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
             },
         )
 
-        # Save and Submit
+        # Add deductions (if any)
+        payment_entry.deductions = []
+
+        # Save and Submit the Payment Entry
         payment_entry.insert()
         payment_entry.submit()
 
-        logger.info(f"Payment Entry {payment_entry.name} created successfully.")
-        return {"status": "success", "payment_entry": payment_entry.name}
+        # Log success
+        logger.info(
+            f"Payment Entry {payment_entry.name} created successfully for Sales Invoice {inv}."
+        )
+        return payment_entry.name
 
     except Exception as e:
+        # Log the exception
         logger.error(f"Error creating Payment Entry: {str(e)}", exc_info=True)
         frappe.log_error(frappe.get_traceback(), "Payment Entry Creation Error")
-        return {"status": "error", "message": str(e)}
+        return None
