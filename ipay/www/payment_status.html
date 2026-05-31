@@ -1,0 +1,16 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<div class="container" style="max-width: 540px; margin-top: 60px; text-align: center;">
+  {% if confirmed %}
+    <h2>Payment received</h2>
+    <p>Thank you. Your payment has been confirmed.</p>
+  {% elif mismatch %}
+    <h2>Payment received &mdash; under review</h2>
+    <p>We received a payment with a different amount than expected. Our team will reconcile it shortly.</p>
+  {% else %}
+    <h2>Confirming your payment&hellip;</h2>
+    <p>If you have paid, your payment is being confirmed and will reflect within a few minutes.</p>
+  {% endif %}
+</div>
+{% endblock %}
