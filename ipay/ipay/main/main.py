@@ -5,7 +5,7 @@ from ipay.ipay.main.utils.trigger_stk_push import trigger_stk_push
 from ipay.ipay.main.utils.verify_mpesa_payment import verify_mpesa_payment
 from ipay.ipay.main.utils.make_payment_entry import make_payment_entry
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
-from ipay.ipay.main.utils.send_callback import send_callback
+from ipay.ipay.main.utils.send_callback import deliver_callback
 import re
 
 logging.basicConfig(level=logging.INFO)
@@ -127,7 +127,7 @@ def lipana_mpesa(
                 frappe.msgprint("Payment received successfully")
 
                 # send post request to call back url
-                send_callback(response_data)
+                deliver_callback(docid, response_data)
 
                 # call function to create payment entry
                 result = make_payment_entry(user_id, customer_email, inv, response_data)
