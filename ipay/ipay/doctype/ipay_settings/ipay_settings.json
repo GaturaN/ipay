@@ -10,7 +10,8 @@
   "api_key",
   "callback_url",
   "is_live",
-  "request_for_cod"
+  "request_for_cod",
+  "enable_redirect"
  ],
  "fields": [
   {
@@ -43,6 +44,12 @@
    "fieldname": "request_for_cod",
    "fieldtype": "Check",
    "label": "Automatically Create iPay Request for COD Customers Enabled"
+  },
+  {
+   "default": "0",
+   "fieldname": "enable_redirect",
+   "fieldtype": "Check",
+   "label": "Use Hosted Checkout Redirect"
   }
  ],
  "index_web_pages_for_search": 1,
