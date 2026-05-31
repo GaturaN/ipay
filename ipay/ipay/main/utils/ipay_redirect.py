@@ -78,3 +78,27 @@ def ipay_return(**kwargs):
 
     frappe.local.response["type"] = "redirect"
     frappe.local.response["location"] = f"/payment_status?request={request_name or ''}"
+
+
+@frappe.whitelist()
+def start_checkout(invoice):
+    """Operator action from the collection page: ensure a submitted iPay Request
+    exists for the invoice, then send the browser to the hosted checkout."""
+    request_name = frappe.db.get_value(
+        "iPay Request", {"sales_invoice": invoice, "docstatus": 1}, "name"
+    )
+    if not request_name:
+        invoice_doc = frappe.get_doc("Sales Invoice", invoice)
+        request = frappe.get_doc(
+            {
+                "doctype": "iPay Request",
+                "customer": invoice_doc.customer,
+                "sales_invoice": invoice,
+                "docstatus": 1,
+            }
+        )
+        request.insert(ignore_permissions=True)
+        request_name = request.name
+
+    frappe.local.response["type"] = "redirect"
+    frappe.local.response["location"] = f"/ipay_checkout?request={request_name}"
