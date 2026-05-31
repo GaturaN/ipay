@@ -59,6 +59,28 @@ def reconcile_pending_payments():
             create_log_entry("ERR", f"Reconcile failed for {req.name}: {error}")
 
 
+def reconcile_request(request_name):
+    """Finalise a single iPay Request on demand (used by the redirect return
+    handler). Verifies the payment, creates the Payment Entry and delivers the
+    n8n callback, reusing the same idempotent path as the scheduled poller."""
+    req = frappe.db.get_value(
+        "iPay Request",
+        request_name,
+        ["name", "sales_invoice", "amount", "customer", "customer_email"],
+        as_dict=True,
+    )
+    if not req:
+        return
+
+    settings = frappe.get_single("iPay Settings")
+    vid = (settings.vendor_id or "").lower()
+    secret_key = settings.api_key
+    if not vid or not secret_key:
+        return
+
+    _reconcile_one(req, vid, secret_key)
+
+
 def _reconcile_one(req, vid, secret_key):
     if not req.sales_invoice:
         return
