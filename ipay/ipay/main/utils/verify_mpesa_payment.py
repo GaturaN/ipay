@@ -93,11 +93,10 @@ def verify_mpesa_payment(oid, phone, vid, secret_key):
             elif "The User Wallet balance is insufficient for the transaction" in error_message:
               message = "The User has insufficient funds"
               frappe.throw(message)
-              
-            elif "The transaction was timed out" in error_message:
-              message = "The transaction was timed out"
-              frappe.throw(message)
-            
+
+            # "The transaction was timed out" is transient while iPay waits for the
+            # customer to pay, so keep polling instead of aborting.
+
             logger.error(
                 f"Attempt {attempt}: Failed due to an error: {error_message}\nRetrying..."
             )
