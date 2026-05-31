@@ -23,7 +23,8 @@
   "transaction_details_section",
   "sales_invoice",
   "amount",
-  "route"
+  "route",
+  "callback_delivered"
  ],
  "fields": [
   {
@@ -105,7 +106,7 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "\nFailed to complete request\nSuccess\nError",
+   "options": "\nFailed to complete request\nSuccess\nError\nAmount Mismatch",
    "read_only": 1
   },
   {
@@ -152,6 +153,14 @@
    "fieldname": "published",
    "fieldtype": "Check",
    "label": "Published"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "fieldname": "callback_delivered",
+   "fieldtype": "Check",
+   "label": "Callback Delivered",
+   "read_only": 1
   }
  ],
  "has_web_view": 1,
