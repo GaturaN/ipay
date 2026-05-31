@@ -20,7 +20,7 @@ def create_log_entry(log_type, description):
   try:
     log_entry = frappe.get_doc({
       "doctype": "iPay Logs",
-      "type": log_type,
+      "log_type": log_type,
       "description": description,
       "time": datetime.now()
     })
