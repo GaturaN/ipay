@@ -119,6 +119,12 @@ function ipayToggleHelp() {
   if (caret) { caret.innerHTML = open ? "&#9656;" : "&#9662;"; }
 }
 
+function ipayEsc(s) {
+  var d = document.createElement("div");
+  d.textContent = (s == null ? "" : String(s));
+  return d.innerHTML;
+}
+
 function ipayNotify(message, type) {
   var c = document.getElementById("ipay-alerts");
   if (!c) { return; }
@@ -135,8 +141,8 @@ function ipayRemoveRow(invoice) {
 }
 
 function ipayPoll(request, invoice) {
-  var tries = 0, max = 25;
-  var iv = setInterval(function () {
+  var tries = 0, max = 40, iv;
+  function check() {
     tries++;
     frappe.call({
       method: "ipay.ipay.main.utils.ipay_redirect.payment_state",
@@ -145,18 +151,20 @@ function ipayPoll(request, invoice) {
         var s = r.message || {};
         if (s.paid) {
           clearInterval(iv);
-          ipayNotify("<strong>Payment received</strong> &mdash; " + (s.detail || invoice), "success");
+          ipayNotify("<strong>Payment received</strong> &mdash; " + (s.detail ? ipayEsc(s.detail) : ipayEsc(invoice)), "success");
           ipayRemoveRow(invoice);
         } else if (s.failed) {
           clearInterval(iv);
-          ipayNotify("<strong>Payment failed</strong> (" + invoice + ") &mdash; " + (s.detail || "no reason given"), "danger");
+          ipayNotify("<strong>Payment failed</strong> (" + ipayEsc(invoice) + ") &mdash; " + (s.detail ? ipayEsc(s.detail) : "no reason given"), "danger");
         } else if (tries >= max) {
           clearInterval(iv);
           ipayNotify("Still awaiting payment for " + invoice + ". It will confirm automatically if the customer pays.", "warning");
         }
       }
     });
-  }, 4000);
+  }
+  check();                     // check immediately, don't wait a full interval
+  iv = setInterval(check, 3000);
 }
 
 function ipayPromptMpesa(invoice) {

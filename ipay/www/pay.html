@@ -68,8 +68,8 @@ function ipayPayNotify(message, type) {
 }
 
 function ipayPayPoll() {
-  var tries = 0, max = 25;
-  var iv = setInterval(function () {
+  var tries = 0, max = 40, iv;
+  function check() {
     tries++;
     frappe.call({
       method: "ipay.ipay.main.utils.ipay_redirect.pay_state",
@@ -78,17 +78,19 @@ function ipayPayPoll() {
         var s = r.message || {};
         if (s.paid) {
           clearInterval(iv);
-          ipayPayNotify("<strong>Payment received.</strong> " + (s.detail || "Thank you!"), "success");
+          ipayPayNotify("<strong>Payment received.</strong> Thank you!", "success");
         } else if (s.failed) {
           clearInterval(iv);
-          ipayPayNotify("<strong>Payment failed.</strong> " + (s.detail || "Please try again."), "danger");
+          ipayPayNotify("<strong>Payment failed.</strong> Please try again.", "danger");
         } else if (tries >= max) {
           clearInterval(iv);
           ipayPayNotify("Still waiting for your payment. If you've paid, it will reflect shortly.", "warning");
         }
       }
     });
-  }, 4000);
+  }
+  check();                     // check immediately
+  iv = setInterval(check, 3000);
 }
 
 function ipayPaySubmitMpesa() {
