@@ -41,28 +41,88 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
                     "message": "Payment Entry already exists",
                 }
 
-        # Fetch the Sales Invoice
-        sales_invoice = frappe.get_doc("Sales Invoice", inv)
+        flt = frappe.utils.flt
 
-        # Get the payment term from the sales invoice
-        payment_terms = getattr(sales_invoice, "payment_terms_template", None)
+        # Resolve the invoices this payment covers: a bundle uses the iPay
+        # Request's child table; a single request uses the one Sales Invoice.
+        invoice_names = []
+        if ipay_request:
+            invoice_names = [
+                name
+                for name in frappe.get_all(
+                    "iPay Request Invoice",
+                    filters={"parent": ipay_request, "parenttype": "iPay Request"},
+                    pluck="sales_invoice",
+                )
+                if name
+            ]
+        if not invoice_names:
+            invoice_names = [inv]
 
-        if not payment_terms:
-            logger.warning(
-                f"Payment Terms not found for Sales Invoice {inv}, defaulting to 'Cash on Delivery'"
-            )
-            payment_terms = "Cash on Delivery"
+        # Pull live invoice data and allocate oldest-first against current
+        # outstanding (so an invoice paid elsewhere meanwhile is skipped).
+        invoices = sorted(
+            (
+                frappe.db.get_value(
+                    "Sales Invoice",
+                    name,
+                    ["name", "outstanding_amount", "posting_date", "customer", "customer_name"],
+                    as_dict=True,
+                )
+                for name in invoice_names
+            ),
+            key=lambda si: (si.posting_date, si.name),
+        )
+        primary = invoices[0]
 
-        logger.info(f"Sales Invoice {inv} - Payment Terms: {payment_terms}")
+        transaction_amount = flt(response_data.get("transaction_amount", 0))
+        remaining = transaction_amount
+        references = []
+        for si in invoices:
+            if remaining <= 0:
+                break
+            if flt(si.outstanding_amount) <= 0:
+                continue
 
-        # Fetch the cash account
-        # cash_account = frappe.get_value("Account", {"account_type": "Cash","company": sales_invoice.company, "is_group": 0}, "name")
+            # Invoices with payment terms must allocate per term (oldest due
+            # first) and carry the payment_term on the reference; others take a
+            # single reference.
+            terms = [
+                t
+                for t in frappe.get_all(
+                    "Payment Schedule",
+                    filters={"parent": si.name, "parenttype": "Sales Invoice"},
+                    fields=["payment_term", "outstanding"],
+                    order_by="due_date asc",
+                )
+                if flt(t.outstanding) > 0
+            ]
+            if terms:
+                for term in terms:
+                    if remaining <= 0:
+                        break
+                    allocated = min(remaining, flt(term.outstanding))
+                    references.append(
+                        {
+                            "reference_doctype": "Sales Invoice",
+                            "reference_name": si.name,
+                            "payment_term": term.payment_term,
+                            "allocated_amount": allocated,
+                        }
+                    )
+                    remaining = flt(remaining - allocated)
+            else:
+                allocated = min(remaining, flt(si.outstanding_amount))
+                references.append(
+                    {
+                        "reference_doctype": "Sales Invoice",
+                        "reference_name": si.name,
+                        "allocated_amount": allocated,
+                    }
+                )
+                remaining = flt(remaining - allocated)
+
         cash_account = "Cash - TSL"
-
-        # logger.info(f"Cash Account: {cash_account}")
-        if not cash_account:
-            logger.error(f"Cash Account not found")
-            frappe.log_error(f"Cash Account not found", "Payment Entry Creation Error")
 
         # Create a new Payment Entry
         payment_entry = frappe.new_doc("Payment Entry")
@@ -71,39 +131,32 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
         payment_entry.posting_date = frappe.utils.today()
         payment_entry.mode_of_payment = "MPESA"
         payment_entry.party_type = "Customer"
-        payment_entry.party = sales_invoice.customer
-        payment_entry.party_name = sales_invoice.customer_name
+        payment_entry.party = primary.customer
+        payment_entry.party_name = primary.customer_name
         payment_entry.paid_to = cash_account
 
-        # Transaction amount
-        transaction_amount = float(response_data.get("transaction_amount", 0))
         payment_entry.paid_amount = transaction_amount
         payment_entry.source_exchange_rate = 1.0
         payment_entry.base_paid_amount = transaction_amount
         payment_entry.received_amount = transaction_amount
         payment_entry.target_exchange_rate = 1.0
         payment_entry.base_received_amount = transaction_amount
-        payment_entry.unallocated_amount = transaction_amount
+        # Whatever could not be allocated to an invoice (overpayment) stays as
+        # unallocated customer credit. ERPNext recomputes this on validate.
+        payment_entry.unallocated_amount = remaining
         payment_entry.reference_no = response_data.get("transaction_code", "")
         payment_entry.reference_date = response_data.get(
             "paid_at", frappe.utils.today()
         )
         payment_entry.custom_remarks = 1
+        allocated_to = ", ".join(r["reference_name"] for r in references) or primary.name
         payment_entry.remarks = (
-            f"Amount KES {transaction_amount} received from {sales_invoice.customer} - {response_data.get('payee')} against Sales Invoice {sales_invoice.name}\n"
+            f"Amount KES {transaction_amount} received from {primary.customer} - {response_data.get('payee')} against {allocated_to}\n"
             f"Transaction reference no {response_data.get('transaction_code', '')} dated {response_data.get('paid_at', frappe.utils.today())}"
         )
 
-        # Add references (linked Sales Invoice)
-        payment_entry.append(
-            "references",
-            {
-                "reference_doctype": "Sales Invoice",
-                "reference_name": sales_invoice.name,
-                "allocated_amount": transaction_amount,
-                "payment_term": payment_terms,
-            },
-        )
+        for ref in references:
+            payment_entry.append("references", ref)
 
         # Add deductions (if any)
         payment_entry.deductions = []
