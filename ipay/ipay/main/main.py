@@ -56,7 +56,7 @@ def lipana_mpesa(
     # check if payemnt_request_tyoe is Mpesa Paybill
     if payment_request_type == "Mpesa Paybill":
         # get session id
-        response = get_sid(vid, secret_key, amount, oid, phone)
+        response = get_sid(vid, secret_key, amount, oid, phone, eml=customer_email, sales_invoice=inv)
         sid = response.get("data", {})
 
         if not sid:
@@ -80,7 +80,7 @@ def lipana_mpesa(
 
         try:
             # get session id
-            response = get_sid(vid, secret_key, amount, oid, phone)
+            response = get_sid(vid, secret_key, amount, oid, phone, eml=customer_email, sales_invoice=inv)
             sid = response.get("data", {}).get("sid")
 
             if not sid:

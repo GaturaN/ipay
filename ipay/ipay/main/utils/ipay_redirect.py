@@ -66,7 +66,7 @@ def build_checkout_form(request_name, phone=None):
     fields = {
         "live": "1" if settings.is_live else "0",
         "oid": oid,
-        "inv": oid,
+        "inv": re.sub(UNWANTED_OID_CHARACTERS, "", req.sales_invoice),
         "ttl": f"{amount:.2f}",
         "tel": normalize_phone(phone or req.customer_phone),
         "eml": req.customer_email or "",

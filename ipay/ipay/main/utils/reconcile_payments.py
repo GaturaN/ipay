@@ -8,8 +8,8 @@ from ipay.ipay.main.utils.make_payment_entry import make_payment_entry
 from ipay.ipay.main.utils.send_callback import deliver_callback
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
 
-# Order ids are derived from the Sales Invoice exactly as the original /transact
-# request did (see main.py / confirm_payment.py), so the search matches.
+# Order ids are derived from the iPay Request name exactly as the original
+# /transact request did (see main.py / ipay_redirect.py), so the search matches.
 UNWANTED_OID_CHARACTERS = r"[-/;:~`!%^*<&_]"
 
 # Only reconcile requests created within this window; older unconfirmed requests
