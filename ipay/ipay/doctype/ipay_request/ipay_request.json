@@ -25,7 +25,8 @@
   "amount",
   "route",
   "callback_delivered",
-  "result_detail"
+  "result_detail",
+  "pay_token"
  ],
  "fields": [
   {
@@ -169,6 +170,15 @@
    "fieldtype": "Small Text",
    "label": "Result Detail",
    "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "pay_token",
+   "fieldtype": "Data",
+   "label": "Payment Link Token",
+   "read_only": 1,
+   "unique": 1,
+   "no_copy": 1
   }
  ],
  "has_web_view": 1,

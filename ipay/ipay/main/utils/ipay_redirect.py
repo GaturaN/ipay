@@ -121,34 +121,48 @@ def _ensure_request(invoice):
     return request.name
 
 
-@frappe.whitelist()
-def start_checkout(invoice):
-    """Operator action from the collection page: ensure a submitted iPay Request
-    exists for the invoice, then send the browser to the hosted checkout. The
-    payer's number defaults to the customer's number on file (iPay requires a
-    tel); the checkout page asks for one only if none is on file."""
-    request_name = _ensure_request(invoice)
-    frappe.local.response["type"] = "redirect"
-    frappe.local.response["location"] = f"/ipay_checkout?request={request_name}"
+def _ensure_pay_token(request_name):
+    """Return the request's non-guessable payment-link token, generating it on
+    first use."""
+    token = frappe.db.get_value("iPay Request", request_name, "pay_token")
+    if not token:
+        token = frappe.generate_hash(length=24)
+        frappe.db.set_value("iPay Request", request_name, "pay_token", token)
+    return token
 
 
-@frappe.whitelist()
-def prompt_mpesa(invoice, phone=None):
-    """Operator action: send an M-Pesa STK push for the invoice (creating the
-    iPay Request if needed). The STK + verify flow is enqueued on a background
-    worker so the web request returns immediately (the verify loop can exceed the
-    30s gunicorn timeout); the reconcile poller backstops finalisation."""
-    request_name = _ensure_request(invoice)
+def _request_from_token(token):
+    """Resolve a payment-link token to its iPay Request name, or None."""
+    if not token:
+        return None
+    return frappe.db.get_value("iPay Request", {"pay_token": token}, "name")
+
+
+def _payment_state(request_name):
+    row = frappe.db.get_value(
+        "iPay Request", request_name, ["status", "result_detail"], as_dict=True
+    ) or {}
+    status = row.get("status") or ""
+    return {
+        "status": status,
+        "paid": status == "Success",
+        "failed": status in ("Error", "Failed to complete request"),
+        "detail": row.get("result_detail") or "",
+    }
+
+
+def _enqueue_stk(request_name, phone):
+    """Enqueue an M-Pesa STK push on the long worker (the verify loop can exceed
+    the 30s gunicorn timeout); the reconcile poller backstops finalisation."""
     req = frappe.db.get_value(
         "iPay Request",
         request_name,
         ["customer", "customer_phone", "customer_email", "amount", "sales_invoice"],
         as_dict=True,
     )
-
     phone = normalize_phone(phone or req.customer_phone)
     if not phone:
-        return {"status": "error", "message": "No phone number on file for this customer."}
+        return {"status": "error", "message": "No phone number provided."}
 
     frappe.enqueue(
         "ipay.ipay.main.main.lipana_mpesa",
@@ -161,24 +175,62 @@ def prompt_mpesa(invoice, phone=None):
         customer_email=req.customer_email,
         payment_request_type="Mpesa Express",
     )
+    return {"status": "sent", "message": "M-Pesa prompt sent. Awaiting payment."}
+
+
+@frappe.whitelist()
+def start_checkout(invoice):
+    """Operator action from the collection page: ensure a submitted iPay Request
+    (and its token) exist, then send the browser to the hosted checkout."""
+    request_name = _ensure_request(invoice)
+    token = _ensure_pay_token(request_name)
+    frappe.local.response["type"] = "redirect"
+    frappe.local.response["location"] = f"/ipay_checkout?token={token}"
+
+
+@frappe.whitelist()
+def get_payment_link(invoice=None, request=None):
+    """Return a shareable, tokenised payment link for an invoice or request."""
+    request_name = request or (_ensure_request(invoice) if invoice else None)
+    if not request_name:
+        frappe.throw("An invoice or iPay Request is required.")
+    token = _ensure_pay_token(request_name)
     return {
-        "status": "sent",
-        "request": request_name,
-        "message": "M-Pesa prompt sent to the customer. The payment will confirm automatically.",
+        "url": frappe.utils.get_url("/pay?token=" + token),
+        "redirect_enabled": bool(
+            frappe.db.get_single_value("iPay Settings", "enable_redirect")
+        ),
     }
 
 
 @frappe.whitelist()
+def prompt_mpesa(invoice, phone=None):
+    """Operator action (collection page): send an M-Pesa STK push for an invoice."""
+    request_name = _ensure_request(invoice)
+    result = _enqueue_stk(request_name, phone)
+    result["request"] = request_name
+    return result
+
+
+@frappe.whitelist()
 def payment_state(request):
-    """Lightweight poll target for the collection page: report whether a request
-    has been paid/failed yet and the human-readable result detail."""
-    row = frappe.db.get_value(
-        "iPay Request", request, ["status", "result_detail"], as_dict=True
-    ) or {}
-    status = row.get("status") or ""
-    return {
-        "status": status,
-        "paid": status == "Success",
-        "failed": status in ("Error", "Failed to complete request"),
-        "detail": row.get("result_detail") or "",
-    }
+    """Poll target for the collection page (operator, by request name)."""
+    return _payment_state(request)
+
+
+@frappe.whitelist(allow_guest=True)
+def pay_prompt_mpesa(token, phone):
+    """Customer action on the payment-link page: STK push, authorised by token."""
+    request_name = _request_from_token(token)
+    if not request_name:
+        return {"status": "error", "message": "Invalid or expired payment link."}
+    return _enqueue_stk(request_name, phone)
+
+
+@frappe.whitelist(allow_guest=True)
+def pay_state(token):
+    """Poll target for the payment-link page (customer, by token)."""
+    request_name = _request_from_token(token)
+    if not request_name:
+        return {"status": "", "paid": False, "failed": False, "detail": ""}
+    return _payment_state(request_name)

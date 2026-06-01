@@ -1,18 +1,19 @@
 import frappe
 
-from ipay.ipay.main.utils.ipay_redirect import build_checkout_form
+from ipay.ipay.main.utils.ipay_redirect import build_checkout_form, _request_from_token
 
 
 def get_context(context):
     context.no_cache = 1
-    request_name = frappe.form_dict.get("request")
+    token = frappe.form_dict.get("token")
     settings = frappe.get_single("iPay Settings")
 
     if not settings.enable_redirect:
         context.disabled = True
         return
 
-    if not request_name or not frappe.db.exists("iPay Request", request_name):
+    request_name = _request_from_token(token)
+    if not request_name:
         context.not_found = True
         return
 
@@ -21,7 +22,7 @@ def get_context(context):
     # iPay requires a telephone number; if none was supplied or on file, ask for one.
     if not fields.get("tel"):
         context.phone_required = True
-        context.request_name = request_name
+        context.token = token
         return
 
     context.action = action
