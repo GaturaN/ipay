@@ -7,7 +7,29 @@
   <div class="card shadow-sm">
     <div class="card-body">
       <h3 class="card-title mb-1">Collect Payment</h3>
-      <p class="text-muted">Prompt a customer for payment via iPay. Choose M-Pesa (STK) or the iPay checkout page.</p>
+      <p class="text-muted">Prompt a customer for payment. Pick the option that matches how they want to pay.</p>
+
+      <div class="card bg-light mb-3">
+        <div class="card-body py-2">
+          <strong>Which option should I use?</strong>
+          <ul class="mb-0 mt-2 small" style="padding-left: 1.1rem;">
+            <li class="mb-1">
+              <span class="badge badge-success">Prompt M-Pesa</span>
+              Sends an M-Pesa PIN prompt straight to the customer's phone — they just enter their PIN.
+              Use this for M-Pesa: you can charge <em>any</em> M-Pesa number (you'll be asked for it), and
+              the result — success with the payment details, or the reason it failed — appears on this page.
+            </li>
+            {% if enable_redirect %}
+            <li>
+              <span class="badge badge-primary">Pay via iPay</span>
+              Opens iPay's secure checkout page where the customer can pay by <strong>card, Airtel Money or M-Pesa</strong>.
+              Use this for cards or Airtel. Note: on that page the M-Pesa number is fixed to the customer's saved
+              number — to charge a <em>different</em> M-Pesa number, use <span class="badge badge-success">Prompt M-Pesa</span> instead.
+            </li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
 
       <div id="ipay-alerts"></div>
 
