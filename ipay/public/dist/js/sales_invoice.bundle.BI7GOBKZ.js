@@ -62,6 +62,29 @@
             }
           });
         }).addClass("btn-warning").removeClass("btn-default");
+        frm.add_custom_button(__("Copy Payment Link"), () => {
+          frappe.call({
+            method: "ipay.ipay.main.utils.ipay_redirect.get_payment_link",
+            args: { invoice: frm.doc.name },
+            freeze: true,
+            callback: function(r) {
+              const res = r.message || {};
+              if (!res.url) {
+                frappe.msgprint(__("Could not generate a payment link."));
+                return;
+              }
+              if (navigator.clipboard) {
+                navigator.clipboard.writeText(res.url);
+              }
+              const warn = res.redirect_enabled ? "" : '<br><span style="color:#b7791f">Enable "Use Hosted Checkout Redirect" in iPay Settings so the card/iPay option works.</span>';
+              frappe.msgprint({
+                title: __("Payment Link (copied to clipboard)"),
+                message: `<div style="word-break:break-all"><a href="${res.url}" target="_blank">${res.url}</a></div>${warn}`,
+                indicator: "blue"
+              });
+            }
+          });
+        });
       }
     },
     on_submit: function(frm) {
@@ -100,4 +123,4 @@
     }
   });
 })();
-//# sourceMappingURL=sales_invoice.bundle.4IT6JY7K.js.map
+//# sourceMappingURL=sales_invoice.bundle.BI7GOBKZ.js.map
