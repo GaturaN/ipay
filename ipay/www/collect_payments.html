@@ -25,6 +25,13 @@
   .ipay-amount { font-weight: 600; font-variant-numeric: tabular-nums; color: #1f2937; }
   .ipay-actions .btn { border-radius: 8px; font-weight: 500; }
   .ipay-empty { text-align: center; color: #94a3b8; padding: 48px 0; }
+  .ipay-stats { display: flex; flex-wrap: wrap; gap: 12px; margin: 4px 0 18px; }
+  .ipay-stat { flex: 1 1 0; min-width: 150px; border: 1px solid #edf2f7; border-radius: 12px; padding: 12px 14px; }
+  .ipay-stat .label { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: #94a3b8; }
+  .ipay-stat .value { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .ipay-stat .sub { font-size: .8rem; color: #94a3b8; }
+  .ipay-stat.collected .value { color: #15803d; }
+  .ipay-stat.outstanding .value { color: #b45309; }
   #ipay-alerts:not(:empty) { margin-top: 16px; }
   @media (max-width: 576px) { .ipay-collect { margin: 16px; } .ipay-collect .card-body { padding: 1.25rem !important; } }
 </style>
@@ -34,6 +41,19 @@
     <div class="card-body p-4">
       <h3 class="mb-1">Collect Payment</h3>
       <p class="text-muted mb-2">Prompt a customer for payment. Pick the option that matches how they want to pay.</p>
+
+      <div class="ipay-stats">
+        <div class="ipay-stat collected">
+          <div class="label">Collected today</div>
+          <div class="value">KES {{ "{:,.2f}".format(collected_today or 0) }}</div>
+          <div class="sub">All time: KES {{ "{:,.2f}".format(collected_total or 0) }}</div>
+        </div>
+        <div class="ipay-stat outstanding">
+          <div class="label">Yet to collect &mdash; today's invoices</div>
+          <div class="value">KES {{ "{:,.2f}".format(outstanding_today or 0) }}</div>
+          <div class="sub">All outstanding: KES {{ "{:,.2f}".format(outstanding_total or 0) }}</div>
+        </div>
+      </div>
 
       <span class="ipay-help-toggle" onclick="ipayToggleHelp()">
         <span id="ipay-help-caret">&#9656;</span> Which option should I use?
