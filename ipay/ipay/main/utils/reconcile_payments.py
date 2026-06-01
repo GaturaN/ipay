@@ -118,7 +118,13 @@ def _reconcile_one(req, vid, secret_key):
         )
         return
 
-    matched = _amount_matches(data.get("transaction_amount"), req.amount)
+    # Success only when the amount matches AND it was actually allocated to an
+    # invoice; otherwise flag for review (partial, overpayment, or nothing to
+    # allocate because the invoices were already settled).
+    if result.get("status") == "duplicate":
+        matched = True
+    else:
+        matched = _amount_matches(data.get("transaction_amount"), req.amount) and result.get("allocated")
     frappe.db.set_value("iPay Request", req.name, "status", "Success" if matched else "Amount Mismatch")
     deliver_callback(req.name, response_data)
     create_log_entry(

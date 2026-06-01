@@ -202,7 +202,7 @@ def start_checkout(invoice):
     frappe.local.response["location"] = f"/ipay_checkout?token={token}"
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def get_payment_link(invoice=None, request=None):
     """Return a shareable, tokenised payment link for an invoice or request."""
     _require_operator()
@@ -218,7 +218,7 @@ def get_payment_link(invoice=None, request=None):
     }
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def create_bundle(customer, invoices):
     """Create one submitted iPay Request covering several of a customer's
     invoices. amount = sum of their live outstanding; the oldest invoice is the
@@ -233,9 +233,10 @@ def create_bundle(customer, invoices):
 
     rows = []
     total = 0.0
+    companies = set()
     for name in invoices:
         si = frappe.db.get_value(
-            "Sales Invoice", name, ["customer", "outstanding_amount", "posting_date"], as_dict=True
+            "Sales Invoice", name, ["customer", "company", "outstanding_amount", "posting_date"], as_dict=True
         )
         if not si:
             continue
@@ -243,11 +244,14 @@ def create_bundle(customer, invoices):
             frappe.throw(f"Invoice {name} does not belong to {customer}.")
         if frappe.utils.flt(si.outstanding_amount) <= 0:
             continue
+        companies.add(si.company)
         rows.append((si.posting_date, name))
         total += frappe.utils.flt(si.outstanding_amount)
 
     if not rows:
         frappe.throw("None of the selected invoices have an outstanding balance.")
+    if len(companies) > 1:
+        frappe.throw("All invoices in a bundle must belong to the same company.")
 
     rows.sort()
     primary = rows[0][1]
@@ -275,14 +279,14 @@ def create_bundle(customer, invoices):
     }
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def split_bundle(request):
     """Split an unpaid bundle back into individual single-invoice requests and
     cancel the bundle. Only allowed before any payment is recorded."""
     _require_operator()
     bundle = frappe.get_doc("iPay Request", request)
-    if bundle.status == "Success":
-        frappe.throw("This request has already been paid and cannot be split.")
+    if bundle.status in ("Success", "Amount Mismatch") or bundle.payment_entry:
+        frappe.throw("This request has a recorded payment and cannot be split.")
     invoice_names = [row.sales_invoice for row in (bundle.invoices or []) if row.sales_invoice]
     if len(invoice_names) < 2:
         frappe.throw("This is not a bundle (it covers fewer than two invoices).")
@@ -306,7 +310,7 @@ def split_bundle(request):
     return {"created": created}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def prompt_mpesa(invoice, phone=None):
     """Operator action (collection page): send an M-Pesa STK push for an invoice."""
     _require_operator()
@@ -323,7 +327,7 @@ def payment_state(request):
     return _payment_state(request, include_detail=True)
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def pay_prompt_mpesa(token, phone):
     """Customer action on the payment-link page: STK push, authorised by token.
     Guarded against already-paid requests and rate-limited per token to prevent

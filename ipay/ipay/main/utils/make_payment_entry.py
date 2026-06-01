@@ -122,6 +122,20 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
                 )
                 remaining = flt(remaining - allocated)
 
+        # If nothing could be allocated (every invoice was already settled
+        # elsewhere), the money is still real — record it as unallocated credit,
+        # but make it auditable instead of a silent full-credit Payment Entry.
+        if not references:
+            logger.warning(
+                f"No outstanding to allocate for {ipay_request or inv}; "
+                f"recording {transaction_amount} as unallocated customer credit"
+            )
+            frappe.log_error(
+                f"iPay payment {response_data.get('transaction_code')} recorded as unallocated "
+                f"credit — invoices already settled ({ipay_request or inv})",
+                "iPay unallocated payment",
+            )
+
         cash_account = "Cash - TSL"
 
         # Create a new Payment Entry
@@ -174,6 +188,7 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
         return {
             "status": "success",
             "payment_entry": payment_entry.name,
+            "allocated": float(transaction_amount - remaining),
             "message": "Payment Entry created",
         }
 
