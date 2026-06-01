@@ -80,25 +80,67 @@ def ipay_return(**kwargs):
     frappe.local.response["location"] = f"/payment_status?request={request_name or ''}"
 
 
+def _ensure_request(invoice):
+    """Return the name of a submitted iPay Request for the invoice, creating one
+    if none exists yet."""
+    request_name = frappe.db.get_value(
+        "iPay Request", {"sales_invoice": invoice, "docstatus": 1}, "name"
+    )
+    if request_name:
+        return request_name
+
+    invoice_doc = frappe.get_doc("Sales Invoice", invoice)
+    request = frappe.get_doc(
+        {
+            "doctype": "iPay Request",
+            "customer": invoice_doc.customer,
+            "sales_invoice": invoice,
+            "docstatus": 1,
+        }
+    )
+    request.insert(ignore_permissions=True)
+    return request.name
+
+
 @frappe.whitelist()
 def start_checkout(invoice):
     """Operator action from the collection page: ensure a submitted iPay Request
     exists for the invoice, then send the browser to the hosted checkout."""
-    request_name = frappe.db.get_value(
-        "iPay Request", {"sales_invoice": invoice, "docstatus": 1}, "name"
-    )
-    if not request_name:
-        invoice_doc = frappe.get_doc("Sales Invoice", invoice)
-        request = frappe.get_doc(
-            {
-                "doctype": "iPay Request",
-                "customer": invoice_doc.customer,
-                "sales_invoice": invoice,
-                "docstatus": 1,
-            }
-        )
-        request.insert(ignore_permissions=True)
-        request_name = request.name
-
+    request_name = _ensure_request(invoice)
     frappe.local.response["type"] = "redirect"
     frappe.local.response["location"] = f"/ipay_checkout?request={request_name}"
+
+
+@frappe.whitelist()
+def prompt_mpesa(invoice, phone=None):
+    """Operator action: send an M-Pesa STK push for the invoice (creating the
+    iPay Request if needed). The STK + verify flow is enqueued on a background
+    worker so the web request returns immediately (the verify loop can exceed the
+    30s gunicorn timeout); the reconcile poller backstops finalisation."""
+    request_name = _ensure_request(invoice)
+    req = frappe.db.get_value(
+        "iPay Request",
+        request_name,
+        ["customer", "customer_phone", "customer_email", "amount", "sales_invoice"],
+        as_dict=True,
+    )
+
+    phone = phone or req.customer_phone
+    if not phone:
+        return {"status": "error", "message": "No phone number on file for this customer."}
+
+    frappe.enqueue(
+        "ipay.ipay.main.main.lipana_mpesa",
+        queue="long",
+        docid=request_name,
+        user_id=req.customer,
+        phone=phone,
+        amount=req.amount,
+        oid=req.sales_invoice,
+        customer_email=req.customer_email,
+        payment_request_type="Mpesa Express",
+    )
+    return {
+        "status": "sent",
+        "message": "M-Pesa prompt sent to the customer. The payment will confirm automatically.",
+    }

@@ -1,38 +1,90 @@
 {% extends "templates/web.html" %}
 
-{% block page_content %}
-<div class="container" style="max-width: 720px; margin-top: 40px;">
-  <h2>Collect Payment</h2>
-  <p class="text-muted">Select an invoice to prompt the customer for payment via iPay.</p>
+{% block title %}Collect Payment{% endblock %}
 
-  {% if invoices %}
-  <table class="table table-bordered" style="margin-top: 20px;">
-    <thead>
-      <tr>
-        <th>Invoice</th>
-        <th>Customer</th>
-        <th class="text-right">Outstanding</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for inv in invoices %}
-      <tr>
-        <td>{{ inv.name }}</td>
-        <td>{{ inv.customer_name }}</td>
-        <td class="text-right">{{ "%.2f"|format(inv.outstanding_amount) }}</td>
-        <td class="text-right">
-          <a class="btn btn-primary btn-sm"
-             href="/api/method/ipay.ipay.main.utils.ipay_redirect.start_checkout?invoice={{ inv.name }}">
-            Prompt Payment
-          </a>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p style="margin-top: 20px;">No invoices awaiting payment.</p>
-  {% endif %}
+{% block page_content %}
+<div class="container" style="max-width: 960px; margin-top: 40px; margin-bottom: 60px;">
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h3 class="card-title mb-1">Collect Payment</h3>
+      <p class="text-muted">Prompt a customer for payment via iPay. Choose M-Pesa (STK) or the iPay checkout page.</p>
+
+      <input type="text" id="ipay-search" class="form-control mb-3"
+             placeholder="Search by invoice, customer or delivery note…" autocomplete="off">
+
+      {% if invoices %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle" id="ipay-invoice-table">
+          <thead>
+            <tr>
+              <th>Invoice</th>
+              <th>Customer</th>
+              <th>Delivery Note</th>
+              <th class="text-right">Outstanding</th>
+              <th class="text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for inv in invoices %}
+            <tr>
+              <td>{{ inv.name }}</td>
+              <td>{{ inv.customer_name }}</td>
+              <td>{{ inv.delivery_note or "" }}</td>
+              <td class="text-right">{{ "{:,.2f}".format(inv.outstanding_amount) }}</td>
+              <td class="text-right" style="white-space: nowrap;">
+                <button type="button" class="btn btn-success btn-sm"
+                        onclick="ipayPromptMpesa('{{ inv.name }}')">
+                  Prompt M-Pesa
+                </button>
+                {% if enable_redirect %}
+                <a class="btn btn-primary btn-sm"
+                   href="/api/method/ipay.ipay.main.utils.ipay_redirect.start_checkout?invoice={{ inv.name }}">
+                  Pay via iPay
+                </a>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="text-muted small mb-0" id="ipay-no-match" style="display:none;">No invoices match your search.</p>
+      {% else %}
+      <p class="text-muted">No invoices awaiting payment.</p>
+      {% endif %}
+    </div>
+  </div>
 </div>
+
+<script>
+function ipayPromptMpesa(invoice) {
+  var phone = prompt("Customer phone for M-Pesa (leave blank to use the number on file):", "");
+  if (phone === null) { return; }
+  frappe.call({
+    method: "ipay.ipay.main.utils.ipay_redirect.prompt_mpesa",
+    args: { invoice: invoice, phone: phone },
+    callback: function(r) {
+      var res = r.message || {};
+      frappe.msgprint(res.message || "Done.");
+    }
+  });
+}
+
+(function() {
+  var search = document.getElementById("ipay-search");
+  if (!search) { return; }
+  search.addEventListener("keyup", function() {
+    var q = this.value.toLowerCase();
+    var rows = document.querySelectorAll("#ipay-invoice-table tbody tr");
+    var shown = 0;
+    rows.forEach(function(row) {
+      var match = row.textContent.toLowerCase().indexOf(q) > -1;
+      row.style.display = match ? "" : "none";
+      if (match) { shown++; }
+    });
+    var none = document.getElementById("ipay-no-match");
+    if (none) { none.style.display = shown ? "none" : ""; }
+  });
+})();
+</script>
 {% endblock %}

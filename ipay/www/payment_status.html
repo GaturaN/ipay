@@ -1,16 +1,40 @@
 {% extends "templates/web.html" %}
 
+{% block title %}Payment Status{% endblock %}
+
 {% block page_content %}
-<div class="container" style="max-width: 540px; margin-top: 60px; text-align: center;">
-  {% if confirmed %}
-    <h2>Payment received</h2>
-    <p>Thank you. Your payment has been confirmed.</p>
-  {% elif mismatch %}
-    <h2>Payment received &mdash; under review</h2>
-    <p>We received a payment with a different amount than expected. Our team will reconcile it shortly.</p>
-  {% else %}
-    <h2>Confirming your payment&hellip;</h2>
-    <p>If you have paid, your payment is being confirmed and will reflect within a few minutes.</p>
-  {% endif %}
+<div class="container" style="max-width: 540px; margin-top: 60px; margin-bottom: 60px; text-align: center;">
+  <div class="card shadow-sm">
+    <div class="card-body" style="padding: 40px 24px;">
+      {% if confirmed %}
+        <h2 class="text-success">Payment received</h2>
+        <p>Thank you. The payment has been confirmed.</p>
+      {% elif mismatch %}
+        <h2 class="text-warning">Payment received &mdash; under review</h2>
+        <p>We received a payment with a different amount than expected. Our team will reconcile it shortly.</p>
+      {% else %}
+        <h2>Confirming the payment&hellip;</h2>
+        <p>If payment was made, it is being confirmed and will reflect within a few minutes.</p>
+      {% endif %}
+
+      <a href="/collect_payments" class="btn btn-primary mt-3">Collect another payment</a>
+      <p class="text-muted small mt-3">Returning to the collection page in <span id="ipay-countdown">15</span>s&hellip;</p>
+    </div>
+  </div>
 </div>
+
+<script>
+(function() {
+  var remaining = 15;
+  var el = document.getElementById("ipay-countdown");
+  var timer = setInterval(function() {
+    remaining -= 1;
+    if (el) { el.textContent = remaining; }
+    if (remaining <= 0) {
+      clearInterval(timer);
+      window.location = "/collect_payments";
+    }
+  }, 1000);
+})();
+</script>
 {% endblock %}
