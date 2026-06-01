@@ -17,7 +17,7 @@ def get_context(context):
     invoices = frappe.get_all(
         "Sales Invoice",
         filters={"docstatus": 1, "is_return": 0, "outstanding_amount": [">", 0]},
-        fields=["name", "customer_name", "outstanding_amount", "posting_date"],
+        fields=["name", "customer", "customer_name", "outstanding_amount", "posting_date"],
         order_by="posting_date desc",
         limit_page_length=100,
     )

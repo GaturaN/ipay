@@ -263,7 +263,47 @@ def create_bundle(customer, invoices):
         }
     )
     request.insert(ignore_permissions=True)
-    return {"request": request.name, "amount": f"{total:.2f}", "count": len(rows)}
+    # `amount` has fetch_from the primary invoice's outstanding, which overrides
+    # the bundle sum on insert; write the true total back directly.
+    frappe.db.set_value("iPay Request", request.name, "amount", f"{total:.2f}")
+    token = _ensure_pay_token(request.name)
+    return {
+        "request": request.name,
+        "amount": f"{total:.2f}",
+        "count": len(rows),
+        "url": frappe.utils.get_url("/pay?token=" + token),
+    }
+
+
+@frappe.whitelist()
+def split_bundle(request):
+    """Split an unpaid bundle back into individual single-invoice requests and
+    cancel the bundle. Only allowed before any payment is recorded."""
+    _require_operator()
+    bundle = frappe.get_doc("iPay Request", request)
+    if bundle.status == "Success":
+        frappe.throw("This request has already been paid and cannot be split.")
+    invoice_names = [row.sales_invoice for row in (bundle.invoices or []) if row.sales_invoice]
+    if len(invoice_names) < 2:
+        frappe.throw("This is not a bundle (it covers fewer than two invoices).")
+
+    created = []
+    for name in invoice_names:
+        customer = frappe.db.get_value("Sales Invoice", name, "customer")
+        single = frappe.get_doc(
+            {
+                "doctype": "iPay Request",
+                "customer": customer,
+                "sales_invoice": name,
+                "docstatus": 1,
+            }
+        )
+        single.insert(ignore_permissions=True)
+        created.append(single.name)
+
+    bundle.flags.ignore_permissions = True
+    bundle.cancel()
+    return {"created": created}
 
 
 @frappe.whitelist()

@@ -65,11 +65,17 @@
                placeholder="Search invoice, customer or delivery note…" autocomplete="off">
       </div>
 
+      <button type="button" id="ipay-bundle-btn" class="btn btn-outline-primary btn-sm mb-2"
+              onclick="ipayBundleSelected()" style="display: none;">
+        Pay selected together
+      </button>
+
       {% if invoices %}
       <div class="table-responsive">
         <table class="table ipay-table" id="ipay-invoice-table">
           <thead>
             <tr>
+              <th style="width: 32px;"></th>
               <th>Invoice</th>
               <th>Customer</th>
               <th>Delivery Note</th>
@@ -79,7 +85,11 @@
           </thead>
           <tbody>
             {% for inv in invoices %}
-            <tr data-invoice="{{ inv.name }}">
+            <tr data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}">
+              <td>
+                <input type="checkbox" class="ipay-select"
+                       data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}">
+              </td>
               <td class="ipay-inv">{{ inv.name }}</td>
               <td>{{ inv.customer_name }}</td>
               <td class="ipay-dn">{{ inv.delivery_note or "—" }}</td>
@@ -184,6 +194,41 @@ function ipayPromptMpesa(invoice) {
     }
   });
 }
+
+function ipayBundleSelected() {
+  var checked = Array.prototype.slice.call(document.querySelectorAll(".ipay-select:checked"));
+  if (!checked.length) { ipayNotify("Select at least one invoice.", "warning"); return; }
+  var customers = {}, invoices = [];
+  checked.forEach(function (cb) { customers[cb.dataset.customer] = 1; invoices.push(cb.dataset.invoice); });
+  var custList = Object.keys(customers);
+  if (custList.length > 1) {
+    ipayNotify("All selected invoices must belong to the same customer to bundle.", "danger");
+    return;
+  }
+  frappe.call({
+    method: "ipay.ipay.main.utils.ipay_redirect.create_bundle",
+    args: { customer: custList[0], invoices: JSON.stringify(invoices) },
+    freeze: true,
+    callback: function (r) {
+      var res = r.message || {};
+      if (res.url) { window.location = res.url; }
+      else { ipayNotify("Could not create the bundle.", "danger"); }
+    }
+  });
+}
+
+(function () {
+  function refreshBundleBtn() {
+    var checked = document.querySelectorAll(".ipay-select:checked");
+    var btn = document.getElementById("ipay-bundle-btn");
+    if (!btn) { return; }
+    btn.style.display = checked.length ? "" : "none";
+    btn.textContent = "Pay " + checked.length + " selected together";
+  }
+  document.querySelectorAll(".ipay-select").forEach(function (cb) {
+    cb.addEventListener("change", refreshBundleBtn);
+  });
+})();
 
 (function () {
   var search = document.getElementById("ipay-search");

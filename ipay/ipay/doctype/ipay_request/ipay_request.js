@@ -35,6 +35,29 @@ frappe.ui.form.on('iPay Request', {
          });
       }
 
+      // Split a bundle back into individual requests (only before payment)
+      if (submitted && status !== 'Success' && (frm.doc.invoices || []).length > 1) {
+         frm.add_custom_button(__('Split into Individual Requests'), () => {
+            frappe.confirm(
+               __('Split this bundle into one request per invoice and cancel the bundle?'),
+               () => {
+                  frappe.call({
+                     method: 'ipay.ipay.main.utils.ipay_redirect.split_bundle',
+                     args: { request: frm.doc.name },
+                     freeze: true,
+                     callback: function (r) {
+                        const res = r.message || {};
+                        if (res.created) {
+                           frappe.show_alert({ message: __(`Created ${res.created.length} request(s)`), indicator: 'green' });
+                           frm.reload_doc();
+                        }
+                     },
+                  });
+               }
+            );
+         });
+      }
+
       // Add "Prompt iPay" button if submitted and status is not success
       if (submitted && status !== 'Success') {
          frm.add_custom_button(__('Prompt iPay'), () => {
