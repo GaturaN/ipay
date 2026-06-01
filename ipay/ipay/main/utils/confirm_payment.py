@@ -1,111 +1,63 @@
-import requests
-import hmac
-import hashlib
 import logging
-import re
-import frappe
-from ipay.ipay.main.utils.ipay_logs import create_log_entry
-from ipay.ipay.main.utils.send_callback import deliver_callback
 
+import requests
+import frappe
+
+from ipay.ipay.main.utils.ipay_logs import create_log_entry
+from ipay.ipay.main.utils.constants import clean_oid, search_hash
+from ipay.ipay.main.utils.finalize_payment import finalize_payment
 
 logger = logging.getLogger(__name__)
 
-@frappe.whitelist()
+SEARCH_URL = "https://apis.ipayafrica.com/payments/v2/transaction/search"
+
+
+@frappe.whitelist(methods=["POST"])
 def confirm_payment(docid, user_id, phone, amount, order, customer_email):
-    # Log the received parameters
-    logger.info(f"Received doc name: {docid}")
-    logger.info(f"Customer Email: {customer_email}")
-    logger.info(f"User ID: {user_id}")
-    logger.info(f"Phone Number: {phone}")
-    logger.info(f"Amount: {amount}")
-    logger.info(f"OID: {order}")
-    
-    # Get vendor details
+    """Manual desk action ("Verify Payment"): look the payment up on iPay and,
+    if found, finalise it via the shared path — record the Payment Entry, set
+    the request status and notify the callback. Returns the recorded result so
+    the desk can show the Payment Entry link."""
     vendor = frappe.get_doc("iPay Settings")
-    vid = vendor.vendor_id.lower()   # Must be lowercase
+    vid = (vendor.vendor_id or "").lower()
     secret_key = vendor.api_key
-    
-    # Order id is the iPay Request name (must match what was sent at initiation).
-    unwanted_characters = r'[-/;:~`!%^*<&_]'
-    oid = re.sub(unwanted_characters, '', docid)
-    logger.info(f"Cleaned OID (from request {docid}): {oid}")
-    
+
+    # Order id is the iPay Request name (must match what initiation sent to iPay).
+    oid = clean_oid(docid)
+    logger.info(f"Confirming payment for request {docid} (oid {oid})")
+
     try:
-        # Generate hash for verification
-        hash_value = create_hash(oid, vid, secret_key)
-        verification_payload = {
-            'vid': vid,
-            'hash': hash_value,
-            'oid': oid
-        }
-        logger.info(f"Verification Payload: {verification_payload}")
-        
-        # Make the verification API call
-        verification_response = requests.post(
-            'https://apis.ipayafrica.com/payments/v2/transaction/search',
-            data=verification_payload,
-            headers={'Content-Type': 'application/x-www-form-urlencoded'}
+        response = requests.post(
+            SEARCH_URL,
+            data={"vid": vid, "hash": search_hash(oid, vid, secret_key), "oid": oid},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            timeout=15,
         )
-        
-        # Raise HTTP errors for bad responses
-        verification_response.raise_for_status()
-        logger.info(f"Verification Response: {verification_response.json()}")
-        
-        # Check if payment verification was successful
-        if verification_response.status_code == 200:
-            data = verification_response.json().get('data', {})
-            transaction_code = data.get('transaction_code')
-            transaction_amount = data.get('transaction_amount')
-            
-            # Validate payment amount
-            try:
-                transaction_amount_float = float(transaction_amount)
-                amount_float = float(amount)
-                if abs(transaction_amount_float - amount_float) < 1e-2:  # Allow small precision differences
-                    logger.info("Payment verification successful")
-                    # logging the transaction details
-                    create_log_entry("INF", f"Payment confirmed for Ipay Request : {docid} - {data}")
-                    # change the status of the iPay request
-                    frappe.db.set_value("iPay Request", docid, "status", "Success")
-                    frappe.db.commit()
-                    
-                    # parse the response_data
-                    data = {
-                       'order_id': data.get('oid'),
-                       'transaction_amount': data.get('transaction_amount'),
-                       'transaction_code': data.get('transaction_code'),
-                       'payee': data.get('firstname'),
-                       'payment_mode': data.get('payment_mode'),
-                       'paid_at': data.get('paid_at'),
-                       'telephone': data.get('telephone'),
-                      }
+        response.raise_for_status()
+        data = response.json().get("data", {})
 
-                    # notify the configured callback URL
-                    deliver_callback(docid, data)
-
-                    return {"status": "success", "message": "Payment verified", "data": data}
-                  
-                else:
-                    logger.warning(f"Payment amount mismatch: Expected {amount_float}, Received {transaction_amount_float}")
-                    return {"status": "error", "message": "Payment amount mismatch"}
-                  
-            except ValueError as ve:
-                logger.error(f"Error parsing amounts for comparison: {ve}")
-                return {"status": "error", "message": "Invalid amount format"}
-              
-        else:
-            logger.warning("Payment not found")
+        if not data.get("transaction_code"):
             return {"status": "error", "message": "Payment not found"}
-    
+
+        result = finalize_payment(
+            docid, data, amount,
+            sales_invoice=order, customer=user_id, customer_email=customer_email,
+        )
+        if result.get("status") not in ("success", "duplicate"):
+            return {"status": "error", "message": result.get("message", "Could not record payment")}
+
+        create_log_entry(
+            "INF", f"Payment confirmed for iPay Request {docid}: {result.get('response_data')}"
+        )
+        return {
+            "status": "success",
+            "message": "Payment verified",
+            "data": result.get("response_data"),
+            "payment_entry": result.get("payment_entry"),
+            "request_status": result.get("request_status"),
+            "is_duplicate": result.get("status") == "duplicate",
+        }
+
     except requests.RequestException as error:
         logger.error(f"Error during payment verification: {error}")
         return {"status": "error", "message": str(error)}
-      
-    except ValueError as ve:
-        logger.error(f"Validation Error: {ve}")
-        return {"status": "error", "message": str(ve)}
-
-# Helper function to create HMAC hash
-def create_hash(oid, vid, secret_key):
-    data_string = f'{oid}{vid}'
-    return hmac.new(secret_key.encode(), data_string.encode(), hashlib.sha256).hexdigest()

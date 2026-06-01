@@ -34,9 +34,15 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
                 )
                 if ipay_request:
                     frappe.db.set_value("iPay Request", ipay_request, "payment_entry", existing)
+                # Report how much the existing entry allocated to invoices, so the
+                # caller resolves the same status on a re-run instead of assuming a
+                # duplicate was fully allocated.
                 return {
                     "status": "duplicate",
                     "payment_entry": existing,
+                    "allocated": frappe.utils.flt(
+                        frappe.db.get_value("Payment Entry", existing, "total_allocated_amount")
+                    ),
                     "message": "Payment Entry already exists",
                 }
 

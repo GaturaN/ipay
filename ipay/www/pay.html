@@ -79,6 +79,9 @@ function ipayPayPoll() {
         if (s.paid) {
           clearInterval(iv);
           ipayPayNotify("<strong>Payment received.</strong> Thank you!", "success");
+        } else if (s.partial) {
+          clearInterval(iv);
+          ipayPayNotify("<strong>Payment received.</strong> The amount differs from the balance &mdash; our team will reconcile it shortly.", "info");
         } else if (s.failed) {
           clearInterval(iv);
           ipayPayNotify("<strong>Payment failed.</strong> Please try again.", "danger");

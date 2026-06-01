@@ -281,62 +281,37 @@ function confirmPayment(frm) {
             const { status, message, data } = r.message;
 
             if (status === 'success') {
-               // Extract transaction details
+               // confirm_payment now records the Payment Entry server-side and
+               // returns it, so just surface the result here.
                const transactionCode = data?.transaction_code || 'N/A';
                const paymentMode = data?.payment_mode || 'N/A';
                const paidAt = data?.paid_at || 'N/A';
+               const paymentEntry = r.message.payment_entry;
+               const requestStatus = r.message.request_status || 'Recorded';
+               const dupNote = r.message.is_duplicate
+                  ? '<p><em>This payment was already recorded.</em></p>'
+                  : '';
 
-               // Display payment verification success message
                frappe.msgprint({
                   title: __('Payment Verified'),
                   message: `
-                    <p><strong>Status:</strong> The payment has been verified successfully.</p>
+                    <p><strong>Status:</strong> ${requestStatus}</p>
                     <p><strong>Transaction Code:</strong> ${transactionCode}</p>
                     <p><strong>Payment Mode:</strong> ${paymentMode}</p>
                     <p><strong>Paid At:</strong> ${paidAt}</p>
+                    ${dupNote}
+                    <p><strong>Payment Entry:</strong> <a href="/app/payment-entry/${paymentEntry}" target="_blank">${paymentEntry}</a></p>
                     `,
                   indicator: 'green',
                });
-
-               const inv = order;
-               const response_data = data;
-
-               frappe.call({
-                  method: 'ipay.ipay.main.utils.make_payment_entry.make_payment_entry',
-                  args: { user_id, customer_email, inv, response_data, ipay_request: frm.doc.name },
-                  freeze: false,
-                  async: true,
-
-                  callback: function (r) {
-                     const res = r.message;
-                     if (res.status === 'duplicate') {
-                        frappe.msgprint({
-                           title: __('Duplicate Payment Entry'),
-                           message: `A Payment Entry with the same transaction code already exists: 
-                                    <a href="/app/payment-entry/${res.payment_entry}" target="_blank">${res.payment_entry}</a>`,
-                           indicator: 'orange',
-                        });
-                     } else if (res.status === 'success') {
-                        frappe.msgprint({
-                           title: __('Payment Entry Created'),
-                           message: `Payment Entry: <a href="/app/payment-entry/${res.payment_entry}" target="_blank">${res.payment_entry}</a>`,
-                           indicator: 'green',
-                        });
-                     } else {
-                        frappe.msgprint({
-                           title: __('Payment Entry Error'),
-                           message: __(res.message || 'An unknown error occurred while creating the payment entry.'),
-                           indicator: 'red',
-                        });
-                     }
-                  },
-               });
+               frm.reload_doc();
             } else {
-               // Handle verification failure
+               // Surface the real reason from the server (payment not found, or
+               // the payment was found but could not be recorded) so the
+               // operator can act on a received-but-unrecorded payment.
                frappe.msgprint({
                   title: __('Verification Failed'),
-                  //  message: __(`Error: ${message}`),
-                  message: `Error: Payment Not Found.`,
+                  message: __(message || 'Payment not found.'),
                   indicator: 'red',
                });
             }

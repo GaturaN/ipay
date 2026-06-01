@@ -183,6 +183,9 @@ function ipayPoll(request, invoice) {
           clearInterval(iv);
           ipayNotify("<strong>Payment received</strong> &mdash; " + (s.detail ? ipayEsc(s.detail) : ipayEsc(invoice)), "success");
           ipayRemoveRow(invoice);
+        } else if (s.partial) {
+          clearInterval(iv);
+          ipayNotify("<strong>Payment received (" + ipayEsc(s.status) + ")</strong> for " + ipayEsc(invoice) + " &mdash; " + (s.detail ? ipayEsc(s.detail) : "amount differs from the balance; the balance is still outstanding"), "warning");
         } else if (s.failed) {
           clearInterval(iv);
           ipayNotify("<strong>Payment failed</strong> (" + ipayEsc(invoice) + ") &mdash; " + (s.detail ? ipayEsc(s.detail) : "no reason given"), "danger");

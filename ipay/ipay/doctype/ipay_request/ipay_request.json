@@ -117,8 +117,9 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "\nFailed to complete request\nSuccess\nError\nAmount Mismatch",
-   "read_only": 1
+   "options": "Pending\nSuccess\nUnderpaid\nOverpaid\nFailed\nAbandoned",
+   "read_only": 1,
+   "default": "Pending"
   },
   {
    "fieldname": "column_break_1mkgo",

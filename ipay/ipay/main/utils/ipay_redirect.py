@@ -6,11 +6,11 @@ import frappe
 
 from ipay.ipay.main.utils.reconcile_payments import reconcile_request
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
+from ipay.ipay.main.utils.constants import clean_oid
 
 # Hosted checkout (HTML form POST). NB: this flow uses HMAC-SHA1 over the
 # documented field order — it is NOT the REST /transact SHA256 flow.
 CHECKOUT_URL = "https://payments.ipayafrica.com/v3/ke"
-UNWANTED_OID_CHARACTERS = r"[-/;:~`!%^*<&_]"
 HASH_FIELD_ORDER = [
     "live", "oid", "inv", "ttl", "tel", "eml", "vid",
     "curr", "p1", "p2", "p3", "p4", "cbk", "cst", "crl",
@@ -53,7 +53,7 @@ def build_checkout_form(request_name, phone=None):
     req = frappe.get_doc("iPay Request", request_name)
 
     # Order id is the iPay Request name (unique per request), not the invoice.
-    oid = re.sub(UNWANTED_OID_CHARACTERS, "", req.name)
+    oid = clean_oid(req.name)
     outstanding = frappe.db.get_value(
         "Sales Invoice", req.sales_invoice, "outstanding_amount"
     )
@@ -66,7 +66,7 @@ def build_checkout_form(request_name, phone=None):
     fields = {
         "live": "1" if settings.is_live else "0",
         "oid": oid,
-        "inv": re.sub(UNWANTED_OID_CHARACTERS, "", req.sales_invoice),
+        "inv": clean_oid(req.sales_invoice),
         "ttl": f"{amount:.2f}",
         "tel": normalize_phone(phone or req.customer_phone),
         "eml": req.customer_email or "",
@@ -156,7 +156,11 @@ def _payment_state(request_name, include_detail=False):
     state = {
         "status": status,
         "paid": status == "Success",
-        "failed": status in ("Error", "Failed to complete request"),
+        # A payment was received but did not match the expected amount (the
+        # balance stays outstanding, or the excess is credit). Terminal for
+        # polling, but distinct from a clean full payment.
+        "partial": status in ("Underpaid", "Overpaid"),
+        "failed": status in ("Failed", "Abandoned"),
     }
     # result_detail embeds payer name/phone/txn — only expose to authorised operators.
     if include_detail:
@@ -285,7 +289,7 @@ def split_bundle(request):
     cancel the bundle. Only allowed before any payment is recorded."""
     _require_operator()
     bundle = frappe.get_doc("iPay Request", request)
-    if bundle.status in ("Success", "Amount Mismatch") or bundle.payment_entry:
+    if bundle.status in ("Success", "Underpaid", "Overpaid") or bundle.payment_entry:
         frappe.throw("This request has a recorded payment and cannot be split.")
     invoice_names = [row.sales_invoice for row in (bundle.invoices or []) if row.sales_invoice]
     if len(invoice_names) < 2:

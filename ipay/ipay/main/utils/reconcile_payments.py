@@ -1,49 +1,36 @@
-import re
-import hmac
-import hashlib
 import requests
 import frappe
 
-from ipay.ipay.main.utils.make_payment_entry import make_payment_entry
-from ipay.ipay.main.utils.send_callback import deliver_callback
+from ipay.ipay.main.utils.finalize_payment import finalize_payment
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
-
-# Order ids are derived from the iPay Request name exactly as the original
-# /transact request did (see main.py / ipay_redirect.py), so the search matches.
-UNWANTED_OID_CHARACTERS = r"[-/;:~`!%^*<&_]"
+from ipay.ipay.main.utils.constants import clean_oid, search_hash
 
 # Only reconcile requests created within this window; older unconfirmed requests
-# are assumed abandoned and are left alone (so we don't poll forever).
+# are assumed abandoned (marked terminal below) so we don't poll them forever.
 RECONCILE_WINDOW_HOURS = 24
 
 SEARCH_URL = "https://apis.ipayafrica.com/payments/v2/transaction/search"
 
+# Statuses that mean a payment was recorded — these are never abandoned and stay
+# eligible for callback retry. Everything else (Pending, blank legacy rows,
+# Failed) with no Payment Entry is fair game for the Abandoned sweep.
+PAID_STATUSES = ["Success", "Underpaid", "Overpaid"]
+
+REQUEST_FIELDS = ["name", "sales_invoice", "amount", "customer", "customer_email"]
+
 
 def reconcile_pending_payments():
     """Scheduled backstop that guarantees a payment is finalised and the n8n
-    callback is delivered even when the in-session flow never completed
-    (abandoned redirect, unattended Paybill, or a failed callback).
+    callback delivered even when the in-session flow never completed (abandoned
+    redirect, unattended Paybill, or a failed callback).
 
-    Polls iPay for every submitted iPay Request whose callback has not yet been
-    delivered, within the reconcile window. Idempotent and safe to re-run: the
-    Payment Entry is deduped on the transaction code and the callback on the
+    Within the reconcile window, every submitted request whose callback has not
+    been delivered is polled. Past the window, a final lookup is attempted and,
+    if still unpaid, the request is marked Abandoned so it reaches a terminal
+    state and is no longer polled. Idempotent and safe to re-run: the Payment
+    Entry is deduped on the transaction code and the callback on the
     callback_delivered flag.
     """
-    window_start = frappe.utils.add_to_date(
-        frappe.utils.now_datetime(), hours=-RECONCILE_WINDOW_HOURS
-    )
-    pending = frappe.get_all(
-        "iPay Request",
-        filters={
-            "docstatus": 1,
-            "callback_delivered": 0,
-            "creation": [">", window_start],
-        },
-        fields=["name", "sales_invoice", "amount", "customer", "customer_email"],
-    )
-    if not pending:
-        return
-
     settings = frappe.get_single("iPay Settings")
     vid = (settings.vendor_id or "").lower()
     secret_key = settings.api_key
@@ -51,24 +38,66 @@ def reconcile_pending_payments():
         create_log_entry("ERR", "Reconcile skipped: vendor id or api key not set")
         return
 
-    for req in pending:
+    window_start = frappe.utils.add_to_date(
+        frappe.utils.now_datetime(), hours=-RECONCILE_WINDOW_HOURS
+    )
+
+    # 1) Active window — poll every not-yet-delivered request. The flag covers
+    #    both "awaiting payment" and "paid but n8n not yet notified", and
+    #    _reconcile_one is idempotent, so this both finalises and (re)delivers.
+    active = frappe.get_all(
+        "iPay Request",
+        filters={
+            "docstatus": 1,
+            "callback_delivered": 0,
+            "creation": [">", window_start],
+        },
+        fields=REQUEST_FIELDS,
+    )
+    for req in active:
         try:
             _reconcile_one(req, vid, secret_key)
         except Exception as error:
             frappe.db.rollback()
             create_log_entry("ERR", f"Reconcile failed for {req.name}: {error}")
 
+    # 2) Past the window and still undelivered (but not already Abandoned): one
+    #    last lookup, then mark Abandoned UNLESS a payment was recorded. A paid
+    #    request (Success/Underpaid/Overpaid) keeps its status and stays eligible
+    #    for callback retry; an unpaid one (Pending or Failed, no Payment Entry)
+    #    becomes terminal so it is no longer polled.
+    stale = frappe.get_all(
+        "iPay Request",
+        filters={
+            "docstatus": 1,
+            "callback_delivered": 0,
+            "creation": ["<=", window_start],
+            "status": ["!=", "Abandoned"],
+        },
+        fields=REQUEST_FIELDS,
+    )
+    for req in stale:
+        try:
+            _reconcile_one(req, vid, secret_key)
+            # Re-read the live state set by _reconcile_one. Abandon only when no
+            # payment was recorded — so a payment whose callback merely failed
+            # (status paid, Payment Entry present) is never mislabelled Abandoned
+            # and keeps being retried for delivery.
+            current = frappe.db.get_value(
+                "iPay Request", req.name, ["status", "payment_entry"], as_dict=True
+            )
+            if current and not current.payment_entry and current.status not in PAID_STATUSES:
+                frappe.db.set_value("iPay Request", req.name, "status", "Abandoned")
+                frappe.db.commit()
+        except Exception as error:
+            frappe.db.rollback()
+            create_log_entry("ERR", f"Reconcile (stale) failed for {req.name}: {error}")
+
 
 def reconcile_request(request_name):
     """Finalise a single iPay Request on demand (used by the redirect return
-    handler). Verifies the payment, creates the Payment Entry and delivers the
-    n8n callback, reusing the same idempotent path as the scheduled poller."""
-    req = frappe.db.get_value(
-        "iPay Request",
-        request_name,
-        ["name", "sales_invoice", "amount", "customer", "customer_email"],
-        as_dict=True,
-    )
+    handler). Reuses the same idempotent path as the scheduled poller."""
+    req = frappe.db.get_value("iPay Request", request_name, REQUEST_FIELDS, as_dict=True)
     if not req:
         return
 
@@ -86,29 +115,19 @@ def _reconcile_one(req, vid, secret_key):
         return
 
     # Order id is the iPay Request name (matches what initiation sent to iPay).
-    oid = re.sub(UNWANTED_OID_CHARACTERS, "", req.name)
+    oid = clean_oid(req.name)
     data = _search_transaction(oid, vid, secret_key)
     if not data:
         # Not paid yet (or not found) — leave it to retry on the next run.
         return
 
-    response_data = {
-        "order_id": data.get("oid"),
-        "transaction_amount": data.get("transaction_amount"),
-        "transaction_code": data.get("transaction_code"),
-        "payee": data.get("firstname"),
-        "payment_mode": data.get("payment_mode"),
-        "paid_at": data.get("paid_at"),
-        "telephone": data.get("telephone"),
-    }
-
-    # A payment was found — record it. make_payment_entry allocates oldest-first
-    # against live outstanding, so a partial payment clears the oldest invoices and
-    # leaves the rest as a re-requestable balance, and an overpayment becomes
-    # customer credit. Mark Success when it covers the expected amount, otherwise
-    # Amount Mismatch (still recorded + notified, balance/credit handled).
-    result = make_payment_entry(
-        req.customer, req.customer_email, req.sales_invoice, response_data, ipay_request=req.name
+    # finalize_payment records the payment (allocating oldest-first against live
+    # outstanding so partials clear the oldest invoices and overpayments become
+    # credit), resolves the status, and delivers the callback exactly once.
+    result = finalize_payment(
+        req.name, data, req.amount,
+        sales_invoice=req.sales_invoice, customer=req.customer,
+        customer_email=req.customer_email,
     )
     if result.get("status") not in ("success", "duplicate"):
         # Payment Entry creation failed; leave undelivered to retry next run.
@@ -118,22 +137,14 @@ def _reconcile_one(req, vid, secret_key):
         )
         return
 
-    # Success only when the amount matches AND it was actually allocated to an
-    # invoice; otherwise flag for review (partial, overpayment, or nothing to
-    # allocate because the invoices were already settled).
-    if result.get("status") == "duplicate":
-        matched = True
-    else:
-        matched = _amount_matches(data.get("transaction_amount"), req.amount) and result.get("allocated")
-    frappe.db.set_value("iPay Request", req.name, "status", "Success" if matched else "Amount Mismatch")
-    deliver_callback(req.name, response_data)
+    request_status = result.get("request_status")
+    response_data = result.get("response_data", {})
     create_log_entry(
-        "INF" if matched else "ERR",
-        f"Reconciled {req.name} ({response_data['transaction_code']}): "
-        f"paid {response_data['transaction_amount']} vs expected {req.amount}",
+        "INF" if request_status == "Success" else "ERR",
+        f"Reconciled {req.name} ({response_data.get('transaction_code')}): "
+        f"status {request_status}, paid {response_data.get('transaction_amount')} "
+        f"vs expected {req.amount}",
     )
-
-    frappe.db.commit()
 
 
 def _search_transaction(oid, vid, secret_key):
@@ -144,12 +155,9 @@ def _search_transaction(oid, vid, secret_key):
     so a missing transaction is treated as a quiet None rather than an error;
     only genuine transport failures raise (caught and retried by the caller).
     """
-    hash_value = hmac.new(
-        secret_key.encode(), f"{oid}{vid}".encode(), hashlib.sha256
-    ).hexdigest()
     resp = requests.post(
         SEARCH_URL,
-        data={"vid": vid, "hash": hash_value, "oid": oid},
+        data={"vid": vid, "hash": search_hash(oid, vid, secret_key), "oid": oid},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=15,
     )
@@ -158,10 +166,3 @@ def _search_transaction(oid, vid, secret_key):
     except ValueError:
         return None
     return data if data.get("transaction_code") else None
-
-
-def _amount_matches(transaction_amount, expected_amount):
-    try:
-        return abs(float(transaction_amount) - float(expected_amount)) < 1e-2
-    except (TypeError, ValueError):
-        return False
