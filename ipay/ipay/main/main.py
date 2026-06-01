@@ -32,15 +32,16 @@ def lipana_mpesa(
     # log in frappe
     create_log_entry("INF", f"Payment prompt initiated for Ipay Request : {docid}")
 
-    # Variable to maintain the order id
+    # Keep the Sales Invoice for the Payment Entry, but derive the iPay order id
+    # from the iPay Request name so it is unique per request. (A balance/repeat
+    # request for the same invoice then gets its own order id instead of a
+    # colliding one, and bundles that span several invoices still have one oid.)
     inv = oid
     logger.info(f"Invoice: {inv}")
 
-    # Remove unwanted characters from oid
-    # Expected output for oid: ACC-SINV-2024-00002 is ACCSINV202400002
     unwanted_characters = r"[-/;:~`!%^*<&_]"
-    oid = re.sub(unwanted_characters, "", oid)
-    logger.info(f"Cleaned OID: {oid}")
+    oid = re.sub(unwanted_characters, "", docid)
+    logger.info(f"Cleaned OID (from request {docid}): {oid}")
 
     # get vendor details
     vendor = frappe.get_doc("iPay Settings")

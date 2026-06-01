@@ -85,7 +85,8 @@ def _reconcile_one(req, vid, secret_key):
     if not req.sales_invoice:
         return
 
-    oid = re.sub(UNWANTED_OID_CHARACTERS, "", req.sales_invoice)
+    # Order id is the iPay Request name (matches what initiation sent to iPay).
+    oid = re.sub(UNWANTED_OID_CHARACTERS, "", req.name)
     data = _search_transaction(oid, vid, secret_key)
     if not data:
         # Not paid yet (or not found) — leave it to retry on the next run.
