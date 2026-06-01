@@ -39,7 +39,10 @@ def build_checkout_form(request_name):
         "oid": oid,
         "inv": oid,
         "ttl": f"{amount:.2f}",
-        "tel": req.customer_phone or "",
+        # Leave tel blank: iPay locks the M-Pesa phone field (readOnlyMpesa) to
+        # whatever tel we send. Omitting it lets the payer enter their own number
+        # on the hosted page; the payment is still tied to the invoice via oid.
+        "tel": "",
         "eml": req.customer_email or "",
         "vid": (settings.vendor_id or "").lower(),
         "curr": "KES",
