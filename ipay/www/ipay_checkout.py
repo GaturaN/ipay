@@ -21,6 +21,7 @@ def get_context(context):
     # iPay requires a telephone number; if none was supplied or on file, ask for one.
     if not fields.get("tel"):
         context.phone_required = True
+        context.request_name = request_name
         return
 
     context.action = action

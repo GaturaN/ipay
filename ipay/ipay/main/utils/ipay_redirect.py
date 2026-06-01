@@ -1,7 +1,6 @@
 import re
 import hmac
 import hashlib
-from urllib.parse import quote
 
 import frappe
 
@@ -16,6 +15,21 @@ HASH_FIELD_ORDER = [
     "live", "oid", "inv", "ttl", "tel", "eml", "vid",
     "curr", "p1", "p2", "p3", "p4", "cbk", "cst", "crl",
 ]
+
+
+def normalize_phone(phone):
+    """Normalise a Kenyan number to MSISDN form (2547XXXXXXXX / 2541XXXXXXXX):
+    strip non-digits and the leading +/0, so iPay charges a consistent number."""
+    digits = re.sub(r"\D", "", phone or "")
+    if not digits:
+        return ""
+    if digits.startswith("254"):
+        return digits
+    if digits.startswith("0"):
+        return "254" + digits[1:]
+    if digits.startswith(("7", "1")):
+        return "254" + digits
+    return digits
 
 
 def build_checkout_form(request_name, phone=None):
@@ -44,7 +58,7 @@ def build_checkout_form(request_name, phone=None):
         "oid": oid,
         "inv": oid,
         "ttl": f"{amount:.2f}",
-        "tel": (phone or req.customer_phone or "").strip(),
+        "tel": normalize_phone(phone or req.customer_phone),
         "eml": req.customer_email or "",
         "vid": (settings.vendor_id or "").lower(),
         "curr": "KES",
@@ -108,16 +122,14 @@ def _ensure_request(invoice):
 
 
 @frappe.whitelist()
-def start_checkout(invoice, phone=None):
+def start_checkout(invoice):
     """Operator action from the collection page: ensure a submitted iPay Request
-    exists for the invoice, then send the browser to the hosted checkout. An
-    optional phone (the number that will pay) is passed through to the form."""
+    exists for the invoice, then send the browser to the hosted checkout. The
+    payer's number defaults to the customer's number on file (iPay requires a
+    tel); the checkout page asks for one only if none is on file."""
     request_name = _ensure_request(invoice)
-    location = f"/ipay_checkout?request={request_name}"
-    if phone:
-        location += "&phone=" + quote(phone)
     frappe.local.response["type"] = "redirect"
-    frappe.local.response["location"] = location
+    frappe.local.response["location"] = f"/ipay_checkout?request={request_name}"
 
 
 @frappe.whitelist()
@@ -134,7 +146,7 @@ def prompt_mpesa(invoice, phone=None):
         as_dict=True,
     )
 
-    phone = phone or req.customer_phone
+    phone = normalize_phone(phone or req.customer_phone)
     if not phone:
         return {"status": "error", "message": "No phone number on file for this customer."}
 

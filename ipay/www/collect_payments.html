@@ -37,10 +37,10 @@
                   Prompt M-Pesa
                 </button>
                 {% if enable_redirect %}
-                <button type="button" class="btn btn-primary btn-sm"
-                        onclick="ipayRedirect('{{ inv.name }}')">
+                <a class="btn btn-primary btn-sm"
+                   href="/api/method/ipay.ipay.main.utils.ipay_redirect.start_checkout?invoice={{ inv.name }}">
                   Pay via iPay
-                </button>
+                </a>
                 {% endif %}
               </td>
             </tr>
