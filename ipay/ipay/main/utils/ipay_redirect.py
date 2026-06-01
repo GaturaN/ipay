@@ -163,5 +163,22 @@ def prompt_mpesa(invoice, phone=None):
     )
     return {
         "status": "sent",
+        "request": request_name,
         "message": "M-Pesa prompt sent to the customer. The payment will confirm automatically.",
+    }
+
+
+@frappe.whitelist()
+def payment_state(request):
+    """Lightweight poll target for the collection page: report whether a request
+    has been paid/failed yet and the human-readable result detail."""
+    row = frappe.db.get_value(
+        "iPay Request", request, ["status", "result_detail"], as_dict=True
+    ) or {}
+    status = row.get("status") or ""
+    return {
+        "status": status,
+        "paid": status == "Success",
+        "failed": status in ("Error", "Failed to complete request"),
+        "detail": row.get("result_detail") or "",
     }

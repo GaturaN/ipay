@@ -24,7 +24,8 @@
   "sales_invoice",
   "amount",
   "route",
-  "callback_delivered"
+  "callback_delivered",
+  "result_detail"
  ],
  "fields": [
   {
@@ -160,6 +161,13 @@
    "fieldname": "callback_delivered",
    "fieldtype": "Check",
    "label": "Callback Delivered",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "result_detail",
+   "fieldtype": "Small Text",
+   "label": "Result Detail",
    "read_only": 1
   }
  ],

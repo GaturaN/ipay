@@ -9,6 +9,8 @@
       <h3 class="card-title mb-1">Collect Payment</h3>
       <p class="text-muted">Prompt a customer for payment via iPay. Choose M-Pesa (STK) or the iPay checkout page.</p>
 
+      <div id="ipay-alerts"></div>
+
       <input type="text" id="ipay-search" class="form-control mb-3"
              placeholder="Search by invoice, customer or delivery note…" autocomplete="off">
 
@@ -26,7 +28,7 @@
           </thead>
           <tbody>
             {% for inv in invoices %}
-            <tr>
+            <tr data-invoice="{{ inv.name }}">
               <td>{{ inv.name }}</td>
               <td>{{ inv.customer_name }}</td>
               <td>{{ inv.delivery_note or "" }}</td>
@@ -57,26 +59,62 @@
 </div>
 
 <script>
+function ipayNotify(message, type) {
+  var c = document.getElementById("ipay-alerts");
+  if (!c) { return; }
+  var div = document.createElement("div");
+  div.className = "alert alert-" + (type || "info") + " alert-dismissible";
+  div.innerHTML = message +
+    ' <button type="button" class="close" onclick="this.parentNode.remove()">&times;</button>';
+  c.prepend(div);
+}
+
+function ipayRemoveRow(invoice) {
+  var row = document.querySelector('#ipay-invoice-table tbody tr[data-invoice="' + invoice + '"]');
+  if (row) { row.remove(); }
+}
+
+function ipayPoll(request, invoice) {
+  var tries = 0, max = 25;
+  var iv = setInterval(function () {
+    tries++;
+    frappe.call({
+      method: "ipay.ipay.main.utils.ipay_redirect.payment_state",
+      args: { request: request },
+      callback: function (r) {
+        var s = r.message || {};
+        if (s.paid) {
+          clearInterval(iv);
+          ipayNotify("<strong>Payment received</strong> &mdash; " + (s.detail || invoice), "success");
+          ipayRemoveRow(invoice);
+        } else if (s.failed) {
+          clearInterval(iv);
+          ipayNotify("<strong>Payment failed</strong> (" + invoice + ") &mdash; " + (s.detail || "no reason given"), "danger");
+        } else if (tries >= max) {
+          clearInterval(iv);
+          ipayNotify("Still awaiting payment for " + invoice + ". It will confirm automatically if the customer pays.", "warning");
+        }
+      }
+    });
+  }, 4000);
+}
+
 function ipayPromptMpesa(invoice) {
   var phone = prompt("Customer phone for M-Pesa (leave blank to use the number on file):", "");
   if (phone === null) { return; }
   frappe.call({
     method: "ipay.ipay.main.utils.ipay_redirect.prompt_mpesa",
     args: { invoice: invoice, phone: phone },
-    callback: function(r) {
+    callback: function (r) {
       var res = r.message || {};
-      frappe.msgprint(res.message || "Done.");
+      if (res.status === "error") {
+        ipayNotify("Cannot prompt " + invoice + ": " + (res.message || "unknown error"), "danger");
+        return;
+      }
+      ipayNotify("M-Pesa prompt sent for " + invoice + ". Waiting for the customer to pay&hellip;", "info");
+      if (res.request) { ipayPoll(res.request, invoice); }
     }
   });
-}
-
-function ipayRedirect(invoice) {
-  // iPay requires a phone and locks it on its page, so capture it here.
-  var phone = prompt("M-Pesa number that will pay (leave blank to use the number on file):", "");
-  if (phone === null) { return; }
-  var url = "/api/method/ipay.ipay.main.utils.ipay_redirect.start_checkout?invoice=" + encodeURIComponent(invoice);
-  if (phone) { url += "&phone=" + encodeURIComponent(phone); }
-  window.location = url;
 }
 
 (function() {

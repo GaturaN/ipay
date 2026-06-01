@@ -122,7 +122,16 @@ def lipana_mpesa(
                 logger.info("response_data: %s", response_data)
 
                 # set status to success on the ipay request and show success message
-                frappe.db.set_value("iPay Request", docid, "status", "Success")
+                result_detail = (
+                    f"KES {response_data.get('transaction_amount')} received from "
+                    f"{response_data.get('payee')} ({response_data.get('telephone')}) — "
+                    f"M-Pesa ref {response_data.get('transaction_code')}, {response_data.get('paid_at')}"
+                )
+                frappe.db.set_value(
+                    "iPay Request",
+                    docid,
+                    {"status": "Success", "result_detail": result_detail},
+                )
                 frappe.db.commit()
                 frappe.msgprint("Payment received successfully")
 
@@ -181,7 +190,11 @@ def lipana_mpesa(
             create_log_entry(
                 "ERR", f"An error occurred during the payment proces: {error}"
             )
-            # set status to error
-            frappe.db.set_value("iPay Request", docid, "status", "Error")
+            # set status to error and record the reason for the operator
+            frappe.db.set_value(
+                "iPay Request",
+                docid,
+                {"status": "Error", "result_detail": str(error)},
+            )
             frappe.db.commit()
             # frappe.throw("An error occurred during the payment process")
