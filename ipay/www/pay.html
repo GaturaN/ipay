@@ -1,0 +1,110 @@
+{% extends "templates/web.html" %}
+
+{% block title %}Make a Payment{% endblock %}
+
+{% block page_content %}
+<style>
+  .ipay-pay { max-width: 480px; margin: 48px auto 60px; }
+  .ipay-pay .card { border: none; border-radius: 16px; box-shadow: 0 10px 34px rgba(17, 24, 39, .10); }
+  .ipay-pay .amount { font-size: 2rem; font-weight: 700; color: #1f2937; letter-spacing: -.02em; }
+  .ipay-pay .muted { color: #94a3b8; }
+  .ipay-pay .opt { border: 1px solid #edf2f7; border-radius: 12px; padding: 16px; margin-top: 14px; }
+  .ipay-pay .opt h6 { font-weight: 600; margin-bottom: 8px; }
+  .ipay-pay input[type=tel] { border-radius: 10px; height: 44px; }
+  .ipay-pay .btn { border-radius: 10px; font-weight: 500; }
+  .ipay-pay .divider { text-align: center; color: #cbd5e0; font-size: .8rem; margin: 14px 0 2px; }
+</style>
+
+<div class="ipay-pay">
+  <div class="card">
+    <div class="card-body p-4 text-center">
+      {% if invalid %}
+        <h4>Invalid payment link</h4>
+        <p class="muted">This payment link is invalid or has expired. Please request a new one.</p>
+      {% elif paid %}
+        <h4 class="text-success">Already paid</h4>
+        <p class="muted">Invoice {{ invoice }} has already been paid. Thank you!</p>
+      {% else %}
+        <p class="muted mb-1">Payment for invoice {{ invoice }}</p>
+        <div class="amount mb-3">KES {{ "{:,.2f}".format(amount) }}</div>
+
+        <div id="ipay-pay-alerts"></div>
+
+        <div class="opt text-left">
+          <h6>Pay with M-Pesa</h6>
+          <p class="muted small mb-2">Enter your M-Pesa number and we'll send a PIN prompt to your phone.</p>
+          <input type="tel" id="ipay-phone" class="form-control mb-2" placeholder="e.g. 0712345678" autocomplete="tel">
+          <button type="button" class="btn btn-success btn-block" onclick="ipayPaySubmitMpesa()">
+            Send M-Pesa prompt
+          </button>
+        </div>
+
+        {% if enable_redirect %}
+        <div class="divider">— or —</div>
+        <div class="opt text-left">
+          <h6>Pay by card, Airtel Money or M-Pesa</h6>
+          <p class="muted small mb-2">Continue to iPay's secure checkout page.</p>
+          <a class="btn btn-primary btn-block" href="/ipay_checkout?token={{ token }}">
+            Pay via iPay
+          </a>
+        </div>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if not invalid and not paid %}
+<script>
+var IPAY_TOKEN = "{{ token }}";
+
+function ipayPayNotify(message, type) {
+  var c = document.getElementById("ipay-pay-alerts");
+  if (!c) { return; }
+  var div = document.createElement("div");
+  div.className = "alert alert-" + (type || "info") + " alert-dismissible text-left";
+  div.innerHTML = message + ' <button type="button" class="close" onclick="this.parentNode.remove()">&times;</button>';
+  c.prepend(div);
+}
+
+function ipayPayPoll() {
+  var tries = 0, max = 25;
+  var iv = setInterval(function () {
+    tries++;
+    frappe.call({
+      method: "ipay.ipay.main.utils.ipay_redirect.pay_state",
+      args: { token: IPAY_TOKEN },
+      callback: function (r) {
+        var s = r.message || {};
+        if (s.paid) {
+          clearInterval(iv);
+          ipayPayNotify("<strong>Payment received.</strong> " + (s.detail || "Thank you!"), "success");
+        } else if (s.failed) {
+          clearInterval(iv);
+          ipayPayNotify("<strong>Payment failed.</strong> " + (s.detail || "Please try again."), "danger");
+        } else if (tries >= max) {
+          clearInterval(iv);
+          ipayPayNotify("Still waiting for your payment. If you've paid, it will reflect shortly.", "warning");
+        }
+      }
+    });
+  }, 4000);
+}
+
+function ipayPaySubmitMpesa() {
+  var phone = document.getElementById("ipay-phone").value;
+  if (!phone) { ipayPayNotify("Please enter your M-Pesa number.", "warning"); return; }
+  frappe.call({
+    method: "ipay.ipay.main.utils.ipay_redirect.pay_prompt_mpesa",
+    args: { token: IPAY_TOKEN, phone: phone },
+    callback: function (r) {
+      var res = r.message || {};
+      if (res.status === "error") { ipayPayNotify(res.message || "Could not start the payment.", "danger"); return; }
+      ipayPayNotify("M-Pesa prompt sent to " + phone + ". Enter your PIN on your phone&hellip;", "info");
+      ipayPayPoll();
+    }
+  });
+}
+</script>
+{% endif %}
+{% endblock %}
