@@ -8,7 +8,6 @@ from ipay.ipay.main.utils.ipay_logs import create_log_entry
 from ipay.ipay.main.utils.send_callback import deliver_callback
 
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 @frappe.whitelist()

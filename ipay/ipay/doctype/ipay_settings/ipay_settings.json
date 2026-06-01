@@ -11,7 +11,8 @@
   "callback_url",
   "is_live",
   "request_for_cod",
-  "enable_redirect"
+  "enable_redirect",
+  "cash_account"
  ],
  "fields": [
   {
@@ -50,6 +51,13 @@
    "fieldname": "enable_redirect",
    "fieldtype": "Check",
    "label": "Use Hosted Checkout Redirect"
+  },
+  {
+   "description": "Fallback receiving account, used only when the invoice's company has no Default Cash Account set.",
+   "fieldname": "cash_account",
+   "fieldtype": "Link",
+   "label": "Cash Account (fallback)",
+   "options": "Account"
   }
  ],
  "index_web_pages_for_search": 1,

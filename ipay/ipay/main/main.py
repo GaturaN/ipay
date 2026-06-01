@@ -8,11 +8,10 @@ from ipay.ipay.main.utils.ipay_logs import create_log_entry
 from ipay.ipay.main.utils.send_callback import deliver_callback
 import re
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def lipana_mpesa(
     docid, user_id, phone, amount, oid, customer_email, payment_request_type
 ):

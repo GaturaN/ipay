@@ -2,7 +2,6 @@ import frappe
 import logging
 import json
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -66,7 +65,7 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
                 frappe.db.get_value(
                     "Sales Invoice",
                     name,
-                    ["name", "outstanding_amount", "posting_date", "customer", "customer_name"],
+                    ["name", "outstanding_amount", "posting_date", "customer", "customer_name", "company"],
                     as_dict=True,
                 )
                 for name in invoice_names
@@ -136,11 +135,20 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
                 "iPay unallocated payment",
             )
 
-        cash_account = "Cash - TSL"
+        # Resolve the receiving account per the invoice's company: prefer the
+        # company's default cash account, then an iPay Settings override, then a
+        # legacy fallback. Setting company explicitly keeps multi-company correct.
+        company = primary.company
+        cash_account = (
+            frappe.get_cached_value("Company", company, "default_cash_account")
+            or frappe.db.get_single_value("iPay Settings", "cash_account")
+            or "Cash - TSL"
+        )
 
         # Create a new Payment Entry
         payment_entry = frappe.new_doc("Payment Entry")
         payment_entry.payment_type = "Receive"
+        payment_entry.company = company
         payment_entry.payment_order_status = "Initiated"
         payment_entry.posting_date = frappe.utils.today()
         payment_entry.mode_of_payment = "MPESA"

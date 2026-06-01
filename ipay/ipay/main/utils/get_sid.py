@@ -5,7 +5,6 @@ import hashlib
 import logging
 import frappe
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 UNWANTED_OID_CHARACTERS = r"[-/;:~`!%^*<&_]"

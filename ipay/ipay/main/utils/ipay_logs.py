@@ -2,7 +2,6 @@ import frappe
 from datetime import datetime
 import logging
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def create_log_entry(log_type, description):

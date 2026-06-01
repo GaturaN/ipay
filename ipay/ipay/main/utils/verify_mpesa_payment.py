@@ -6,7 +6,6 @@ import logging
 import frappe 
 from requests.exceptions import RequestException 
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Helper function to delay execution

@@ -38,7 +38,7 @@
   },
   {
    "fieldname": "time",
-   "fieldtype": "Data",
+   "fieldtype": "Datetime",
    "in_filter": 1,
    "in_list_view": 1,
    "in_preview": 1,
