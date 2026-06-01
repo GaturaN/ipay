@@ -37,10 +37,10 @@
                   Prompt M-Pesa
                 </button>
                 {% if enable_redirect %}
-                <a class="btn btn-primary btn-sm"
-                   href="/api/method/ipay.ipay.main.utils.ipay_redirect.start_checkout?invoice={{ inv.name }}">
+                <button type="button" class="btn btn-primary btn-sm"
+                        onclick="ipayRedirect('{{ inv.name }}')">
                   Pay via iPay
-                </a>
+                </button>
                 {% endif %}
               </td>
             </tr>
@@ -68,6 +68,15 @@ function ipayPromptMpesa(invoice) {
       frappe.msgprint(res.message || "Done.");
     }
   });
+}
+
+function ipayRedirect(invoice) {
+  // iPay requires a phone and locks it on its page, so capture it here.
+  var phone = prompt("M-Pesa number that will pay (leave blank to use the number on file):", "");
+  if (phone === null) { return; }
+  var url = "/api/method/ipay.ipay.main.utils.ipay_redirect.start_checkout?invoice=" + encodeURIComponent(invoice);
+  if (phone) { url += "&phone=" + encodeURIComponent(phone); }
+  window.location = url;
 }
 
 (function() {

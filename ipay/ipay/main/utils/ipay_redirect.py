@@ -1,6 +1,7 @@
 import re
 import hmac
 import hashlib
+from urllib.parse import quote
 
 import frappe
 
@@ -17,10 +18,14 @@ HASH_FIELD_ORDER = [
 ]
 
 
-def build_checkout_form(request_name):
+def build_checkout_form(request_name, phone=None):
     """Build the field set (including the SHA1 hash) for an auto-submitting
     hosted-checkout form for the given iPay Request. The request name is sent as
-    p1 so iPay echoes it back to the return handler."""
+    p1 so iPay echoes it back to the return handler.
+
+    iPay requires `tel` and locks the M-Pesa phone field to it, so the paying
+    number must be decided here (before redirect): use the caller-supplied phone
+    if given, else the customer's number on file."""
     settings = frappe.get_single("iPay Settings")
     req = frappe.get_doc("iPay Request", request_name)
 
@@ -39,10 +44,7 @@ def build_checkout_form(request_name):
         "oid": oid,
         "inv": oid,
         "ttl": f"{amount:.2f}",
-        # Leave tel blank: iPay locks the M-Pesa phone field (readOnlyMpesa) to
-        # whatever tel we send. Omitting it lets the payer enter their own number
-        # on the hosted page; the payment is still tied to the invoice via oid.
-        "tel": "",
+        "tel": (phone or req.customer_phone or "").strip(),
         "eml": req.customer_email or "",
         "vid": (settings.vendor_id or "").lower(),
         "curr": "KES",
@@ -106,12 +108,16 @@ def _ensure_request(invoice):
 
 
 @frappe.whitelist()
-def start_checkout(invoice):
+def start_checkout(invoice, phone=None):
     """Operator action from the collection page: ensure a submitted iPay Request
-    exists for the invoice, then send the browser to the hosted checkout."""
+    exists for the invoice, then send the browser to the hosted checkout. An
+    optional phone (the number that will pay) is passed through to the form."""
     request_name = _ensure_request(invoice)
+    location = f"/ipay_checkout?request={request_name}"
+    if phone:
+        location += "&phone=" + quote(phone)
     frappe.local.response["type"] = "redirect"
-    frappe.local.response["location"] = f"/ipay_checkout?request={request_name}"
+    frappe.local.response["location"] = location
 
 
 @frappe.whitelist()

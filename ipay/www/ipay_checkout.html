@@ -6,6 +6,9 @@
     <p>Hosted checkout is not enabled.</p>
   {% elif not_found %}
     <p>Payment request not found.</p>
+  {% elif phone_required %}
+    <p>A phone number is required to start the iPay checkout.</p>
+    <a href="/collect_payments" class="btn btn-primary">Go back</a>
   {% else %}
     <p>Redirecting you to iPay&hellip;</p>
     <form id="ipay-checkout-form" method="POST" action="{{ action }}">
