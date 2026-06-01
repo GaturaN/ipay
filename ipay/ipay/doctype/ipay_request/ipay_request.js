@@ -12,6 +12,11 @@ frappe.ui.form.on('iPay Request', {
          frm.set_df_property('status', 'read_only', 1);
       }
 
+      // Render a persistent, clickable payment link on the form.
+      if (submitted) {
+         render_payment_link(frm);
+      }
+
       // Copy a shareable payment link to send to the customer
       if (submitted && status !== 'Success') {
          frm.add_custom_button(__('Copy Payment Link'), () => {
@@ -23,6 +28,9 @@ frappe.ui.form.on('iPay Request', {
                   const res = r.message || {};
                   if (!res.url) { frappe.msgprint(__('Could not generate a payment link.')); return; }
                   if (navigator.clipboard) { navigator.clipboard.writeText(res.url); }
+                  // Populate the persistent field immediately (frm.doc.pay_token
+                  // is still stale on the client until the next reload).
+                  set_payment_link_html(frm, res.url);
                   const warn = res.redirect_enabled ? '' :
                      '<br><span style="color:#b7791f">Enable "Use Hosted Checkout Redirect" in iPay Settings so the card/iPay option works.</span>';
                   frappe.msgprint({
@@ -332,4 +340,28 @@ function confirmPayment(frm) {
          console.error('Verification Error:', err);
       },
    });
+}
+
+// Render the payment link into the read-only "Payment Link" HTML field so the
+// operator can click it directly from the form (not only via the popup).
+function render_payment_link(frm) {
+   const field = frm.get_field('payment_link');
+   if (!field) { return; }
+   if (frm.doc.status === 'Success') {
+      field.$wrapper.html('<span class="text-muted">This request has been paid.</span>');
+   } else if (frm.doc.pay_token) {
+      const url = `${window.location.origin}/pay?token=${encodeURIComponent(frm.doc.pay_token)}`;
+      set_payment_link_html(frm, url);
+   } else {
+      field.$wrapper.html('<span class="text-muted">Use "Copy Payment Link" to generate the link.</span>');
+   }
+}
+
+function set_payment_link_html(frm, url) {
+   const field = frm.get_field('payment_link');
+   if (!field) { return; }
+   const safe = frappe.utils.escape_html(url);
+   field.$wrapper.html(
+      `<a href="${safe}" target="_blank" rel="noopener" style="word-break:break-all">${safe}</a>`
+   );
 }
