@@ -139,7 +139,7 @@ def lipana_mpesa(
                 deliver_callback(docid, response_data)
 
                 # call function to create payment entry
-                result = make_payment_entry(user_id, customer_email, inv, response_data)
+                result = make_payment_entry(user_id, customer_email, inv, response_data, ipay_request=docid)
 
                 if isinstance(result, dict):
                     status = result.get("status")

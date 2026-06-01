@@ -280,7 +280,7 @@ function confirmPayment(frm) {
 
                frappe.call({
                   method: 'ipay.ipay.main.utils.make_payment_entry.make_payment_entry',
-                  args: { user_id, customer_email, inv, response_data },
+                  args: { user_id, customer_email, inv, response_data, ipay_request: frm.doc.name },
                   freeze: false,
                   async: true,
 

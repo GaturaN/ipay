@@ -26,7 +26,8 @@
   "route",
   "callback_delivered",
   "result_detail",
-  "pay_token"
+  "pay_token",
+  "payment_entry"
  ],
  "fields": [
   {
@@ -178,6 +179,15 @@
    "label": "Payment Link Token",
    "read_only": 1,
    "unique": 1,
+   "no_copy": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "payment_entry",
+   "fieldtype": "Link",
+   "label": "Payment Entry",
+   "options": "Payment Entry",
+   "read_only": 1,
    "no_copy": 1
   }
  ],

@@ -7,7 +7,7 @@ logger = logging.getLogger(__name__)
 
 
 @frappe.whitelist()
-def make_payment_entry(user_id, customer_email, inv, response_data):
+def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request=None):
     try:
         # Log the received parameters
         logger.info(f"Received doc name: {inv}")
@@ -33,6 +33,8 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
                 logger.info(
                     f"Payment Entry {existing} already exists for transaction {transaction_code}"
                 )
+                if ipay_request:
+                    frappe.db.set_value("iPay Request", ipay_request, "payment_entry", existing)
                 return {
                     "status": "duplicate",
                     "payment_entry": existing,
@@ -114,6 +116,8 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
         logger.info(
             f"Payment Entry {payment_entry.name} created successfully for Sales Invoice {inv}."
         )
+        if ipay_request:
+            frappe.db.set_value("iPay Request", ipay_request, "payment_entry", payment_entry.name)
         return {
             "status": "success",
             "payment_entry": payment_entry.name,
