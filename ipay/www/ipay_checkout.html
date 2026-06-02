@@ -1,0 +1,22 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<div class="container" style="max-width: 540px; margin-top: 60px; text-align: center;">
+  {% if disabled %}
+    <p>Hosted checkout is not enabled.</p>
+  {% elif not_found %}
+    <p>Payment request not found.</p>
+  {% else %}
+    <p>Redirecting you to iPay&hellip;</p>
+    <form id="ipay-checkout-form" method="POST" action="{{ action }}">
+      {% for key, value in fields.items() %}
+      <input type="hidden" name="{{ key }}" value="{{ value }}">
+      {% endfor %}
+      <noscript>
+        <button type="submit" class="btn btn-primary">Continue to iPay</button>
+      </noscript>
+    </form>
+    <script>document.getElementById("ipay-checkout-form").submit();</script>
+  {% endif %}
+</div>
+{% endblock %}
