@@ -1,0 +1,38 @@
+{% extends "templates/web.html" %}
+
+{% block page_content %}
+<div class="container" style="max-width: 720px; margin-top: 40px;">
+  <h2>Collect Payment</h2>
+  <p class="text-muted">Select an invoice to prompt the customer for payment via iPay.</p>
+
+  {% if invoices %}
+  <table class="table table-bordered" style="margin-top: 20px;">
+    <thead>
+      <tr>
+        <th>Invoice</th>
+        <th>Customer</th>
+        <th class="text-right">Outstanding</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for inv in invoices %}
+      <tr>
+        <td>{{ inv.name }}</td>
+        <td>{{ inv.customer_name }}</td>
+        <td class="text-right">{{ "%.2f"|format(inv.outstanding_amount) }}</td>
+        <td class="text-right">
+          <a class="btn btn-primary btn-sm"
+             href="/api/method/ipay.ipay.main.utils.ipay_redirect.start_checkout?invoice={{ inv.name }}">
+            Prompt Payment
+          </a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="margin-top: 20px;">No invoices awaiting payment.</p>
+  {% endif %}
+</div>
+{% endblock %}
