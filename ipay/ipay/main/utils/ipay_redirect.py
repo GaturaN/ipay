@@ -52,7 +52,8 @@ def build_checkout_form(request_name, phone=None):
     settings = frappe.get_single("iPay Settings")
     req = frappe.get_doc("iPay Request", request_name)
 
-    oid = re.sub(UNWANTED_OID_CHARACTERS, "", req.sales_invoice)
+    # Order id is the iPay Request name (unique per request), not the invoice.
+    oid = re.sub(UNWANTED_OID_CHARACTERS, "", req.name)
     outstanding = frappe.db.get_value(
         "Sales Invoice", req.sales_invoice, "outstanding_amount"
     )
@@ -65,7 +66,7 @@ def build_checkout_form(request_name, phone=None):
     fields = {
         "live": "1" if settings.is_live else "0",
         "oid": oid,
-        "inv": oid,
+        "inv": re.sub(UNWANTED_OID_CHARACTERS, "", req.sales_invoice),
         "ttl": f"{amount:.2f}",
         "tel": normalize_phone(phone or req.customer_phone),
         "eml": req.customer_email or "",

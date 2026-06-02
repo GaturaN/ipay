@@ -8,8 +8,8 @@ from ipay.ipay.main.utils.make_payment_entry import make_payment_entry
 from ipay.ipay.main.utils.send_callback import deliver_callback
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
 
-# Order ids are derived from the Sales Invoice exactly as the original /transact
-# request did (see main.py / confirm_payment.py), so the search matches.
+# Order ids are derived from the iPay Request name exactly as the original
+# /transact request did (see main.py / ipay_redirect.py), so the search matches.
 UNWANTED_OID_CHARACTERS = r"[-/;:~`!%^*<&_]"
 
 # Only reconcile requests created within this window; older unconfirmed requests
@@ -85,7 +85,8 @@ def _reconcile_one(req, vid, secret_key):
     if not req.sales_invoice:
         return
 
-    oid = re.sub(UNWANTED_OID_CHARACTERS, "", req.sales_invoice)
+    # Order id is the iPay Request name (matches what initiation sent to iPay).
+    oid = re.sub(UNWANTED_OID_CHARACTERS, "", req.name)
     data = _search_transaction(oid, vid, secret_key)
     if not data:
         # Not paid yet (or not found) — leave it to retry on the next run.
