@@ -17,10 +17,29 @@ HASH_FIELD_ORDER = [
 ]
 
 
-def build_checkout_form(request_name):
+def normalize_phone(phone):
+    """Normalise a Kenyan number to MSISDN form (2547XXXXXXXX / 2541XXXXXXXX):
+    strip non-digits and the leading +/0, so iPay charges a consistent number."""
+    digits = re.sub(r"\D", "", phone or "")
+    if not digits:
+        return ""
+    if digits.startswith("254"):
+        return digits
+    if digits.startswith("0"):
+        return "254" + digits[1:]
+    if digits.startswith(("7", "1")):
+        return "254" + digits
+    return digits
+
+
+def build_checkout_form(request_name, phone=None):
     """Build the field set (including the SHA1 hash) for an auto-submitting
     hosted-checkout form for the given iPay Request. The request name is sent as
-    p1 so iPay echoes it back to the return handler."""
+    p1 so iPay echoes it back to the return handler.
+
+    iPay requires `tel` and locks the M-Pesa phone field to it, so the paying
+    number must be decided here (before redirect): use the caller-supplied phone
+    if given, else the customer's number on file."""
     settings = frappe.get_single("iPay Settings")
     req = frappe.get_doc("iPay Request", request_name)
 
@@ -39,7 +58,7 @@ def build_checkout_form(request_name):
         "oid": oid,
         "inv": oid,
         "ttl": f"{amount:.2f}",
-        "tel": req.customer_phone or "",
+        "tel": normalize_phone(phone or req.customer_phone),
         "eml": req.customer_email or "",
         "vid": (settings.vendor_id or "").lower(),
         "curr": "KES",
@@ -80,25 +99,86 @@ def ipay_return(**kwargs):
     frappe.local.response["location"] = f"/payment_status?request={request_name or ''}"
 
 
-@frappe.whitelist()
-def start_checkout(invoice):
-    """Operator action from the collection page: ensure a submitted iPay Request
-    exists for the invoice, then send the browser to the hosted checkout."""
+def _ensure_request(invoice):
+    """Return the name of a submitted iPay Request for the invoice, creating one
+    if none exists yet."""
     request_name = frappe.db.get_value(
         "iPay Request", {"sales_invoice": invoice, "docstatus": 1}, "name"
     )
-    if not request_name:
-        invoice_doc = frappe.get_doc("Sales Invoice", invoice)
-        request = frappe.get_doc(
-            {
-                "doctype": "iPay Request",
-                "customer": invoice_doc.customer,
-                "sales_invoice": invoice,
-                "docstatus": 1,
-            }
-        )
-        request.insert(ignore_permissions=True)
-        request_name = request.name
+    if request_name:
+        return request_name
 
+    invoice_doc = frappe.get_doc("Sales Invoice", invoice)
+    request = frappe.get_doc(
+        {
+            "doctype": "iPay Request",
+            "customer": invoice_doc.customer,
+            "sales_invoice": invoice,
+            "docstatus": 1,
+        }
+    )
+    request.insert(ignore_permissions=True)
+    return request.name
+
+
+@frappe.whitelist()
+def start_checkout(invoice):
+    """Operator action from the collection page: ensure a submitted iPay Request
+    exists for the invoice, then send the browser to the hosted checkout. The
+    payer's number defaults to the customer's number on file (iPay requires a
+    tel); the checkout page asks for one only if none is on file."""
+    request_name = _ensure_request(invoice)
     frappe.local.response["type"] = "redirect"
     frappe.local.response["location"] = f"/ipay_checkout?request={request_name}"
+
+
+@frappe.whitelist()
+def prompt_mpesa(invoice, phone=None):
+    """Operator action: send an M-Pesa STK push for the invoice (creating the
+    iPay Request if needed). The STK + verify flow is enqueued on a background
+    worker so the web request returns immediately (the verify loop can exceed the
+    30s gunicorn timeout); the reconcile poller backstops finalisation."""
+    request_name = _ensure_request(invoice)
+    req = frappe.db.get_value(
+        "iPay Request",
+        request_name,
+        ["customer", "customer_phone", "customer_email", "amount", "sales_invoice"],
+        as_dict=True,
+    )
+
+    phone = normalize_phone(phone or req.customer_phone)
+    if not phone:
+        return {"status": "error", "message": "No phone number on file for this customer."}
+
+    frappe.enqueue(
+        "ipay.ipay.main.main.lipana_mpesa",
+        queue="long",
+        docid=request_name,
+        user_id=req.customer,
+        phone=phone,
+        amount=req.amount,
+        oid=req.sales_invoice,
+        customer_email=req.customer_email,
+        payment_request_type="Mpesa Express",
+    )
+    return {
+        "status": "sent",
+        "request": request_name,
+        "message": "M-Pesa prompt sent to the customer. The payment will confirm automatically.",
+    }
+
+
+@frappe.whitelist()
+def payment_state(request):
+    """Lightweight poll target for the collection page: report whether a request
+    has been paid/failed yet and the human-readable result detail."""
+    row = frappe.db.get_value(
+        "iPay Request", request, ["status", "result_detail"], as_dict=True
+    ) or {}
+    status = row.get("status") or ""
+    return {
+        "status": status,
+        "paid": status == "Success",
+        "failed": status in ("Error", "Failed to complete request"),
+        "detail": row.get("result_detail") or "",
+    }

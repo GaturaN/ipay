@@ -16,4 +16,13 @@ def get_context(context):
         context.not_found = True
         return
 
-    context.action, context.fields = build_checkout_form(request_name)
+    action, fields = build_checkout_form(request_name, frappe.form_dict.get("phone"))
+
+    # iPay requires a telephone number; if none was supplied or on file, ask for one.
+    if not fields.get("tel"):
+        context.phone_required = True
+        context.request_name = request_name
+        return
+
+    context.action = action
+    context.fields = fields

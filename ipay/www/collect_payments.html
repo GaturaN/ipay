@@ -1,38 +1,197 @@
 {% extends "templates/web.html" %}
 
-{% block page_content %}
-<div class="container" style="max-width: 720px; margin-top: 40px;">
-  <h2>Collect Payment</h2>
-  <p class="text-muted">Select an invoice to prompt the customer for payment via iPay.</p>
+{% block title %}Collect Payment{% endblock %}
 
-  {% if invoices %}
-  <table class="table table-bordered" style="margin-top: 20px;">
-    <thead>
-      <tr>
-        <th>Invoice</th>
-        <th>Customer</th>
-        <th class="text-right">Outstanding</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for inv in invoices %}
-      <tr>
-        <td>{{ inv.name }}</td>
-        <td>{{ inv.customer_name }}</td>
-        <td class="text-right">{{ "%.2f"|format(inv.outstanding_amount) }}</td>
-        <td class="text-right">
-          <a class="btn btn-primary btn-sm"
-             href="/api/method/ipay.ipay.main.utils.ipay_redirect.start_checkout?invoice={{ inv.name }}">
-            Prompt Payment
-          </a>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% else %}
-  <p style="margin-top: 20px;">No invoices awaiting payment.</p>
-  {% endif %}
+{% block page_content %}
+<style>
+  .ipay-collect { max-width: 920px; margin: 40px auto 60px; }
+  .ipay-collect .ipay-card { border: none; border-radius: 14px; box-shadow: 0 8px 30px rgba(17, 24, 39, .08); }
+  .ipay-collect h3 { font-weight: 600; letter-spacing: -.01em; }
+  .ipay-help-toggle { cursor: pointer; color: #4a5568; font-size: .9rem; user-select: none; display: inline-block; }
+  .ipay-help-toggle:hover { color: #2b6cb0; }
+  .ipay-help { background: #f7fafc; border: 1px solid #edf2f7; border-radius: 10px; padding: 14px 18px; margin-top: 10px; }
+  .ipay-help ul { padding-left: 1.1rem; margin-bottom: 0; }
+  .ipay-help li + li { margin-top: 8px; }
+  .ipay-search { position: relative; margin-top: 18px; }
+  .ipay-search .ipay-search-icon { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); opacity: .45; }
+  .ipay-search input { border-radius: 10px; padding-left: 40px; height: 46px; }
+  .ipay-table { margin-top: 20px; }
+  .ipay-table thead th { border-top: none; border-bottom: 2px solid #edf2f7; font-size: .74rem; text-transform: uppercase;
+    letter-spacing: .04em; color: #94a3b8; padding-top: .5rem; padding-bottom: .5rem; }
+  .ipay-table td { vertical-align: middle; padding-top: .85rem; padding-bottom: .85rem; }
+  .ipay-table tbody tr:hover { background: #f8fafc; }
+  .ipay-inv { font-weight: 600; color: #1f2937; }
+  .ipay-dn { color: #94a3b8; font-size: .85rem; }
+  .ipay-amount { font-weight: 600; font-variant-numeric: tabular-nums; color: #1f2937; }
+  .ipay-actions .btn { border-radius: 8px; font-weight: 500; }
+  .ipay-empty { text-align: center; color: #94a3b8; padding: 48px 0; }
+  #ipay-alerts:not(:empty) { margin-top: 16px; }
+  @media (max-width: 576px) { .ipay-collect { margin: 16px; } .ipay-collect .card-body { padding: 1.25rem !important; } }
+</style>
+
+<div class="ipay-collect">
+  <div class="card ipay-card">
+    <div class="card-body p-4">
+      <h3 class="mb-1">Collect Payment</h3>
+      <p class="text-muted mb-2">Prompt a customer for payment. Pick the option that matches how they want to pay.</p>
+
+      <span class="ipay-help-toggle" onclick="ipayToggleHelp()">
+        <span id="ipay-help-caret">&#9656;</span> Which option should I use?
+      </span>
+      <div class="ipay-help" id="ipay-help" style="display: none;">
+        <ul class="small">
+          <li>
+            <span class="badge badge-success">Prompt M-Pesa</span>
+            Sends an M-Pesa PIN prompt straight to the customer's phone — they just enter their PIN.
+            You can charge <em>any</em> M-Pesa number (you'll be asked for it), and the result —
+            success with the payment details, or the reason it failed — appears on this page.
+          </li>
+          {% if enable_redirect %}
+          <li>
+            <span class="badge badge-primary">Pay via iPay</span>
+            Opens iPay's secure checkout where the customer can pay by <strong>card, Airtel Money or M-Pesa</strong>.
+            Use this for cards or Airtel. On that page the M-Pesa number is fixed to the customer's saved number —
+            to charge a <em>different</em> M-Pesa number, use <span class="badge badge-success">Prompt M-Pesa</span>.
+          </li>
+          {% endif %}
+        </ul>
+      </div>
+
+      <div id="ipay-alerts"></div>
+
+      <div class="ipay-search">
+        <span class="ipay-search-icon">&#128269;</span>
+        <input type="text" id="ipay-search" class="form-control"
+               placeholder="Search invoice, customer or delivery note…" autocomplete="off">
+      </div>
+
+      {% if invoices %}
+      <div class="table-responsive">
+        <table class="table ipay-table" id="ipay-invoice-table">
+          <thead>
+            <tr>
+              <th>Invoice</th>
+              <th>Customer</th>
+              <th>Delivery Note</th>
+              <th class="text-right">Outstanding</th>
+              <th class="text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for inv in invoices %}
+            <tr data-invoice="{{ inv.name }}">
+              <td class="ipay-inv">{{ inv.name }}</td>
+              <td>{{ inv.customer_name }}</td>
+              <td class="ipay-dn">{{ inv.delivery_note or "—" }}</td>
+              <td class="text-right ipay-amount">{{ "{:,.2f}".format(inv.outstanding_amount) }}</td>
+              <td class="text-right ipay-actions" style="white-space: nowrap;">
+                <button type="button" class="btn btn-success btn-sm"
+                        onclick="ipayPromptMpesa('{{ inv.name }}')">
+                  Prompt M-Pesa
+                </button>
+                {% if enable_redirect %}
+                <a class="btn btn-primary btn-sm"
+                   href="/api/method/ipay.ipay.main.utils.ipay_redirect.start_checkout?invoice={{ inv.name }}">
+                  Pay via iPay
+                </a>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="ipay-empty" id="ipay-no-match" style="display: none;">No invoices match your search.</p>
+      {% else %}
+      <div class="ipay-empty">No invoices awaiting payment.</div>
+      {% endif %}
+    </div>
+  </div>
 </div>
+
+<script>
+function ipayToggleHelp() {
+  var box = document.getElementById("ipay-help");
+  var caret = document.getElementById("ipay-help-caret");
+  if (!box) { return; }
+  var open = box.style.display !== "none";
+  box.style.display = open ? "none" : "block";
+  if (caret) { caret.innerHTML = open ? "&#9656;" : "&#9662;"; }
+}
+
+function ipayNotify(message, type) {
+  var c = document.getElementById("ipay-alerts");
+  if (!c) { return; }
+  var div = document.createElement("div");
+  div.className = "alert alert-" + (type || "info") + " alert-dismissible";
+  div.innerHTML = message +
+    ' <button type="button" class="close" onclick="this.parentNode.remove()">&times;</button>';
+  c.prepend(div);
+}
+
+function ipayRemoveRow(invoice) {
+  var row = document.querySelector('#ipay-invoice-table tbody tr[data-invoice="' + invoice + '"]');
+  if (row) { row.remove(); }
+}
+
+function ipayPoll(request, invoice) {
+  var tries = 0, max = 25;
+  var iv = setInterval(function () {
+    tries++;
+    frappe.call({
+      method: "ipay.ipay.main.utils.ipay_redirect.payment_state",
+      args: { request: request },
+      callback: function (r) {
+        var s = r.message || {};
+        if (s.paid) {
+          clearInterval(iv);
+          ipayNotify("<strong>Payment received</strong> &mdash; " + (s.detail || invoice), "success");
+          ipayRemoveRow(invoice);
+        } else if (s.failed) {
+          clearInterval(iv);
+          ipayNotify("<strong>Payment failed</strong> (" + invoice + ") &mdash; " + (s.detail || "no reason given"), "danger");
+        } else if (tries >= max) {
+          clearInterval(iv);
+          ipayNotify("Still awaiting payment for " + invoice + ". It will confirm automatically if the customer pays.", "warning");
+        }
+      }
+    });
+  }, 4000);
+}
+
+function ipayPromptMpesa(invoice) {
+  var phone = prompt("Customer phone for M-Pesa (leave blank to use the number on file):", "");
+  if (phone === null) { return; }
+  frappe.call({
+    method: "ipay.ipay.main.utils.ipay_redirect.prompt_mpesa",
+    args: { invoice: invoice, phone: phone },
+    callback: function (r) {
+      var res = r.message || {};
+      if (res.status === "error") {
+        ipayNotify("Cannot prompt " + invoice + ": " + (res.message || "unknown error"), "danger");
+        return;
+      }
+      ipayNotify("M-Pesa prompt sent for " + invoice + ". Waiting for the customer to pay&hellip;", "info");
+      if (res.request) { ipayPoll(res.request, invoice); }
+    }
+  });
+}
+
+(function () {
+  var search = document.getElementById("ipay-search");
+  if (!search) { return; }
+  search.addEventListener("keyup", function () {
+    var q = this.value.toLowerCase();
+    var rows = document.querySelectorAll("#ipay-invoice-table tbody tr");
+    var shown = 0;
+    rows.forEach(function (row) {
+      var match = row.textContent.toLowerCase().indexOf(q) > -1;
+      row.style.display = match ? "" : "none";
+      if (match) { shown++; }
+    });
+    var none = document.getElementById("ipay-no-match");
+    if (none) { none.style.display = shown ? "none" : ""; }
+  });
+})();
+</script>
 {% endblock %}

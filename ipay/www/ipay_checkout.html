@@ -6,6 +6,14 @@
     <p>Hosted checkout is not enabled.</p>
   {% elif not_found %}
     <p>Payment request not found.</p>
+  {% elif phone_required %}
+    <p>This customer has no phone number on file. Enter the number to use for this payment:</p>
+    <form method="GET" action="/ipay_checkout">
+      <input type="hidden" name="request" value="{{ request_name }}">
+      <input type="tel" name="phone" class="form-control mb-2" placeholder="e.g. 0712345678"
+             required style="max-width: 280px; margin: 0 auto;">
+      <button type="submit" class="btn btn-primary">Continue</button>
+    </form>
   {% else %}
     <p>Redirecting you to iPay&hellip;</p>
     <form id="ipay-checkout-form" method="POST" action="{{ action }}">
