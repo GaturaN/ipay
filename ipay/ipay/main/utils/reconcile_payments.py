@@ -103,7 +103,7 @@ def _reconcile_one(req, vid, secret_key):
 
     if _amount_matches(data.get("transaction_amount"), req.amount):
         result = make_payment_entry(
-            req.customer, req.customer_email, req.sales_invoice, response_data
+            req.customer, req.customer_email, req.sales_invoice, response_data, ipay_request=req.name
         )
         if result.get("status") in ("success", "duplicate"):
             frappe.db.set_value("iPay Request", req.name, "status", "Success")
