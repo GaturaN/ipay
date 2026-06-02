@@ -19,6 +19,26 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
         if isinstance(response_data, str):
             response_data = json.loads(response_data)
 
+        # Idempotency: never create a second Payment Entry for the same M-Pesa
+        # transaction. Multiple paths (STK, manual confirm, callback) can finalise
+        # the same payment, so guard on the transaction code.
+        transaction_code = response_data.get("transaction_code")
+        if transaction_code:
+            existing = frappe.db.get_value(
+                "Payment Entry",
+                {"reference_no": transaction_code, "docstatus": ["<", 2]},
+                "name",
+            )
+            if existing:
+                logger.info(
+                    f"Payment Entry {existing} already exists for transaction {transaction_code}"
+                )
+                return {
+                    "status": "duplicate",
+                    "payment_entry": existing,
+                    "message": "Payment Entry already exists",
+                }
+
         # Fetch the Sales Invoice
         sales_invoice = frappe.get_doc("Sales Invoice", inv)
 
@@ -94,10 +114,14 @@ def make_payment_entry(user_id, customer_email, inv, response_data):
         logger.info(
             f"Payment Entry {payment_entry.name} created successfully for Sales Invoice {inv}."
         )
-        return payment_entry.name
+        return {
+            "status": "success",
+            "payment_entry": payment_entry.name,
+            "message": "Payment Entry created",
+        }
 
     except Exception as e:
         # Log the exception
         logger.error(f"Error creating Payment Entry: {str(e)}", exc_info=True)
         frappe.log_error(frappe.get_traceback(), "Payment Entry Creation Error")
-        return None
+        return {"status": "error", "payment_entry": None, "message": str(e)}
