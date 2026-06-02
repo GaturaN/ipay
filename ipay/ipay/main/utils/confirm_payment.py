@@ -5,7 +5,7 @@ import logging
 import re
 import frappe
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
-from ipay.ipay.main.utils.send_callback import send_callback
+from ipay.ipay.main.utils.send_callback import deliver_callback
 
 
 logging.basicConfig(level=logging.INFO)
@@ -82,7 +82,7 @@ def confirm_payment(docid, user_id, phone, amount, order, customer_email):
                       }
 
                     # notify the configured callback URL
-                    send_callback(data)
+                    deliver_callback(docid, data)
 
                     return {"status": "success", "message": "Payment verified", "data": data}
                   
