@@ -34,3 +34,29 @@ def is_sales_invoice_prepaid(sales_invoice):
         if (classification or "").strip() == PREPAID_CLASSIFICATION:
             return True
     return False
+
+
+def prepaid_invoice_names(sales_invoices):
+    """Subset of the given Sales Invoices that are prepaid (two batched queries).
+
+    Use this instead of calling is_sales_invoice_prepaid in a loop when checking
+    many invoices at once (e.g. the collection page list)."""
+    names = [n for n in (sales_invoices or []) if n]
+    if not names or not frappe.get_meta("Sales Order").has_field("wave_payment_classification"):
+        return set()
+
+    items = frappe.get_all(
+        "Sales Invoice Item",
+        filters={"parent": ["in", names], "sales_order": ["is", "set"]},
+        fields=["parent", "sales_order"],
+    )
+    sales_orders = {it.sales_order for it in items}
+    if not sales_orders:
+        return set()
+
+    prepaid_orders = set(frappe.get_all(
+        "Sales Order",
+        filters={"name": ["in", list(sales_orders)], "wave_payment_classification": PREPAID_CLASSIFICATION},
+        pluck="name",
+    ))
+    return {it.parent for it in items if it.sales_order in prepaid_orders}

@@ -1,6 +1,8 @@
 import frappe
 from frappe.utils import flt, today
 
+from ipay.ipay.main.utils.prepaid import prepaid_invoice_names
+
 # Roles allowed to use the collection page.
 ALLOWED_ROLES = {"System Manager", "iPay Manager", "iPay User"}
 
@@ -49,6 +51,12 @@ def get_context(context):
         order_by="posting_date desc",
         limit_page_length=100,
     )
+
+    # Prepaid invoices settle automatically and must never be collected here, so
+    # drop them from the list (no row, no link, no prompt).
+    prepaid = prepaid_invoice_names([inv.name for inv in invoices])
+    if prepaid:
+        invoices = [inv for inv in invoices if inv.name not in prepaid]
 
     # Attach the delivery note(s) linked to each invoice (one batched query).
     if invoices:
