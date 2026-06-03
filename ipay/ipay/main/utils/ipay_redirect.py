@@ -180,7 +180,12 @@ def _enqueue_stk(request_name, phone):
     )
     phone = normalize_phone(phone or req.customer_phone)
     if not phone:
-        return {"status": "error", "message": "No phone number provided."}
+        # Structured signal so the caller can prompt for a number and save it
+        # back, rather than surfacing a dead-end error.
+        return {
+            "status": "missing_phone",
+            "message": "No M-Pesa phone number on file. Enter a number to charge.",
+        }
 
     frappe.enqueue(
         "ipay.ipay.main.main.lipana_mpesa",
@@ -337,6 +342,43 @@ def payment_state(request):
     """Poll target for the collection page (operator, by request name)."""
     _require_operator()
     return _payment_state(request, include_detail=True)
+
+
+@frappe.whitelist(methods=["POST"])
+def save_customer_contact(request, phone=None, email=None):
+    """Persist an operator-entered phone/email so future requests never error for
+    missing contact. Writes to the Customer master ONLY when that field is blank
+    (never overwrites an ad-hoc number), and refreshes the in-flight request.
+
+    Uses a low-level db.set_value because iPay operator/collector roles do not
+    have Customer write permission; values are validated first."""
+    _require_operator()
+    customer = frappe.db.get_value("iPay Request", request, "customer")
+    if not customer:
+        frappe.throw("Unknown request.")
+
+    customer_updates, request_updates, saved = {}, {}, []
+    if phone:
+        norm = normalize_phone(phone)
+        if not re.fullmatch(r"254(7|1)\d{8}", norm):
+            frappe.throw("Enter a valid Kenyan phone number (e.g. 0712345678).")
+        request_updates["customer_phone"] = norm
+        if not frappe.db.get_value("Customer", customer, "mobile_no"):
+            customer_updates["mobile_no"] = norm
+            saved.append("phone")
+    if email:
+        if not frappe.utils.validate_email_address(email):
+            frappe.throw("Enter a valid email address.")
+        request_updates["customer_email"] = email
+        if not frappe.db.get_value("Customer", customer, "email_id"):
+            customer_updates["email_id"] = email
+            saved.append("email")
+
+    if customer_updates:
+        frappe.db.set_value("Customer", customer, customer_updates)
+    if request_updates:
+        frappe.db.set_value("iPay Request", request, request_updates)
+    return {"status": "ok", "saved_to_customer": saved}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

@@ -200,14 +200,26 @@ function ipayPoll(request, invoice) {
   iv = setInterval(check, 3000);
 }
 
-function ipayPromptMpesa(invoice) {
-  var phone = prompt("Customer phone for M-Pesa (leave blank to use the number on file):", "");
-  if (phone === null) { return; }
+function ipayPromptMpesa(invoice, phone) {
+  if (phone === undefined) {
+    phone = prompt("Customer phone for M-Pesa (leave blank to use the number on file):", "");
+    if (phone === null) { return; }
+  }
   frappe.call({
     method: "ipay.ipay.main.utils.ipay_redirect.prompt_mpesa",
     args: { invoice: invoice, phone: phone },
     callback: function (r) {
       var res = r.message || {};
+      if (res.status === "missing_phone") {
+        var entered = prompt("No phone on file for this customer. Enter an M-Pesa number to charge (saved for next time):", "");
+        if (!entered) { ipayNotify("A phone number is required to prompt " + invoice + ".", "warning"); return; }
+        frappe.call({
+          method: "ipay.ipay.main.utils.ipay_redirect.save_customer_contact",
+          args: { request: res.request, phone: entered },
+          callback: function () { ipayPromptMpesa(invoice, entered); }
+        });
+        return;
+      }
       if (res.status === "error") {
         ipayNotify("Cannot prompt " + invoice + ": " + (res.message || "unknown error"), "danger");
         return;
