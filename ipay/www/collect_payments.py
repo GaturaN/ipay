@@ -61,10 +61,27 @@ def get_context(context):
         dn_map = {}
         for link in links:
             dn_map.setdefault(link.parent, set()).add(link.delivery_note)
+
+        # Resolve each delivery note's driver (one batched query) so invoices can
+        # be filtered by driver on the page. The driver lives on the Delivery
+        # Note, not the Sales Invoice.
+        dn_names = {n for names_set in dn_map.values() for n in names_set}
+        driver_by_dn = {}
+        if dn_names:
+            for dn in frappe.get_all(
+                "Delivery Note",
+                filters={"name": ["in", list(dn_names)]},
+                fields=["name", "driver_name"],
+            ):
+                driver_by_dn[dn.name] = dn.driver_name or ""
+
         for inv in invoices:
-            inv.delivery_note = ", ".join(sorted(dn_map.get(inv.name, [])))
+            dns = sorted(dn_map.get(inv.name, []))
+            inv.delivery_note = ", ".join(dns)
+            inv.driver_name = next((driver_by_dn[n] for n in dns if driver_by_dn.get(n)), "")
 
     context.invoices = invoices
+    context.drivers = sorted({inv.driver_name for inv in invoices if getattr(inv, "driver_name", "")})
     context.enable_redirect = frappe.db.get_single_value("iPay Settings", "enable_redirect")
 
     # Collection totals: collected via iPay vs still outstanding, today and overall.

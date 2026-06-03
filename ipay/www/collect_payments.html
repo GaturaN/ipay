@@ -85,6 +85,13 @@
                placeholder="Search invoice, customer or delivery note…" autocomplete="off">
       </div>
 
+      {% if drivers %}
+      <select id="ipay-driver-filter" class="form-control mt-2" style="max-width: 280px;">
+        <option value="">All drivers</option>
+        {% for d in drivers %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+      </select>
+      {% endif %}
+
       <button type="button" id="ipay-bundle-btn" class="btn btn-outline-primary btn-sm mb-2"
               onclick="ipayBundleSelected()" style="display: none;">
         Pay selected together
@@ -99,13 +106,14 @@
               <th>Invoice</th>
               <th>Customer</th>
               <th>Delivery Note</th>
+              <th>Driver</th>
               <th class="text-right">Outstanding</th>
               <th class="text-right">Action</th>
             </tr>
           </thead>
           <tbody>
             {% for inv in invoices %}
-            <tr data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}">
+            <tr data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}" data-driver="{{ inv.driver_name or '' }}">
               <td>
                 <input type="checkbox" class="ipay-select"
                        data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}">
@@ -113,6 +121,7 @@
               <td class="ipay-inv">{{ inv.name }}</td>
               <td>{{ inv.customer_name }}</td>
               <td class="ipay-dn">{{ inv.delivery_note or "—" }}</td>
+              <td>{{ inv.driver_name or "—" }}</td>
               <td class="text-right ipay-amount">{{ "{:,.2f}".format(inv.outstanding_amount) }}</td>
               <td class="text-right ipay-actions" style="white-space: nowrap;">
                 <button type="button" class="btn btn-success btn-sm"
@@ -267,19 +276,27 @@ function ipayBundleSelected() {
 
 (function () {
   var search = document.getElementById("ipay-search");
-  if (!search) { return; }
-  search.addEventListener("keyup", function () {
-    var q = this.value.toLowerCase();
+  var driverFilter = document.getElementById("ipay-driver-filter");
+  if (!search && !driverFilter) { return; }
+
+  function applyFilters() {
+    var q = (search ? search.value : "").toLowerCase();
+    var driver = driverFilter ? driverFilter.value : "";
     var rows = document.querySelectorAll("#ipay-invoice-table tbody tr");
     var shown = 0;
     rows.forEach(function (row) {
-      var match = row.textContent.toLowerCase().indexOf(q) > -1;
+      var textMatch = row.textContent.toLowerCase().indexOf(q) > -1;
+      var driverMatch = !driver || (row.dataset.driver || "") === driver;
+      var match = textMatch && driverMatch;
       row.style.display = match ? "" : "none";
       if (match) { shown++; }
     });
     var none = document.getElementById("ipay-no-match");
     if (none) { none.style.display = shown ? "none" : ""; }
-  });
+  }
+
+  if (search) { search.addEventListener("keyup", applyFilters); }
+  if (driverFilter) { driverFilter.addEventListener("change", applyFilters); }
 })();
 </script>
 {% endblock %}
