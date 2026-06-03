@@ -100,13 +100,13 @@ app_include_js = 'sales_invoice.bundle.js'
 # -----------
 # Permissions evaluated in scripted ways
 
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+permission_query_conditions = {
+	"iPay Request": "ipay.ipay.main.utils.permissions.ipay_request_query_conditions",
+}
+
+has_permission = {
+	"iPay Request": "ipay.ipay.main.utils.permissions.ipay_request_has_permission",
+}
 
 # DocType Class
 # ---------------

@@ -2,9 +2,10 @@ import frappe
 from frappe.utils import flt, today
 
 from ipay.ipay.main.utils.prepaid import prepaid_invoice_names
+from ipay.ipay.main.utils.collector import is_collector_only, collector_scope
 
 # Roles allowed to use the collection page.
-ALLOWED_ROLES = {"System Manager", "iPay Manager", "iPay User"}
+ALLOWED_ROLES = {"System Manager", "iPay Manager", "iPay User", "iPay Collector"}
 
 
 def _sum_outstanding(extra_filters=None):
@@ -16,19 +17,27 @@ def _sum_outstanding(extra_filters=None):
     return flt(rows[0].total) if rows else 0
 
 
-def _collected_totals(today_date):
+def _collected_totals(today_date, request_names=None):
     """Collected via iPay = paid_amount of Payment Entries linked from iPay
-    Requests. Returns (overall, today)."""
+    Requests. Returns (overall, today). When request_names is given (collector
+    view), restrict to those requests."""
+    scope_clause = ""
+    params = {"today": today_date}
+    if request_names is not None:
+        if not request_names:
+            return (0, 0)
+        scope_clause = "and ir.name in %(reqs)s"
+        params["reqs"] = tuple(request_names)
     row = frappe.db.sql(
-        """
+        f"""
         select
             coalesce(sum(pe.paid_amount), 0) as total,
             coalesce(sum(case when pe.posting_date = %(today)s then pe.paid_amount else 0 end), 0) as today_total
         from `tabPayment Entry` pe
         inner join `tabiPay Request` ir on ir.payment_entry = pe.name
-        where pe.docstatus = 1
+        where pe.docstatus = 1 {scope_clause}
         """,
-        {"today": today_date},
+        params,
         as_dict=True,
     )
     return (flt(row[0].total), flt(row[0].today_total)) if row else (0, 0)
@@ -44,9 +53,19 @@ def get_context(context):
     if not (ALLOWED_ROLES & set(frappe.get_roles())):
         frappe.throw("You are not permitted to collect payments.", frappe.PermissionError)
 
+    # A collector sees only their own work (driver-delivered + assigned); full
+    # operators see everything. Scope is computed once and reused for the list
+    # and the stat cards.
+    collector = is_collector_only(frappe.session.user)
+    scope = collector_scope(frappe.session.user) if collector else None
+
+    si_filters = {"docstatus": 1, "is_return": 0, "outstanding_amount": [">", 0]}
+    if collector:
+        si_filters["name"] = ["in", list(scope["invoices"]) or ["__none__"]]
+
     invoices = frappe.get_all(
         "Sales Invoice",
-        filters={"docstatus": 1, "is_return": 0, "outstanding_amount": [">", 0]},
+        filters=si_filters,
         fields=["name", "customer", "customer_name", "outstanding_amount", "posting_date"],
         order_by="posting_date desc",
         limit_page_length=100,
@@ -92,8 +111,17 @@ def get_context(context):
     context.drivers = sorted({inv.driver_name for inv in invoices if getattr(inv, "driver_name", "")})
     context.enable_redirect = frappe.db.get_single_value("iPay Settings", "enable_redirect")
 
-    # Collection totals: collected via iPay vs still outstanding, today and overall.
+    # Collection totals: collected via iPay vs still outstanding, today and
+    # overall — scoped to the collector's own book when applicable.
     today_date = today()
-    context.collected_total, context.collected_today = _collected_totals(today_date)
-    context.outstanding_total = _sum_outstanding()
-    context.outstanding_today = _sum_outstanding({"posting_date": today_date})
+    if collector:
+        inv_filter = {"name": ["in", list(scope["invoices"]) or ["__none__"]]}
+        context.collected_total, context.collected_today = _collected_totals(
+            today_date, list(scope["requests"])
+        )
+        context.outstanding_total = _sum_outstanding(inv_filter)
+        context.outstanding_today = _sum_outstanding({**inv_filter, "posting_date": today_date})
+    else:
+        context.collected_total, context.collected_today = _collected_totals(today_date)
+        context.outstanding_total = _sum_outstanding()
+        context.outstanding_today = _sum_outstanding({"posting_date": today_date})
