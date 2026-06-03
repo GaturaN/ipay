@@ -7,6 +7,7 @@ import frappe
 from ipay.ipay.main.utils.reconcile_payments import reconcile_request
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
 from ipay.ipay.main.utils.constants import clean_oid
+from ipay.ipay.main.utils.prepaid import is_sales_invoice_prepaid
 
 # Hosted checkout (HTML form POST). NB: this flow uses HMAC-SHA1 over the
 # documented field order — it is NOT the REST /transact SHA256 flow.
@@ -248,12 +249,15 @@ def create_bundle(customer, invoices):
             frappe.throw(f"Invoice {name} does not belong to {customer}.")
         if frappe.utils.flt(si.outstanding_amount) <= 0:
             continue
+        # Prepaid invoices settle automatically — never bundle them for collection.
+        if is_sales_invoice_prepaid(name):
+            continue
         companies.add(si.company)
         rows.append((si.posting_date, name))
         total += frappe.utils.flt(si.outstanding_amount)
 
     if not rows:
-        frappe.throw("None of the selected invoices have an outstanding balance.")
+        frappe.throw("None of the selected invoices need collection (paid, prepaid, or zero balance).")
     if len(companies) > 1:
         frappe.throw("All invoices in a bundle must belong to the same company.")
 
@@ -297,6 +301,10 @@ def split_bundle(request):
 
     created = []
     for name in invoice_names:
+        # A legacy bundle may contain a since-prepaid invoice; skip it rather
+        # than let the controller abort the whole split.
+        if is_sales_invoice_prepaid(name):
+            continue
         customer = frappe.db.get_value("Sales Invoice", name, "customer")
         single = frappe.get_doc(
             {

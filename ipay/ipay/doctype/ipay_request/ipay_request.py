@@ -5,14 +5,40 @@ import frappe
 from frappe.utils import flt
 from frappe.website.website_generator import WebsiteGenerator
 
+from ipay.ipay.main.utils.prepaid import is_sales_invoice_prepaid
+
 
 class iPayRequest(WebsiteGenerator):
 	def before_validate(self):
+		# Prepaid invoices are settled automatically (wave_sync creates their
+		# Payment Entry on submit), so they never need an iPay request. This is
+		# the one chokepoint every creation path funnels through. Only check on
+		# create — the classification never changes and later saves shouldn't pay
+		# the query cost. Drop prepaid invoices from a bundle; block a single one.
+		if self.is_new():
+			if self.invoices:
+				self.set("invoices", [
+					row for row in self.invoices
+					if not is_sales_invoice_prepaid(row.sales_invoice)
+				])
+				if not self.invoices:
+					frappe.throw(
+						"All selected invoices are prepaid and settle automatically; "
+						"no iPay payment request is needed."
+					)
+			elif self.sales_invoice and is_sales_invoice_prepaid(self.sales_invoice):
+				frappe.throw(
+					"This invoice is prepaid and settles automatically; "
+					"no iPay payment request is needed."
+				)
+
 		# For a bundle (the `invoices` table), default the primary Sales Invoice
-		# from the first row so the mandatory sales_invoice field is satisfied
+		# from a remaining row so the mandatory sales_invoice field is satisfied
 		# from the table alone (e.g. when created from the desk).
-		if self.invoices and not self.sales_invoice:
-			self.sales_invoice = self.invoices[0].sales_invoice
+		if self.invoices:
+			names = {row.sales_invoice for row in self.invoices}
+			if not self.sales_invoice or self.sales_invoice not in names:
+				self.sales_invoice = self.invoices[0].sales_invoice
 
 	def validate(self):
 		# A single-invoice request keeps the fetched amount; a bundle's amount is
