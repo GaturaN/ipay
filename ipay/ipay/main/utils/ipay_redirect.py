@@ -160,21 +160,54 @@ def _ensure_request(invoice):
     return request.name
 
 
-def _ensure_pay_token(request_name):
-    """Return the request's non-guessable payment-link token, generating it on
-    first use."""
-    token = frappe.db.get_value("iPay Request", request_name, "pay_token")
-    if not token:
-        token = frappe.generate_hash(length=24)
-        frappe.db.set_value("iPay Request", request_name, "pay_token", token)
+def _payment_link_ttl_days():
+    return frappe.utils.cint(
+        frappe.db.get_single_value("iPay Settings", "payment_link_ttl_days")
+    ) or 7
+
+
+def _new_pay_token(request_name):
+    """Issue a fresh token + expiry for a request, replacing any existing one."""
+    token = frappe.generate_hash(length=24)
+    expiry = frappe.utils.add_to_date(
+        frappe.utils.now_datetime(), days=_payment_link_ttl_days()
+    )
+    frappe.db.set_value(
+        "iPay Request", request_name, {"pay_token": token, "pay_token_expiry": expiry}
+    )
     return token
 
 
-def _request_from_token(token):
-    """Resolve a payment-link token to its iPay Request name, or None."""
+def _ensure_pay_token(request_name):
+    """Return the request's non-guessable payment-link token, (re)generating it
+    when it is missing or has expired and stamping a fresh expiry."""
+    row = frappe.db.get_value(
+        "iPay Request", request_name, ["pay_token", "pay_token_expiry"], as_dict=True
+    ) or {}
+    token, expiry = row.get("pay_token"), row.get("pay_token_expiry")
+    if token and (not expiry or frappe.utils.get_datetime(expiry) > frappe.utils.now_datetime()):
+        return token
+    return _new_pay_token(request_name)
+
+
+def resolve_pay_token(token):
+    """Resolve a payment-link token to (request_name, status), where status is
+    'ok', 'expired', or 'invalid'. Used by the public pages for clear messaging."""
     if not token:
-        return None
-    return frappe.db.get_value("iPay Request", {"pay_token": token}, "name")
+        return None, "invalid"
+    row = frappe.db.get_value(
+        "iPay Request", {"pay_token": token}, ["name", "pay_token_expiry"], as_dict=True
+    )
+    if not row:
+        return None, "invalid"
+    if row.pay_token_expiry and frappe.utils.get_datetime(row.pay_token_expiry) < frappe.utils.now_datetime():
+        return None, "expired"
+    return row.name, "ok"
+
+
+def _request_from_token(token):
+    """Resolve a (non-expired) payment-link token to its iPay Request name, or None."""
+    return resolve_pay_token(token)[0]
 
 
 def _payment_state(request_name, include_detail=False):
@@ -263,6 +296,24 @@ def get_payment_link(invoice=None, request=None):
         "redirect_enabled": bool(
             frappe.db.get_single_value("iPay Settings", "enable_redirect")
         ),
+    }
+
+
+@frappe.whitelist(methods=["POST"])
+def regenerate_payment_link(request):
+    """Issue a brand-new payment link for a request (invalidating the old one) —
+    e.g. when the previous link expired or was never used. Refused once there is
+    nothing left to collect."""
+    _require_operator()
+    _require_request_access(request)
+    status = frappe.db.get_value("iPay Request", request, "status")
+    if status in ("Success", "Overpaid"):
+        frappe.throw("This request is already paid; a new payment link is not needed.")
+    token = _new_pay_token(request)
+    frappe.db.commit()
+    return {
+        "url": frappe.utils.get_url("/pay?token=" + token),
+        "expiry": frappe.db.get_value("iPay Request", request, "pay_token_expiry"),
     }
 
 

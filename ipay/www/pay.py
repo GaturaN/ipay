@@ -1,15 +1,16 @@
 import frappe
 
-from ipay.ipay.main.utils.ipay_redirect import _request_from_token
+from ipay.ipay.main.utils.ipay_redirect import resolve_pay_token
 
 
 def get_context(context):
     context.no_cache = 1
     token = frappe.form_dict.get("token")
-    request_name = _request_from_token(token)
+    request_name, status = resolve_pay_token(token)
 
     if not request_name:
         context.invalid = True
+        context.expired = status == "expired"
         return
 
     req = frappe.db.get_value(

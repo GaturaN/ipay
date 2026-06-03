@@ -43,6 +43,30 @@ frappe.ui.form.on('iPay Request', {
          });
       }
 
+      // Regenerate the link (new token + expiry) if the old one lapsed or was
+      // never used. Only while there is still a balance to collect.
+      if (submitted && status !== 'Success' && status !== 'Overpaid') {
+         frm.add_custom_button(__('Regenerate Payment Link'), () => {
+            frappe.confirm(
+               __('Issue a new payment link? The previous link will stop working.'),
+               () => {
+                  frappe.call({
+                     method: 'ipay.ipay.main.utils.ipay_redirect.regenerate_payment_link',
+                     args: { request: frm.doc.name },
+                     freeze: true,
+                     callback: function (r) {
+                        const res = r.message || {};
+                        if (!res.url) { frappe.msgprint(__('Could not regenerate the link.')); return; }
+                        if (navigator.clipboard) { navigator.clipboard.writeText(res.url); }
+                        frappe.show_alert({ message: __('New link generated and copied.'), indicator: 'green' });
+                        frm.reload_doc();
+                     },
+                  });
+               }
+            );
+         });
+      }
+
       // Split a bundle back into individual requests (only before payment)
       if (submitted && status !== 'Success' && (frm.doc.invoices || []).length > 1) {
          frm.add_custom_button(__('Split into Individual Requests'), () => {
@@ -355,17 +379,24 @@ function render_payment_link(frm) {
       field.$wrapper.html('<span class="text-muted">This request has been paid.</span>');
    } else if (frm.doc.pay_token) {
       const url = `${window.location.origin}/pay?token=${encodeURIComponent(frm.doc.pay_token)}`;
-      set_payment_link_html(frm, url);
+      set_payment_link_html(frm, url, frm.doc.pay_token_expiry);
    } else {
       field.$wrapper.html('<span class="text-muted">Use "Copy Payment Link" to generate the link.</span>');
    }
 }
 
-function set_payment_link_html(frm, url) {
+function set_payment_link_html(frm, url, expiry) {
    const field = frm.get_field('payment_link');
    if (!field) { return; }
    const safe = frappe.utils.escape_html(url);
+   let note = '';
+   if (expiry) {
+      const expired = frappe.datetime.now_datetime() > expiry;
+      note = expired
+         ? '<br><span style="color:#c0392b">Link expired &mdash; click "Regenerate Payment Link".</span>'
+         : `<br><span class="text-muted">Valid until ${frappe.datetime.str_to_user(expiry)}</span>`;
+   }
    field.$wrapper.html(
-      `<a href="${safe}" target="_blank" rel="noopener" style="word-break:break-all">${safe}</a>`
+      `<a href="${safe}" target="_blank" rel="noopener" style="word-break:break-all">${safe}</a>${note}`
    );
 }

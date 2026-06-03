@@ -1,6 +1,6 @@
 import frappe
 
-from ipay.ipay.main.utils.ipay_redirect import build_checkout_form, _request_from_token
+from ipay.ipay.main.utils.ipay_redirect import build_checkout_form, resolve_pay_token
 
 
 def get_context(context):
@@ -12,9 +12,10 @@ def get_context(context):
         context.disabled = True
         return
 
-    request_name = _request_from_token(token)
+    request_name, status = resolve_pay_token(token)
     if not request_name:
         context.not_found = True
+        context.expired = status == "expired"
         return
 
     action, fields = build_checkout_form(request_name, frappe.form_dict.get("phone"))
