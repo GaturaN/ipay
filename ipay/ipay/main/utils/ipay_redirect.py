@@ -237,6 +237,11 @@ def start_checkout(invoice):
     _require_invoice_access(invoice)
     request_name = _ensure_request(invoice)
     token = _ensure_pay_token(request_name)
+    # This endpoint is reached by a GET (an <a> link), which Frappe treats as
+    # read-only and does NOT auto-commit — so the just-created request and token
+    # would be rolled back, and the checkout page would not find the token.
+    # Persist them explicitly before redirecting.
+    frappe.db.commit()
     frappe.local.response["type"] = "redirect"
     frappe.local.response["location"] = f"/ipay_checkout?token={token}"
 
