@@ -113,7 +113,7 @@
           </thead>
           <tbody>
             {% for inv in invoices %}
-            <tr data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}" data-driver="{{ inv.driver_name or '' }}">
+            <tr data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}" data-driver="{{ inv.driver_filter or '' }}">
               <td>
                 <input type="checkbox" class="ipay-select"
                        data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}">
@@ -286,7 +286,8 @@ function ipayBundleSelected() {
     var shown = 0;
     rows.forEach(function (row) {
       var textMatch = row.textContent.toLowerCase().indexOf(q) > -1;
-      var driverMatch = !driver || (row.dataset.driver || "") === driver;
+      var rowDrivers = (row.dataset.driver || "").split("|");
+      var driverMatch = !driver || rowDrivers.indexOf(driver) > -1;
       var match = textMatch && driverMatch;
       row.style.display = match ? "" : "none";
       if (match) { shown++; }

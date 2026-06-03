@@ -14,6 +14,15 @@ logger = logging.getLogger(__name__)
 def lipana_mpesa(
     docid, user_id, phone, amount, oid, customer_email, payment_request_type
 ):
+    # Direct HTTP callers (the desk "Prompt iPay" button — or an attacker) must
+    # be an authorised operator acting on their own request. Background calls
+    # (enqueued by prompt_mpesa / pay_prompt_mpesa) have no HTTP request and were
+    # already authorised upstream, so they skip this gate.
+    if getattr(frappe.local, "request", None):
+        from ipay.ipay.main.utils.ipay_redirect import _require_operator, _require_request_access
+
+        _require_operator()
+        _require_request_access(docid)
 
     logger.info(
         f"Received doc name: {docid}, Customer Email: {customer_email}, "

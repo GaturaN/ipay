@@ -360,6 +360,11 @@ def split_bundle(request):
         single.insert(ignore_permissions=True)
         created.append(single.name)
 
+    # Don't cancel the bundle if nothing was re-created (e.g. every remaining
+    # invoice is prepaid) — that would silently drop the bundle.
+    if not created:
+        frappe.throw("All invoices in this bundle are prepaid; there is nothing to split.")
+
     bundle.flags.ignore_permissions = True
     bundle.cancel()
     return {"created": created}

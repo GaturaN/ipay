@@ -105,10 +105,14 @@ def get_context(context):
         for inv in invoices:
             dns = sorted(dn_map.get(inv.name, []))
             inv.delivery_note = ", ".join(dns)
-            inv.driver_name = next((driver_by_dn[n] for n in dns if driver_by_dn.get(n)), "")
+            # An invoice may span delivery notes with different drivers; keep all
+            # of them so the filter and the dropdown don't drop any.
+            inv.drivers = sorted({driver_by_dn[n] for n in dns if driver_by_dn.get(n)})
+            inv.driver_name = ", ".join(inv.drivers)
+            inv.driver_filter = "|".join(inv.drivers)
 
     context.invoices = invoices
-    context.drivers = sorted({inv.driver_name for inv in invoices if getattr(inv, "driver_name", "")})
+    context.drivers = sorted({d for inv in invoices for d in getattr(inv, "drivers", [])})
     context.enable_redirect = frappe.db.get_single_value("iPay Settings", "enable_redirect")
 
     # Collection totals: collected via iPay vs still outstanding, today and

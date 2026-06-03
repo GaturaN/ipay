@@ -104,7 +104,9 @@ function ipayPaySubmitMpesa() {
     args: { token: IPAY_TOKEN, phone: phone },
     callback: function (r) {
       var res = r.message || {};
-      if (res.status === "error") { ipayPayNotify(res.message || "Could not start the payment.", "danger"); return; }
+      if (res.status === "error" || res.status === "missing_phone") {
+        ipayPayNotify(res.message || "Please enter a valid M-Pesa number.", "danger"); return;
+      }
       ipayPayNotify("M-Pesa prompt sent to " + phone + ". Enter your PIN on your phone&hellip;", "info");
       ipayPayPoll();
     }
