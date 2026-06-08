@@ -204,6 +204,11 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
             payment_entry.insert()
             payment_entry.submit()
         except Exception as insert_error:
+            # Roll back FIRST, then re-read: under REPEATABLE READ a read earlier
+            # in this transaction pins a snapshot that would hide the winner's
+            # concurrently-committed entry, so we must reset the snapshot before
+            # checking (and the failed insert pinned nothing worth keeping).
+            frappe.db.rollback()
             existing = transaction_code and frappe.db.get_value(
                 "Payment Entry",
                 {"reference_no": transaction_code, "docstatus": ["<", 2]},
@@ -211,7 +216,6 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
             )
             if not existing:
                 raise
-            frappe.db.rollback()
             logger.warning(
                 f"Concurrent Payment Entry for transaction {transaction_code}; "
                 f"using existing {existing} ({insert_error})"
