@@ -47,11 +47,17 @@ def finalize_payment(
     (the resolved iPay Request status, or None if the payment could not be
     recorded) and ``response_data`` (the canonical payload).
     """
+    # Lock the request row for the duration of this transaction so two finalisers
+    # of the SAME request (e.g. the browser-return handler and the 5-min poller
+    # firing at the same instant) serialise: the second blocks here until the
+    # first commits, then sees the Payment Entry already exists and resolves it
+    # as a duplicate instead of racing to create a second one.
     defaults = frappe.db.get_value(
         "iPay Request",
         request_name,
         ["sales_invoice", "amount", "customer", "customer_email"],
         as_dict=True,
+        for_update=True,
     ) or {}
     sales_invoice = sales_invoice or defaults.get("sales_invoice")
     customer = customer or defaults.get("customer")
@@ -82,8 +88,11 @@ def finalize_payment(
     frappe.db.set_value(
         "iPay Request", request_name, {"status": status, "result_detail": result_detail}
     )
-    deliver_callback(request_name, response_data)
+    # Commit the Payment Entry + status now, releasing the row lock BEFORE the
+    # (up-to-15s) callback POST, so a second finaliser isn't blocked on the lock
+    # for the duration of an HTTP call. deliver_callback is idempotent.
     frappe.db.commit()
+    deliver_callback(request_name, response_data)
 
     result["request_status"] = status
     result["response_data"] = response_data

@@ -193,9 +193,39 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
         # Add deductions (if any)
         payment_entry.deductions = []
 
-        # Save and Submit the Payment Entry
-        payment_entry.insert()
-        payment_entry.submit()
+        # Save and Submit the Payment Entry. If a concurrent finaliser inserted
+        # the same M-Pesa transaction first, the DB unique index on reference_no
+        # rejects ours — treat that as a duplicate (use the winner's entry) rather
+        # than a hard error, so this caller still resolves the status and delivers
+        # the callback. (finalize_payment also row-locks the request to serialise
+        # these, so this is the belt-and-braces path / portability for sites
+        # without the unique index.)
+        try:
+            payment_entry.insert()
+            payment_entry.submit()
+        except Exception as insert_error:
+            existing = transaction_code and frappe.db.get_value(
+                "Payment Entry",
+                {"reference_no": transaction_code, "docstatus": ["<", 2]},
+                "name",
+            )
+            if not existing:
+                raise
+            frappe.db.rollback()
+            logger.warning(
+                f"Concurrent Payment Entry for transaction {transaction_code}; "
+                f"using existing {existing} ({insert_error})"
+            )
+            if ipay_request:
+                frappe.db.set_value("iPay Request", ipay_request, "payment_entry", existing)
+            return {
+                "status": "duplicate",
+                "payment_entry": existing,
+                "allocated": frappe.utils.flt(
+                    frappe.db.get_value("Payment Entry", existing, "total_allocated_amount")
+                ),
+                "message": "Payment Entry already exists (concurrent)",
+            }
 
         # Log success
         logger.info(
