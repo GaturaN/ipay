@@ -4,9 +4,15 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def create_request(inv):
     logger.info(f"Received parameter: {inv}")
+
+    # Only someone who can submit this invoice may auto-create its COD request
+    # (this fires from Sales Invoice on_submit). Outside the try so it raises a
+    # clean 403 instead of being swallowed into an error response.
+    if not frappe.has_permission("Sales Invoice", "submit", doc=inv):
+        frappe.throw("Not permitted for this invoice.", frappe.PermissionError)
 
     try:
         # Fetch Sales Invoice and related Customer details
