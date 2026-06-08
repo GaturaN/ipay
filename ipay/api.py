@@ -9,6 +9,7 @@ import frappe
 from frappe import _
 
 from ipay.ipay.main.utils.reconcile_payments import _search_transaction
+from ipay.ipay.main.utils.collector import OPERATOR_ROLES
 
 
 @frappe.whitelist()
@@ -29,10 +30,14 @@ def get_transaction(oid):
     firstname/lastname, telephone, payment_mode, paid_at, ...), or is null when
     no payment has been recorded for the oid yet.
 
-    Authenticated endpoint (not public): the calling application authenticates
-    with a Frappe API key/secret, e.g.
+    Operator-gated: the calling application authenticates with a Frappe API
+    key/secret whose user holds an iPay operator role (System Manager / iPay
+    Manager / iPay User) — the response contains payer PII, so it must not be
+    readable by any logged-in user.
         Authorization: token <api_key>:<api_secret>
     """
+    if not (OPERATOR_ROLES & set(frappe.get_roles())):
+        frappe.throw(_("Not permitted."), frappe.PermissionError)
     if not oid:
         frappe.throw(_("An oid is required."))
 
