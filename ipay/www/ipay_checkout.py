@@ -1,6 +1,10 @@
 import frappe
 
-from ipay.ipay.main.utils.ipay_redirect import build_checkout_form, resolve_pay_token
+from ipay.ipay.main.utils.ipay_redirect import (
+    build_checkout_form,
+    resolve_pay_token,
+    save_customer_contact,
+)
 
 
 def get_context(context):
@@ -18,13 +22,24 @@ def get_context(context):
         context.expired = status == "expired"
         return
 
-    action, fields = build_checkout_form(request_name, frappe.form_dict.get("phone"))
+    entered_phone = frappe.form_dict.get("phone")
+    action, fields = build_checkout_form(request_name, entered_phone)
 
     # iPay requires a telephone number; if none was supplied or on file, ask for one.
     if not fields.get("tel"):
         context.phone_required = True
         context.token = token
         return
+
+    # Persist an operator-entered number to the Customer (blanks only) so future
+    # requests are pre-filled — matching the STK/desk paths. Guests never write
+    # the Customer master. Best-effort: never block checkout on a save failure.
+    if entered_phone and frappe.session.user != "Guest":
+        try:
+            save_customer_contact(request_name, phone=entered_phone)
+            frappe.db.commit()
+        except Exception:
+            frappe.db.rollback()
 
     context.action = action
     context.fields = fields
