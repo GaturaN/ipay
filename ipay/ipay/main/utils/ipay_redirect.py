@@ -56,18 +56,16 @@ def _require_request_access(request_name):
 
 
 def normalize_phone(phone):
-    """Normalise a Kenyan number to MSISDN form (2547XXXXXXXX / 2541XXXXXXXX):
-    strip non-digits and the leading +/0, so iPay charges a consistent number."""
+    """Normalise a Kenyan number to MSISDN form (2547XXXXXXXX / 2541XXXXXXXX).
+    Returns "" for anything that is not a well-formed Kenyan mobile number, so
+    callers treat junk as "no number" and prompt — rather than sending a
+    malformed tel to iPay."""
     digits = re.sub(r"\D", "", phone or "")
-    if not digits:
-        return ""
-    if digits.startswith("254"):
-        return digits
     if digits.startswith("0"):
-        return "254" + digits[1:]
-    if digits.startswith(("7", "1")):
-        return "254" + digits
-    return digits
+        digits = "254" + digits[1:]
+    elif digits.startswith(("7", "1")) and len(digits) == 9:
+        digits = "254" + digits
+    return digits if re.fullmatch(r"254(7|1)\d{8}", digits) else ""
 
 
 def build_checkout_form(request_name, phone=None):
