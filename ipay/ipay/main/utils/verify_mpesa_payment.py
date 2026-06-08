@@ -8,6 +8,33 @@ from ipay.ipay.main.utils.constants import search_hash
 
 logger = logging.getLogger(__name__)
 
+# iPay returns these in the transaction/search response when an STK finished but
+# did not succeed. Map the known terminal messages to a friendly one; anything
+# else ("no payment record found", "transaction was timed out", ...) is transient
+# and the caller keeps polling. NB: this classifies iPay's free-text `message`;
+# the raw response is logged on every attempt so a wrong classification (e.g. a
+# cancel reported as insufficient) can be traced to exactly what iPay returned.
+TERMINAL_ERRORS = {
+    "The request was canceled by the user": "The request was canceled by the user",
+    "Incorrect pin has been entered": "Incorrect PIN entered",
+    "The User Wallet balance is insufficient for the transaction": "Insufficient M-Pesa balance",
+}
+
+
+def _terminal_error_message(response):
+    """Friendly message if iPay reported a terminal STK failure, else None."""
+    if response is None:
+        return None
+    try:
+        message = (response.json() or {}).get("message") or ""
+    except ValueError:
+        return None
+    for needle, friendly in TERMINAL_ERRORS.items():
+        if needle in message:
+            return friendly
+    return None
+
+
 # Helper function to delay execution
 def delay(ms):
     time.sleep(ms / 1000.0)
@@ -69,33 +96,17 @@ def verify_mpesa_payment(oid, phone, vid, secret_key):
                 delay(retry_delay)
         
         except requests.RequestException as error:
-            error_message = (
-                error.response.json().get('message')
-                if error.response is not None else str(error)
-            )
-            
-            # check if the request was canceled by the user
-            if "The request was canceled by the user" in error_message:
-              message = "The request was canceled by the user"
-              frappe.throw(message)
-              # return message 
-            
-            elif "Incorrect pin has been entered" in error_message:
-              message = "Incorrect pin has been entered"
-              frappe.throw(message)
-              
-            elif "The User Wallet balance is insufficient for the transaction" in error_message:
-              message = "The User has insufficient funds"
-              frappe.throw(message)
+            # Log the FULL raw iPay response on every failed attempt, BEFORE any
+            # throw — previously the decisive response was never logged (the
+            # throw happened first), which is why a cancel showing as
+            # "insufficient" could not be diagnosed.
+            raw = error.response.text if error.response is not None else str(error)
+            logger.error(f"Attempt {attempt}: iPay verification error — {raw}")
 
-            # "The transaction was timed out" is transient while iPay waits for the
-            # customer to pay, so keep polling instead of aborting.
-
-            logger.error(
-                f"Attempt {attempt}: Failed due to an error: {error_message}\nRetrying..."
-            )
-            
-            
+            terminal = _terminal_error_message(error.response)
+            if terminal:
+                frappe.throw(terminal)
+            # Otherwise transient (e.g. "no payment record found", timeout) — keep polling.
             delay(retry_delay)
     
     if not success:
