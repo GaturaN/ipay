@@ -5,7 +5,11 @@ import json
 logger = logging.getLogger(__name__)
 
 
-@frappe.whitelist()
+# NOT @frappe.whitelist: this is an internal helper called only by
+# finalize_payment (server-side). Exposing it let any authenticated user POST a
+# forged response_data (fake transaction_code + amount) and submit a Payment
+# Entry marking an invoice paid with no real money — so it must not be callable
+# over HTTP.
 def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request=None):
     try:
         # Log the received parameters
