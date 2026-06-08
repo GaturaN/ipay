@@ -8,6 +8,27 @@ from ipay.ipay.main.utils.collector import is_collector_only, collector_scope
 ALLOWED_ROLES = {"System Manager", "iPay Manager", "iPay User", "iPay Collector"}
 
 
+def _drop_bundled(invoices):
+    """Remove invoices that are members of a submitted bundle (iPay Request
+    Invoice rows under a docstatus=1 request) — they're collected via the bundle."""
+    if not invoices:
+        return invoices
+    rows = frappe.get_all(
+        "iPay Request Invoice",
+        filters={"sales_invoice": ["in", [inv.name for inv in invoices]]},
+        fields=["sales_invoice", "parent"],
+    )
+    if not rows:
+        return invoices
+    submitted = set(frappe.get_all(
+        "iPay Request",
+        filters={"name": ["in", list({r.parent for r in rows})], "docstatus": 1},
+        pluck="name",
+    ))
+    bundled = {r.sales_invoice for r in rows if r.parent in submitted}
+    return [inv for inv in invoices if inv.name not in bundled]
+
+
 def _sum_outstanding(extra_filters=None):
     """Sum of outstanding on submitted, non-return, unpaid Sales Invoices."""
     filters = {"docstatus": 1, "is_return": 0, "outstanding_amount": [">", 0]}
@@ -76,6 +97,11 @@ def get_context(context):
     prepaid = prepaid_invoice_names([inv.name for inv in invoices])
     if prepaid:
         invoices = [inv for inv in invoices if inv.name not in prepaid]
+
+    # Hide invoices already covered by a submitted bundle: they're collected via
+    # the bundle's own /pay link, so they must not be prompted individually (that
+    # would charge the whole bundle for one invoice and settle others).
+    invoices = _drop_bundled(invoices)
 
     # Attach the delivery note(s) linked to each invoice (one batched query).
     if invoices:

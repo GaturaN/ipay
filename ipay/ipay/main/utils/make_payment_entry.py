@@ -208,6 +208,9 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
             # in this transaction pins a snapshot that would hide the winner's
             # concurrently-committed entry, so we must reset the snapshot before
             # checking (and the failed insert pinned nothing worth keeping).
+            # NB: this is a FULL rollback (a savepoint would not reset the
+            # snapshot). It is safe because the only caller, finalize_payment,
+            # holds no other uncommitted writes when it reaches here.
             frappe.db.rollback()
             existing = transaction_code and frappe.db.get_value(
                 "Payment Entry",

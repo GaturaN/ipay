@@ -115,13 +115,14 @@ def reconcile_request(request_name):
 
 
 def _reconcile_one(req, vid, secret_key):
-    # Already recorded, only the callback is outstanding: retry it from the
-    # stored payload instead of re-querying iPay (a 15s call). This is what keeps
-    # an n8n outage from making the poller re-hit iPay for the whole paid backlog
-    # every 5 minutes. deliver_callback is idempotent on callback_delivered.
-    if req.get("payment_entry"):
-        if req.get("callback_payload"):
-            deliver_callback(req.name, frappe.parse_json(req.callback_payload))
+    # Already recorded AND we have the stored payload: retry the callback cheaply
+    # instead of re-querying iPay (a 15s call) — this keeps an n8n outage from
+    # re-hitting iPay for the whole paid backlog every 5 minutes. If the payload
+    # is missing (a request finalised before callback_payload existed), fall
+    # through to re-query iPay once, which rebuilds + stores the payload.
+    # deliver_callback is idempotent on callback_delivered.
+    if req.get("payment_entry") and req.get("callback_payload"):
+        deliver_callback(req.name, frappe.parse_json(req.callback_payload))
         return
 
     if not req.sales_invoice:

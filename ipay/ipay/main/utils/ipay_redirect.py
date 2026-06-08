@@ -145,15 +145,6 @@ def _ensure_request(invoice):
     if request_name:
         return request_name
 
-    # If a submitted bundle already covers this invoice (as a non-primary member),
-    # reuse it rather than creating a second request that could charge the invoice
-    # again.
-    for parent in frappe.get_all(
-        "iPay Request Invoice", filters={"sales_invoice": invoice}, pluck="parent"
-    ):
-        if frappe.db.get_value("iPay Request", parent, "docstatus") == 1:
-            return parent
-
     invoice_doc = frappe.get_doc("Sales Invoice", invoice)
     request = frappe.get_doc(
         {

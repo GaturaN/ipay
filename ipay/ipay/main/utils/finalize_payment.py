@@ -96,11 +96,13 @@ def finalize_payment(
             "callback_payload": frappe.as_json(response_data),
         },
     )
-    # Commit the Payment Entry + status now, releasing the row lock BEFORE the
-    # (up-to-15s) callback POST, so a second finaliser isn't blocked on the lock
-    # for the duration of an HTTP call. deliver_callback is idempotent.
-    frappe.db.commit()
+    # Deliver the callback while STILL holding the request row lock, then commit.
+    # This keeps delivery exactly-once: a concurrent finaliser of the same request
+    # blocks on the lock until we commit callback_delivered=1, then sees it and
+    # skips — at the cost of blocking that (rare) concurrent finaliser for the
+    # duration of the callback POST.
     deliver_callback(request_name, response_data)
+    frappe.db.commit()
 
     result["request_status"] = status
     result["response_data"] = response_data
