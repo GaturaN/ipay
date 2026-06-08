@@ -84,6 +84,24 @@ def lipana_mpesa(
 
     else:
 
+        # The Express STK verify loop can take ~40s; never run it in a web worker.
+        # On a direct HTTP call (the desk button), hand off to the long worker and
+        # return immediately so the request can't time out (504). The enqueued run
+        # has no request and falls through to the synchronous flow below.
+        if getattr(frappe.local, "request", None):
+            frappe.enqueue(
+                "ipay.ipay.main.main.lipana_mpesa",
+                queue="long",
+                docid=docid,
+                user_id=user_id,
+                phone=phone,
+                amount=amount,
+                oid=inv,
+                customer_email=customer_email,
+                payment_request_type=payment_request_type,
+            )
+            return {"status": "processing", "message": "M-Pesa prompt is being sent; it will confirm shortly."}
+
         try:
             # get session id
             response = get_sid(vid, secret_key, amount, oid, phone, eml=customer_email, sales_invoice=inv)

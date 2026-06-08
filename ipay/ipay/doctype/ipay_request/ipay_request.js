@@ -250,9 +250,12 @@ frappe.ui.form.on('iPay Request', {
                                           indicator: 'green',
                                        });
                                     } else {
+                                       // Express STK is processed on a background
+                                       // worker; the result appears on the request
+                                       // shortly (status / Payment Entry).
                                        frappe.show_alert(
                                           {
-                                             message: `iPay Prompted Successfully. The Payment Entry has been created`,
+                                             message: `M-Pesa prompt sent. It will confirm in the background — reload or use "Verify Payment" to see the result.`,
                                              indicator: 'blue',
                                           },
                                           15
