@@ -86,7 +86,15 @@ def finalize_payment(
         f"{response_data.get('transaction_code')}, {response_data.get('paid_at')}"
     )
     frappe.db.set_value(
-        "iPay Request", request_name, {"status": status, "result_detail": result_detail}
+        "iPay Request",
+        request_name,
+        {
+            "status": status,
+            "result_detail": result_detail,
+            # Store the payload so the poller can retry a failed callback without
+            # re-querying iPay.
+            "callback_payload": frappe.as_json(response_data),
+        },
     )
     # Commit the Payment Entry + status now, releasing the row lock BEFORE the
     # (up-to-15s) callback POST, so a second finaliser isn't blocked on the lock

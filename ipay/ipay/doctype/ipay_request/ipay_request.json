@@ -26,6 +26,7 @@
   "invoices",
   "route",
   "callback_delivered",
+  "callback_payload",
   "result_detail",
   "pay_token",
   "pay_token_expiry",
@@ -175,6 +176,15 @@
    "fieldtype": "Check",
    "label": "Callback Delivered",
    "read_only": 1
+  },
+  {
+   "fieldname": "callback_payload",
+   "fieldtype": "Long Text",
+   "label": "Callback Payload",
+   "read_only": 1,
+   "hidden": 1,
+   "no_copy": 1,
+   "description": "Stored n8n callback body, so a failed callback can be retried without re-querying iPay."
   },
   {
    "allow_on_submit": 1,

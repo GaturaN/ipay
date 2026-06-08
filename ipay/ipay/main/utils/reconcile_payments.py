@@ -2,6 +2,7 @@ import requests
 import frappe
 
 from ipay.ipay.main.utils.finalize_payment import finalize_payment
+from ipay.ipay.main.utils.send_callback import deliver_callback
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
 from ipay.ipay.main.utils.constants import clean_oid, search_hash
 
@@ -16,7 +17,10 @@ SEARCH_URL = "https://apis.ipayafrica.com/payments/v2/transaction/search"
 # Failed) with no Payment Entry is fair game for the Abandoned sweep.
 PAID_STATUSES = ["Success", "Underpaid", "Overpaid"]
 
-REQUEST_FIELDS = ["name", "sales_invoice", "amount", "customer", "customer_email"]
+REQUEST_FIELDS = [
+    "name", "sales_invoice", "amount", "customer", "customer_email",
+    "payment_entry", "callback_payload",
+]
 
 
 def reconcile_pending_payments():
@@ -111,6 +115,15 @@ def reconcile_request(request_name):
 
 
 def _reconcile_one(req, vid, secret_key):
+    # Already recorded, only the callback is outstanding: retry it from the
+    # stored payload instead of re-querying iPay (a 15s call). This is what keeps
+    # an n8n outage from making the poller re-hit iPay for the whole paid backlog
+    # every 5 minutes. deliver_callback is idempotent on callback_delivered.
+    if req.get("payment_entry"):
+        if req.get("callback_payload"):
+            deliver_callback(req.name, frappe.parse_json(req.callback_payload))
+        return
+
     if not req.sales_invoice:
         return
 
