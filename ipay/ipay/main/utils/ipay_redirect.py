@@ -196,9 +196,15 @@ def resolve_pay_token(token):
     if not token:
         return None, "invalid"
     row = frappe.db.get_value(
-        "iPay Request", {"pay_token": token}, ["name", "pay_token_expiry"], as_dict=True
+        "iPay Request", {"pay_token": token}, ["name", "pay_token_expiry", "docstatus"], as_dict=True
     )
     if not row:
+        return None, "invalid"
+    # A cancelled request (docstatus 2) must never be chargeable. This closes the
+    # double-charge after split_bundle: the bundle is cancelled and its invoices
+    # are re-created as new single requests, but its already-shared /pay link
+    # otherwise still resolved to the cancelled bundle and could charge it again.
+    if row.docstatus == 2:
         return None, "invalid"
     if row.pay_token_expiry and frappe.utils.get_datetime(row.pay_token_expiry) < frappe.utils.now_datetime():
         return None, "expired"
