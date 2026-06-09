@@ -7,6 +7,7 @@ import frappe
 from ipay.ipay.main.utils.reconcile_payments import reconcile_request
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
 from ipay.ipay.main.utils.constants import clean_oid
+from ipay.ipay.main.utils.prepaid import is_sales_invoice_prepaid
 
 # Hosted checkout (HTML form POST). NB: this flow uses HMAC-SHA1 over the
 # documented field order — it is NOT the REST /transact SHA256 flow.
@@ -17,13 +18,41 @@ HASH_FIELD_ORDER = [
 ]
 
 OPERATOR_ROLES = {"System Manager", "iPay Manager", "iPay User"}
+# Collectors may prompt/collect, but only for their own work — guarded per
+# invoice/request by the access checks below.
+ALL_OPERATOR_ROLES = OPERATOR_ROLES | {"iPay Collector"}
+
+
+def _require_full_operator():
+    """Guard supervisor-only endpoints (bundling): full operators, not collectors."""
+    if frappe.session.user == "Guest" or not (OPERATOR_ROLES & set(frappe.get_roles())):
+        frappe.throw("Not permitted.", frappe.PermissionError)
 
 
 def _require_operator():
-    """Guard operator-only endpoints. The page role-gate (collect_payments) does
-    not protect the underlying whitelisted methods, so enforce it here too."""
-    if frappe.session.user == "Guest" or not (OPERATOR_ROLES & set(frappe.get_roles())):
+    """Guard operator endpoints, allowing collectors. The page role-gate
+    (collect_payments) does not protect the underlying whitelisted methods, so
+    enforce it here too. Row-level ownership is enforced separately by
+    _require_invoice_access / _require_request_access."""
+    if frappe.session.user == "Guest" or not (ALL_OPERATOR_ROLES & set(frappe.get_roles())):
         frappe.throw("Not permitted.", frappe.PermissionError)
+
+
+def _require_invoice_access(invoice):
+    """A collector may only act on invoices that are their own work."""
+    from ipay.ipay.main.utils.collector import can_access_invoice
+
+    if not can_access_invoice(invoice):
+        frappe.throw("You are not assigned to this invoice.", frappe.PermissionError)
+
+
+def _require_request_access(request_name):
+    """A collector may only act on requests that are their own work — closes the
+    hole where any operator could poll/act on another's request by name."""
+    from ipay.ipay.main.utils.collector import can_access_request
+
+    if not can_access_request(request_name):
+        frappe.throw("You are not assigned to this request.", frappe.PermissionError)
 
 
 def normalize_phone(phone):
@@ -179,7 +208,12 @@ def _enqueue_stk(request_name, phone):
     )
     phone = normalize_phone(phone or req.customer_phone)
     if not phone:
-        return {"status": "error", "message": "No phone number provided."}
+        # Structured signal so the caller can prompt for a number and save it
+        # back, rather than surfacing a dead-end error.
+        return {
+            "status": "missing_phone",
+            "message": "No M-Pesa phone number on file. Enter a number to charge.",
+        }
 
     frappe.enqueue(
         "ipay.ipay.main.main.lipana_mpesa",
@@ -200,8 +234,14 @@ def start_checkout(invoice):
     """Operator action from the collection page: ensure a submitted iPay Request
     (and its token) exist, then send the browser to the hosted checkout."""
     _require_operator()
+    _require_invoice_access(invoice)
     request_name = _ensure_request(invoice)
     token = _ensure_pay_token(request_name)
+    # This endpoint is reached by a GET (an <a> link), which Frappe treats as
+    # read-only and does NOT auto-commit — so the just-created request and token
+    # would be rolled back, and the checkout page would not find the token.
+    # Persist them explicitly before redirecting.
+    frappe.db.commit()
     frappe.local.response["type"] = "redirect"
     frappe.local.response["location"] = f"/ipay_checkout?token={token}"
 
@@ -210,6 +250,10 @@ def start_checkout(invoice):
 def get_payment_link(invoice=None, request=None):
     """Return a shareable, tokenised payment link for an invoice or request."""
     _require_operator()
+    if request:
+        _require_request_access(request)
+    elif invoice:
+        _require_invoice_access(invoice)
     request_name = request or (_ensure_request(invoice) if invoice else None)
     if not request_name:
         frappe.throw("An invoice or iPay Request is required.")
@@ -227,7 +271,7 @@ def create_bundle(customer, invoices):
     """Create one submitted iPay Request covering several of a customer's
     invoices. amount = sum of their live outstanding; the oldest invoice is the
     primary. Payment is allocated oldest-first across them by make_payment_entry."""
-    _require_operator()
+    _require_full_operator()
 
     if isinstance(invoices, str):
         invoices = frappe.parse_json(invoices)
@@ -248,12 +292,15 @@ def create_bundle(customer, invoices):
             frappe.throw(f"Invoice {name} does not belong to {customer}.")
         if frappe.utils.flt(si.outstanding_amount) <= 0:
             continue
+        # Prepaid invoices settle automatically — never bundle them for collection.
+        if is_sales_invoice_prepaid(name):
+            continue
         companies.add(si.company)
         rows.append((si.posting_date, name))
         total += frappe.utils.flt(si.outstanding_amount)
 
     if not rows:
-        frappe.throw("None of the selected invoices have an outstanding balance.")
+        frappe.throw("None of the selected invoices need collection (paid, prepaid, or zero balance).")
     if len(companies) > 1:
         frappe.throw("All invoices in a bundle must belong to the same company.")
 
@@ -287,7 +334,7 @@ def create_bundle(customer, invoices):
 def split_bundle(request):
     """Split an unpaid bundle back into individual single-invoice requests and
     cancel the bundle. Only allowed before any payment is recorded."""
-    _require_operator()
+    _require_full_operator()
     bundle = frappe.get_doc("iPay Request", request)
     if bundle.status in ("Success", "Underpaid", "Overpaid") or bundle.payment_entry:
         frappe.throw("This request has a recorded payment and cannot be split.")
@@ -297,6 +344,10 @@ def split_bundle(request):
 
     created = []
     for name in invoice_names:
+        # A legacy bundle may contain a since-prepaid invoice; skip it rather
+        # than let the controller abort the whole split.
+        if is_sales_invoice_prepaid(name):
+            continue
         customer = frappe.db.get_value("Sales Invoice", name, "customer")
         single = frappe.get_doc(
             {
@@ -309,6 +360,11 @@ def split_bundle(request):
         single.insert(ignore_permissions=True)
         created.append(single.name)
 
+    # Don't cancel the bundle if nothing was re-created (e.g. every remaining
+    # invoice is prepaid) — that would silently drop the bundle.
+    if not created:
+        frappe.throw("All invoices in this bundle are prepaid; there is nothing to split.")
+
     bundle.flags.ignore_permissions = True
     bundle.cancel()
     return {"created": created}
@@ -318,6 +374,7 @@ def split_bundle(request):
 def prompt_mpesa(invoice, phone=None):
     """Operator action (collection page): send an M-Pesa STK push for an invoice."""
     _require_operator()
+    _require_invoice_access(invoice)
     request_name = _ensure_request(invoice)
     result = _enqueue_stk(request_name, phone)
     result["request"] = request_name
@@ -328,7 +385,46 @@ def prompt_mpesa(invoice, phone=None):
 def payment_state(request):
     """Poll target for the collection page (operator, by request name)."""
     _require_operator()
+    _require_request_access(request)
     return _payment_state(request, include_detail=True)
+
+
+@frappe.whitelist(methods=["POST"])
+def save_customer_contact(request, phone=None, email=None):
+    """Persist an operator-entered phone/email so future requests never error for
+    missing contact. Writes to the Customer master ONLY when that field is blank
+    (never overwrites an ad-hoc number), and refreshes the in-flight request.
+
+    Uses a low-level db.set_value because iPay operator/collector roles do not
+    have Customer write permission; values are validated first."""
+    _require_operator()
+    _require_request_access(request)
+    customer = frappe.db.get_value("iPay Request", request, "customer")
+    if not customer:
+        frappe.throw("Unknown request.")
+
+    customer_updates, request_updates, saved = {}, {}, []
+    if phone:
+        norm = normalize_phone(phone)
+        if not re.fullmatch(r"254(7|1)\d{8}", norm):
+            frappe.throw("Enter a valid Kenyan phone number (e.g. 0712345678).")
+        request_updates["customer_phone"] = norm
+        if not frappe.db.get_value("Customer", customer, "mobile_no"):
+            customer_updates["mobile_no"] = norm
+            saved.append("phone")
+    if email:
+        if not frappe.utils.validate_email_address(email):
+            frappe.throw("Enter a valid email address.")
+        request_updates["customer_email"] = email
+        if not frappe.db.get_value("Customer", customer, "email_id"):
+            customer_updates["email_id"] = email
+            saved.append("email")
+
+    if customer_updates:
+        frappe.db.set_value("Customer", customer, customer_updates)
+    if request_updates:
+        frappe.db.set_value("iPay Request", request, request_updates)
+    return {"status": "ok", "saved_to_customer": saved}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

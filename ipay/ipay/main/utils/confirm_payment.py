@@ -18,6 +18,12 @@ def confirm_payment(docid, user_id, phone, amount, order, customer_email):
     if found, finalise it via the shared path — record the Payment Entry, set
     the request status and notify the callback. Returns the recorded result so
     the desk can show the Payment Entry link."""
+    # Authorised operators only, acting on their own request (this creates a
+    # Payment Entry, so it must not be callable by name for an arbitrary request).
+    from ipay.ipay.main.utils.ipay_redirect import _require_operator, _require_request_access
+
+    _require_operator()
+    _require_request_access(docid)
     vendor = frappe.get_doc("iPay Settings")
     vid = (vendor.vendor_id or "").lower()
     secret_key = vendor.api_key

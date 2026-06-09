@@ -69,43 +69,39 @@ frappe.ui.form.on('iPay Request', {
       // Add "Prompt iPay" button if submitted and status is not success
       if (submitted && status !== 'Success') {
          frm.add_custom_button(__('Prompt iPay'), () => {
-            // Check if customer phone or email is missing
-            if (!frm.doc.customer_phone || !frm.doc.customer_email) {
+            // Block only on a missing PHONE (email is optional for iPay). Offer
+            // to enter a number now and save it to the Customer for next time.
+            if (!frm.doc.customer_phone) {
                frappe.msgprint({
-                  title: __('Customer Phone OR Email Missing'),
-                  message: __('The Phone and Email of the customer has to be provided in the Customer Doctype.'),
+                  title: __('Customer Phone Missing'),
+                  message: __('This customer has no phone number on file. Enter one to prompt for payment — it is saved to the Customer so future requests are pre-filled.'),
                   primary_action: {
-                     label: __('Go to Customer'),
+                     label: __('Enter & Save Number'),
                      action() {
-                        frappe.set_route('Form', 'Customer', frm.doc.customer);
+                        frappe.prompt(
+                           [
+                              { label: 'Customer Phone', fieldname: 'phone', fieldtype: 'Data', reqd: 1 },
+                              { label: 'Customer Email (optional)', fieldname: 'email', fieldtype: 'Data' },
+                           ],
+                           (v) => {
+                              frappe.call({
+                                 method: 'ipay.ipay.main.utils.ipay_redirect.save_customer_contact',
+                                 args: { request: frm.doc.name, phone: v.phone, email: v.email },
+                                 callback: () => {
+                                    frappe.hide_msgprint();
+                                    frappe.show_alert({ message: __('Saved. Click "Prompt iPay" again to continue.'), indicator: 'green' });
+                                    frm.reload_doc();
+                                 },
+                              });
+                           },
+                           __('Enter Customer Contact'), __('Save')
+                        );
                      },
                   },
                   secondary_action: {
-                     label: __('Fetch Customer Details'),
+                     label: __('Go to Customer'),
                      action() {
-                        // Fetch customer details via API call
-                        frappe.call({
-                           method: 'frappe.client.get',
-                           args: {
-                              doctype: 'Customer',
-                              name: frm.doc.customer,
-                           },
-                           callback: function (r) {
-                              if (r.message) {
-                                 const customer = r.message;
-                                 frm.set_value('customer_phone', customer.mobile_no || '');
-                                 frm.set_value('customer_email', customer.email_id || '');
-                                 frappe.msgprint(__('Customer details fetched successfully'));
-                                 frm.save(); // Save updated values
-                              } else {
-                                 frappe.msgprint(__('No customer details found'));
-                              }
-                           },
-                           error: function (err) {
-                              frappe.msgprint(__('Failed to fetch customer details.'));
-                              console.error('Fetch Customer Details Error:', err);
-                           },
-                        });
+                        frappe.set_route('Form', 'Customer', frm.doc.customer);
                      },
                   },
                });
@@ -146,7 +142,7 @@ frappe.ui.form.on('iPay Request', {
                         fieldname: 'customer_email',
                         fieldtype: 'Data',
                         default: frm.doc.customer_email,
-                        reqd: 1,
+                        reqd: 0,
                      },
                      {
                         label: 'Payment Method',
@@ -174,6 +170,14 @@ frappe.ui.form.on('iPay Request', {
                            if (frm.doc.prompted_number && customerPhoneLast8 === promptedPhoneLast8) {
                               frappe.db.set_value('iPay Request', frm.doc.name, 'prompted_number', null);
                            }
+
+                           // Persist any newly-entered contact to the Customer
+                           // (the server writes only blank fields), so future
+                           // requests are pre-filled and never error.
+                           frappe.call({
+                              method: 'ipay.ipay.main.utils.ipay_redirect.save_customer_contact',
+                              args: { request: frm.doc.name, phone: values.customer_phone, email: values.customer_email },
+                           });
 
                            // Display success alert
                            frappe.show_alert({ message: 'iPay Prompted', indicator: 'green' }, 7);

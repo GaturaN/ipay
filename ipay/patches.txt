@@ -1,4 +1,5 @@
 [pre_model_sync]
+ipay.patches.v1_0.setup_collector
 
 [post_model_sync]
 ipay.patches.v1_0.migrate_request_status
