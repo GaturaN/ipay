@@ -102,32 +102,30 @@ def _reconcile_one(req, vid, secret_key):
         "telephone": data.get("telephone"),
     }
 
-    if _amount_matches(data.get("transaction_amount"), req.amount):
-        result = make_payment_entry(
-            req.customer, req.customer_email, req.sales_invoice, response_data, ipay_request=req.name
-        )
-        if result.get("status") in ("success", "duplicate"):
-            frappe.db.set_value("iPay Request", req.name, "status", "Success")
-            deliver_callback(req.name, response_data)
-            create_log_entry(
-                "INF",
-                f"Reconciled payment for {req.name} ({response_data['transaction_code']})",
-            )
-        else:
-            # Payment Entry creation failed; leave undelivered to retry next run.
-            create_log_entry(
-                "ERR",
-                f"Reconcile could not create Payment Entry for {req.name}: {result.get('message')}",
-            )
-    else:
-        # Paid, but the amount differs from the invoice — notify and flag for
-        # manual reconciliation; do not auto-create a Payment Entry.
-        frappe.db.set_value("iPay Request", req.name, "status", "Amount Mismatch")
-        deliver_callback(req.name, response_data)
+    # A payment was found — record it. make_payment_entry allocates oldest-first
+    # against live outstanding, so a partial payment clears the oldest invoices and
+    # leaves the rest as a re-requestable balance, and an overpayment becomes
+    # customer credit. Mark Success when it covers the expected amount, otherwise
+    # Amount Mismatch (still recorded + notified, balance/credit handled).
+    result = make_payment_entry(
+        req.customer, req.customer_email, req.sales_invoice, response_data, ipay_request=req.name
+    )
+    if result.get("status") not in ("success", "duplicate"):
+        # Payment Entry creation failed; leave undelivered to retry next run.
         create_log_entry(
             "ERR",
-            f"Amount mismatch for {req.name}: paid {response_data['transaction_amount']} vs expected {req.amount}",
+            f"Reconcile could not create Payment Entry for {req.name}: {result.get('message')}",
         )
+        return
+
+    matched = _amount_matches(data.get("transaction_amount"), req.amount)
+    frappe.db.set_value("iPay Request", req.name, "status", "Success" if matched else "Amount Mismatch")
+    deliver_callback(req.name, response_data)
+    create_log_entry(
+        "INF" if matched else "ERR",
+        f"Reconciled {req.name} ({response_data['transaction_code']}): "
+        f"paid {response_data['transaction_amount']} vs expected {req.amount}",
+    )
 
     frappe.db.commit()
 

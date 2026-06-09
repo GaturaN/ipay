@@ -219,6 +219,54 @@ def get_payment_link(invoice=None, request=None):
 
 
 @frappe.whitelist()
+def create_bundle(customer, invoices):
+    """Create one submitted iPay Request covering several of a customer's
+    invoices. amount = sum of their live outstanding; the oldest invoice is the
+    primary. Payment is allocated oldest-first across them by make_payment_entry."""
+    _require_operator()
+
+    if isinstance(invoices, str):
+        invoices = frappe.parse_json(invoices)
+    invoices = [name for name in (invoices or []) if name]
+    if not invoices:
+        frappe.throw("Select at least one invoice.")
+
+    rows = []
+    total = 0.0
+    for name in invoices:
+        si = frappe.db.get_value(
+            "Sales Invoice", name, ["customer", "outstanding_amount", "posting_date"], as_dict=True
+        )
+        if not si:
+            continue
+        if si.customer != customer:
+            frappe.throw(f"Invoice {name} does not belong to {customer}.")
+        if frappe.utils.flt(si.outstanding_amount) <= 0:
+            continue
+        rows.append((si.posting_date, name))
+        total += frappe.utils.flt(si.outstanding_amount)
+
+    if not rows:
+        frappe.throw("None of the selected invoices have an outstanding balance.")
+
+    rows.sort()
+    primary = rows[0][1]
+
+    request = frappe.get_doc(
+        {
+            "doctype": "iPay Request",
+            "customer": customer,
+            "sales_invoice": primary,
+            "amount": f"{total:.2f}",
+            "invoices": [{"sales_invoice": name} for _, name in rows],
+            "docstatus": 1,
+        }
+    )
+    request.insert(ignore_permissions=True)
+    return {"request": request.name, "amount": f"{total:.2f}", "count": len(rows)}
+
+
+@frappe.whitelist()
 def prompt_mpesa(invoice, phone=None):
     """Operator action (collection page): send an M-Pesa STK push for an invoice."""
     _require_operator()
