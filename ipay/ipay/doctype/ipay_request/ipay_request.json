@@ -28,6 +28,7 @@
   "callback_delivered",
   "result_detail",
   "pay_token",
+  "payment_link",
   "payment_entry"
  ],
  "fields": [
@@ -117,8 +118,9 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "\nFailed to complete request\nSuccess\nError\nAmount Mismatch",
-   "read_only": 1
+   "options": "Pending\nSuccess\nUnderpaid\nOverpaid\nFailed\nAbandoned",
+   "read_only": 1,
+   "default": "Pending"
   },
   {
    "fieldname": "column_break_1mkgo",
@@ -188,6 +190,12 @@
    "read_only": 1,
    "unique": 1,
    "no_copy": 1
+  },
+  {
+   "depends_on": "eval:doc.docstatus===1",
+   "fieldname": "payment_link",
+   "fieldtype": "HTML",
+   "label": "Payment Link"
   },
   {
    "allow_on_submit": 1,

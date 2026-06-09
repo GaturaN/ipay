@@ -25,6 +25,13 @@
   .ipay-amount { font-weight: 600; font-variant-numeric: tabular-nums; color: #1f2937; }
   .ipay-actions .btn { border-radius: 8px; font-weight: 500; }
   .ipay-empty { text-align: center; color: #94a3b8; padding: 48px 0; }
+  .ipay-stats { display: flex; flex-wrap: wrap; gap: 12px; margin: 4px 0 18px; }
+  .ipay-stat { flex: 1 1 0; min-width: 150px; border: 1px solid #edf2f7; border-radius: 12px; padding: 12px 14px; }
+  .ipay-stat .label { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: #94a3b8; }
+  .ipay-stat .value { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .ipay-stat .sub { font-size: .8rem; color: #94a3b8; }
+  .ipay-stat.collected .value { color: #15803d; }
+  .ipay-stat.outstanding .value { color: #b45309; }
   #ipay-alerts:not(:empty) { margin-top: 16px; }
   @media (max-width: 576px) { .ipay-collect { margin: 16px; } .ipay-collect .card-body { padding: 1.25rem !important; } }
 </style>
@@ -34,6 +41,19 @@
     <div class="card-body p-4">
       <h3 class="mb-1">Collect Payment</h3>
       <p class="text-muted mb-2">Prompt a customer for payment. Pick the option that matches how they want to pay.</p>
+
+      <div class="ipay-stats">
+        <div class="ipay-stat collected">
+          <div class="label">Collected today</div>
+          <div class="value">KES {{ "{:,.2f}".format(collected_today or 0) }}</div>
+          <div class="sub">All time: KES {{ "{:,.2f}".format(collected_total or 0) }}</div>
+        </div>
+        <div class="ipay-stat outstanding">
+          <div class="label">Yet to collect &mdash; today's invoices</div>
+          <div class="value">KES {{ "{:,.2f}".format(outstanding_today or 0) }}</div>
+          <div class="sub">All outstanding: KES {{ "{:,.2f}".format(outstanding_total or 0) }}</div>
+        </div>
+      </div>
 
       <span class="ipay-help-toggle" onclick="ipayToggleHelp()">
         <span id="ipay-help-caret">&#9656;</span> Which option should I use?
@@ -65,11 +85,17 @@
                placeholder="Search invoice, customer or delivery note…" autocomplete="off">
       </div>
 
+      <button type="button" id="ipay-bundle-btn" class="btn btn-outline-primary btn-sm mb-2"
+              onclick="ipayBundleSelected()" style="display: none;">
+        Pay selected together
+      </button>
+
       {% if invoices %}
       <div class="table-responsive">
         <table class="table ipay-table" id="ipay-invoice-table">
           <thead>
             <tr>
+              <th style="width: 32px;"></th>
               <th>Invoice</th>
               <th>Customer</th>
               <th>Delivery Note</th>
@@ -79,7 +105,11 @@
           </thead>
           <tbody>
             {% for inv in invoices %}
-            <tr data-invoice="{{ inv.name }}">
+            <tr data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}">
+              <td>
+                <input type="checkbox" class="ipay-select"
+                       data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}">
+              </td>
               <td class="ipay-inv">{{ inv.name }}</td>
               <td>{{ inv.customer_name }}</td>
               <td class="ipay-dn">{{ inv.delivery_note or "—" }}</td>
@@ -153,6 +183,9 @@ function ipayPoll(request, invoice) {
           clearInterval(iv);
           ipayNotify("<strong>Payment received</strong> &mdash; " + (s.detail ? ipayEsc(s.detail) : ipayEsc(invoice)), "success");
           ipayRemoveRow(invoice);
+        } else if (s.partial) {
+          clearInterval(iv);
+          ipayNotify("<strong>Payment received (" + ipayEsc(s.status) + ")</strong> for " + ipayEsc(invoice) + " &mdash; " + (s.detail ? ipayEsc(s.detail) : "amount differs from the balance; the balance is still outstanding"), "warning");
         } else if (s.failed) {
           clearInterval(iv);
           ipayNotify("<strong>Payment failed</strong> (" + ipayEsc(invoice) + ") &mdash; " + (s.detail ? ipayEsc(s.detail) : "no reason given"), "danger");
@@ -184,6 +217,41 @@ function ipayPromptMpesa(invoice) {
     }
   });
 }
+
+function ipayBundleSelected() {
+  var checked = Array.prototype.slice.call(document.querySelectorAll(".ipay-select:checked"));
+  if (!checked.length) { ipayNotify("Select at least one invoice.", "warning"); return; }
+  var customers = {}, invoices = [];
+  checked.forEach(function (cb) { customers[cb.dataset.customer] = 1; invoices.push(cb.dataset.invoice); });
+  var custList = Object.keys(customers);
+  if (custList.length > 1) {
+    ipayNotify("All selected invoices must belong to the same customer to bundle.", "danger");
+    return;
+  }
+  frappe.call({
+    method: "ipay.ipay.main.utils.ipay_redirect.create_bundle",
+    args: { customer: custList[0], invoices: JSON.stringify(invoices) },
+    freeze: true,
+    callback: function (r) {
+      var res = r.message || {};
+      if (res.url) { window.location = res.url; }
+      else { ipayNotify("Could not create the bundle.", "danger"); }
+    }
+  });
+}
+
+(function () {
+  function refreshBundleBtn() {
+    var checked = document.querySelectorAll(".ipay-select:checked");
+    var btn = document.getElementById("ipay-bundle-btn");
+    if (!btn) { return; }
+    btn.style.display = checked.length ? "" : "none";
+    btn.textContent = "Pay " + checked.length + " selected together";
+  }
+  document.querySelectorAll(".ipay-select").forEach(function (cb) {
+    cb.addEventListener("change", refreshBundleBtn);
+  });
+})();
 
 (function () {
   var search = document.getElementById("ipay-search");

@@ -12,6 +12,11 @@ frappe.ui.form.on('iPay Request', {
          frm.set_df_property('status', 'read_only', 1);
       }
 
+      // Render a persistent, clickable payment link on the form.
+      if (submitted) {
+         render_payment_link(frm);
+      }
+
       // Copy a shareable payment link to send to the customer
       if (submitted && status !== 'Success') {
          frm.add_custom_button(__('Copy Payment Link'), () => {
@@ -23,6 +28,9 @@ frappe.ui.form.on('iPay Request', {
                   const res = r.message || {};
                   if (!res.url) { frappe.msgprint(__('Could not generate a payment link.')); return; }
                   if (navigator.clipboard) { navigator.clipboard.writeText(res.url); }
+                  // Populate the persistent field immediately (frm.doc.pay_token
+                  // is still stale on the client until the next reload).
+                  set_payment_link_html(frm, res.url);
                   const warn = res.redirect_enabled ? '' :
                      '<br><span style="color:#b7791f">Enable "Use Hosted Checkout Redirect" in iPay Settings so the card/iPay option works.</span>';
                   frappe.msgprint({
@@ -32,6 +40,29 @@ frappe.ui.form.on('iPay Request', {
                   });
                },
             });
+         });
+      }
+
+      // Split a bundle back into individual requests (only before payment)
+      if (submitted && status !== 'Success' && (frm.doc.invoices || []).length > 1) {
+         frm.add_custom_button(__('Split into Individual Requests'), () => {
+            frappe.confirm(
+               __('Split this bundle into one request per invoice and cancel the bundle?'),
+               () => {
+                  frappe.call({
+                     method: 'ipay.ipay.main.utils.ipay_redirect.split_bundle',
+                     args: { request: frm.doc.name },
+                     freeze: true,
+                     callback: function (r) {
+                        const res = r.message || {};
+                        if (res.created) {
+                           frappe.show_alert({ message: __(`Created ${res.created.length} request(s)`), indicator: 'green' });
+                           frm.reload_doc();
+                        }
+                     },
+                  });
+               }
+            );
          });
       }
 
@@ -258,62 +289,37 @@ function confirmPayment(frm) {
             const { status, message, data } = r.message;
 
             if (status === 'success') {
-               // Extract transaction details
+               // confirm_payment now records the Payment Entry server-side and
+               // returns it, so just surface the result here.
                const transactionCode = data?.transaction_code || 'N/A';
                const paymentMode = data?.payment_mode || 'N/A';
                const paidAt = data?.paid_at || 'N/A';
+               const paymentEntry = r.message.payment_entry;
+               const requestStatus = r.message.request_status || 'Recorded';
+               const dupNote = r.message.is_duplicate
+                  ? '<p><em>This payment was already recorded.</em></p>'
+                  : '';
 
-               // Display payment verification success message
                frappe.msgprint({
                   title: __('Payment Verified'),
                   message: `
-                    <p><strong>Status:</strong> The payment has been verified successfully.</p>
+                    <p><strong>Status:</strong> ${requestStatus}</p>
                     <p><strong>Transaction Code:</strong> ${transactionCode}</p>
                     <p><strong>Payment Mode:</strong> ${paymentMode}</p>
                     <p><strong>Paid At:</strong> ${paidAt}</p>
+                    ${dupNote}
+                    <p><strong>Payment Entry:</strong> <a href="/app/payment-entry/${paymentEntry}" target="_blank">${paymentEntry}</a></p>
                     `,
                   indicator: 'green',
                });
-
-               const inv = order;
-               const response_data = data;
-
-               frappe.call({
-                  method: 'ipay.ipay.main.utils.make_payment_entry.make_payment_entry',
-                  args: { user_id, customer_email, inv, response_data, ipay_request: frm.doc.name },
-                  freeze: false,
-                  async: true,
-
-                  callback: function (r) {
-                     const res = r.message;
-                     if (res.status === 'duplicate') {
-                        frappe.msgprint({
-                           title: __('Duplicate Payment Entry'),
-                           message: `A Payment Entry with the same transaction code already exists: 
-                                    <a href="/app/payment-entry/${res.payment_entry}" target="_blank">${res.payment_entry}</a>`,
-                           indicator: 'orange',
-                        });
-                     } else if (res.status === 'success') {
-                        frappe.msgprint({
-                           title: __('Payment Entry Created'),
-                           message: `Payment Entry: <a href="/app/payment-entry/${res.payment_entry}" target="_blank">${res.payment_entry}</a>`,
-                           indicator: 'green',
-                        });
-                     } else {
-                        frappe.msgprint({
-                           title: __('Payment Entry Error'),
-                           message: __(res.message || 'An unknown error occurred while creating the payment entry.'),
-                           indicator: 'red',
-                        });
-                     }
-                  },
-               });
+               frm.reload_doc();
             } else {
-               // Handle verification failure
+               // Surface the real reason from the server (payment not found, or
+               // the payment was found but could not be recorded) so the
+               // operator can act on a received-but-unrecorded payment.
                frappe.msgprint({
                   title: __('Verification Failed'),
-                  //  message: __(`Error: ${message}`),
-                  message: `Error: Payment Not Found.`,
+                  message: __(message || 'Payment not found.'),
                   indicator: 'red',
                });
             }
@@ -334,4 +340,28 @@ function confirmPayment(frm) {
          console.error('Verification Error:', err);
       },
    });
+}
+
+// Render the payment link into the read-only "Payment Link" HTML field so the
+// operator can click it directly from the form (not only via the popup).
+function render_payment_link(frm) {
+   const field = frm.get_field('payment_link');
+   if (!field) { return; }
+   if (frm.doc.status === 'Success') {
+      field.$wrapper.html('<span class="text-muted">This request has been paid.</span>');
+   } else if (frm.doc.pay_token) {
+      const url = `${window.location.origin}/pay?token=${encodeURIComponent(frm.doc.pay_token)}`;
+      set_payment_link_html(frm, url);
+   } else {
+      field.$wrapper.html('<span class="text-muted">Use "Copy Payment Link" to generate the link.</span>');
+   }
+}
+
+function set_payment_link_html(frm, url) {
+   const field = frm.get_field('payment_link');
+   if (!field) { return; }
+   const safe = frappe.utils.escape_html(url);
+   field.$wrapper.html(
+      `<a href="${safe}" target="_blank" rel="noopener" style="word-break:break-all">${safe}</a>`
+   );
 }

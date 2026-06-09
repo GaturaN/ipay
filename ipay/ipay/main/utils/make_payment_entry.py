@@ -2,7 +2,6 @@ import frappe
 import logging
 import json
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -35,9 +34,15 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
                 )
                 if ipay_request:
                     frappe.db.set_value("iPay Request", ipay_request, "payment_entry", existing)
+                # Report how much the existing entry allocated to invoices, so the
+                # caller resolves the same status on a re-run instead of assuming a
+                # duplicate was fully allocated.
                 return {
                     "status": "duplicate",
                     "payment_entry": existing,
+                    "allocated": frappe.utils.flt(
+                        frappe.db.get_value("Payment Entry", existing, "total_allocated_amount")
+                    ),
                     "message": "Payment Entry already exists",
                 }
 
@@ -66,7 +71,7 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
                 frappe.db.get_value(
                     "Sales Invoice",
                     name,
-                    ["name", "outstanding_amount", "posting_date", "customer", "customer_name"],
+                    ["name", "outstanding_amount", "posting_date", "customer", "customer_name", "company"],
                     as_dict=True,
                 )
                 for name in invoice_names
@@ -122,11 +127,34 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
                 )
                 remaining = flt(remaining - allocated)
 
-        cash_account = "Cash - TSL"
+        # If nothing could be allocated (every invoice was already settled
+        # elsewhere), the money is still real — record it as unallocated credit,
+        # but make it auditable instead of a silent full-credit Payment Entry.
+        if not references:
+            logger.warning(
+                f"No outstanding to allocate for {ipay_request or inv}; "
+                f"recording {transaction_amount} as unallocated customer credit"
+            )
+            frappe.log_error(
+                f"iPay payment {response_data.get('transaction_code')} recorded as unallocated "
+                f"credit — invoices already settled ({ipay_request or inv})",
+                "iPay unallocated payment",
+            )
+
+        # Resolve the receiving account per the invoice's company: prefer the
+        # company's default cash account, then an iPay Settings override, then a
+        # legacy fallback. Setting company explicitly keeps multi-company correct.
+        company = primary.company
+        cash_account = (
+            frappe.get_cached_value("Company", company, "default_cash_account")
+            or frappe.db.get_single_value("iPay Settings", "cash_account")
+            or "Cash - TSL"
+        )
 
         # Create a new Payment Entry
         payment_entry = frappe.new_doc("Payment Entry")
         payment_entry.payment_type = "Receive"
+        payment_entry.company = company
         payment_entry.payment_order_status = "Initiated"
         payment_entry.posting_date = frappe.utils.today()
         payment_entry.mode_of_payment = "MPESA"
@@ -174,6 +202,7 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
         return {
             "status": "success",
             "payment_entry": payment_entry.name,
+            "allocated": float(transaction_amount - remaining),
             "message": "Payment Entry created",
         }
 

@@ -1,22 +1,16 @@
-import requests
-import hmac
-import hashlib
 import time
 import logging
-import frappe 
-from requests.exceptions import RequestException 
+import requests
+import frappe
+from requests.exceptions import RequestException
 
-logging.basicConfig(level=logging.INFO)
+from ipay.ipay.main.utils.constants import search_hash
+
 logger = logging.getLogger(__name__)
 
 # Helper function to delay execution
 def delay(ms):
     time.sleep(ms / 1000.0)
-    
-# Helper function to create HMAC hash
-def create_hash(oid, vid, secret_key):
-    data_string = f'{oid}{vid}'
-    return hmac.new(secret_key.encode(), data_string.encode(), hashlib.sha256).hexdigest()
 
 # Isolate the API call to a separate function
 def make_verification_call(verification_payload):
@@ -39,7 +33,7 @@ def verify_mpesa_payment(oid, phone, vid, secret_key):
     # Initial delay before verification
     delay(initial_delay)
     
-    hash_value = create_hash(oid, vid, secret_key)
+    hash_value = search_hash(oid, vid, secret_key)
     verification_payload = {
         'vid': vid,
         'hash': hash_value,

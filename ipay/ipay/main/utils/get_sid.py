@@ -1,20 +1,18 @@
-import re
 import requests
 import hmac
 import hashlib
 import logging
 import frappe
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from ipay.ipay.main.utils.constants import clean_oid
 
-UNWANTED_OID_CHARACTERS = r"[-/;:~`!%^*<&_]"
+logger = logging.getLogger(__name__)
 
 def get_sid(vid: str, secret_key: str, amount: str, oid: str, phone: str, eml: str = "", sales_invoice: str = None) -> dict:
     try:
         # 'oid' is the iPay Request name (the search key). The iPay 'inv' field is
         # the (cleaned) Sales Invoice, kept as metadata for iPay's records.
-        inv = re.sub(UNWANTED_OID_CHARACTERS, "", sales_invoice) if sales_invoice else oid
+        inv = clean_oid(sales_invoice) if sales_invoice else oid
 
         # Customer email: prefer the value passed in; fall back to the invoice's
         # contact email looked up by the REAL invoice name (never the oid).

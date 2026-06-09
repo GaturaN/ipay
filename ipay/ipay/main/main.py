@@ -3,16 +3,14 @@ import logging
 from ipay.ipay.main.utils.get_sid import get_sid
 from ipay.ipay.main.utils.trigger_stk_push import trigger_stk_push
 from ipay.ipay.main.utils.verify_mpesa_payment import verify_mpesa_payment
-from ipay.ipay.main.utils.make_payment_entry import make_payment_entry
+from ipay.ipay.main.utils.finalize_payment import finalize_payment
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
-from ipay.ipay.main.utils.send_callback import deliver_callback
-import re
+from ipay.ipay.main.utils.constants import clean_oid
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def lipana_mpesa(
     docid, user_id, phone, amount, oid, customer_email, payment_request_type
 ):
@@ -39,8 +37,7 @@ def lipana_mpesa(
     inv = oid
     logger.info(f"Invoice: {inv}")
 
-    unwanted_characters = r"[-/;:~`!%^*<&_]"
-    oid = re.sub(unwanted_characters, "", docid)
+    oid = clean_oid(docid)
     logger.info(f"Cleaned OID (from request {docid}): {oid}")
 
     # get vendor details
@@ -104,85 +101,40 @@ def lipana_mpesa(
                     create_log_entry("ERR", "Payment Verification Failed")
                     frappe.throw("Payment Verification Failed")
 
-                # Process verification response
+                # Finalise via the shared path: record the Payment Entry, set
+                # the request status (Success / Underpaid / Overpaid) and notify
+                # the n8n callback exactly once.
                 data = verification_response.get("data", {})
-                response_data = {
-                    "order_id": data.get("oid"),
-                    "transaction_amount": data.get("transaction_amount"),
-                    "transaction_code": data.get("transaction_code"),
-                    "payee": data.get("firstname"),
-                    "payment_mode": data.get("payment_mode"),
-                    "paid_at": data.get("paid_at"),
-                    "telephone": data.get("telephone"),
-                }
-
+                result = finalize_payment(
+                    docid, data, amount,
+                    sales_invoice=inv, customer=user_id, customer_email=customer_email,
+                )
+                response_data = result.get("response_data", {})
                 create_log_entry(
-                    "INF",
-                    f"Payment received successfully with response_data: {response_data}",
+                    "INF", f"Payment received with response_data: {response_data}"
                 )
                 logger.info("response_data: %s", response_data)
 
-                # set status to success on the ipay request and show success message
-                result_detail = (
-                    f"KES {response_data.get('transaction_amount')} received from "
-                    f"{response_data.get('payee')} ({response_data.get('telephone')}) — "
-                    f"M-Pesa ref {response_data.get('transaction_code')}, {response_data.get('paid_at')}"
-                )
-                frappe.db.set_value(
-                    "iPay Request",
-                    docid,
-                    {"status": "Success", "result_detail": result_detail},
-                )
-                frappe.db.commit()
-                frappe.msgprint("Payment received successfully")
-
-                # send post request to call back url
-                deliver_callback(docid, response_data)
-
-                # call function to create payment entry
-                result = make_payment_entry(user_id, customer_email, inv, response_data, ipay_request=docid)
-
-                if isinstance(result, dict):
-                    status = result.get("status")
-                    payment_entry = result.get("payment_entry")
-                    message = result.get("message", "")
-
-                    if status == "success":
-                        logger.info(f"Payment Entry: {payment_entry}")
-                        frappe.msgprint(
-                            f"Payment Entry: <a href='/desk/payment-entry/{payment_entry}'>{payment_entry}</a>"
-                        )
-
-                    elif status == "duplicate":
-                        logger.warning(
-                            f"Duplicate Payment Entry detected: {payment_entry}"
-                        )
-                        frappe.msgprint(
-                            f"Duplicate Payment Entry: <a href='/desk/payment-entry/{payment_entry}'>{payment_entry}</a>"
-                        )
-
-                    else:
-                        logger.error(f"Payment Entry creation failed: {message}")
-                        create_log_entry(
-                            "ERR", f"Payment Entry creation failed: {message}"
-                        )
-                        frappe.msgprint("Failed to create Payment Entry")
-
-                else:
-                    logger.error("Unexpected response from make_payment_entry")
-                    create_log_entry(
-                        "ERR", "Unexpected response from make_payment_entry"
+                payment_entry = result.get("payment_entry")
+                if result.get("status") in ("success", "duplicate"):
+                    frappe.msgprint(
+                        f"Payment received ({result.get('request_status')}). "
+                        f"Payment Entry: <a href='/app/payment-entry/{payment_entry}'>{payment_entry}</a>"
                     )
-                    frappe.msgprint("Failed to create Payment Entry")
+                else:
+                    create_log_entry(
+                        "ERR", f"Payment Entry creation failed: {result.get('message')}"
+                    )
+                    frappe.msgprint(
+                        "Payment received, but creating the Payment Entry failed. "
+                        "It will be retried automatically."
+                    )
 
                 return response_data
 
             else:
                 create_log_entry("ERR", "Failed to initiate payment")
-                # set status to 'Failed to complete request'
-                frappe.db.set_value(
-                    "iPay Request", docid, "status", "Failed to complete request"
-                )
+                frappe.db.set_value("iPay Request", docid, "status", "Failed")
                 frappe.db.commit()
                 frappe.throw("Failed to initiate Payment")
 
@@ -191,11 +143,11 @@ def lipana_mpesa(
             create_log_entry(
                 "ERR", f"An error occurred during the payment proces: {error}"
             )
-            # set status to error and record the reason for the operator
+            # set status to Failed and record the reason for the operator
             frappe.db.set_value(
                 "iPay Request",
                 docid,
-                {"status": "Error", "result_detail": str(error)},
+                {"status": "Failed", "result_detail": str(error)},
             )
             frappe.db.commit()
             # frappe.throw("An error occurred during the payment process")
