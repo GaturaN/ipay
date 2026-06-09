@@ -5,7 +5,7 @@ from ipay.ipay.main.utils.trigger_stk_push import trigger_stk_push
 from ipay.ipay.main.utils.verify_mpesa_payment import verify_mpesa_payment
 from ipay.ipay.main.utils.make_payment_entry import make_payment_entry
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
-from ipay.ipay.main.utils.send_callback import send_callback
+from ipay.ipay.main.utils.send_callback import deliver_callback
 import re
 
 logging.basicConfig(level=logging.INFO)
@@ -32,15 +32,16 @@ def lipana_mpesa(
     # log in frappe
     create_log_entry("INF", f"Payment prompt initiated for Ipay Request : {docid}")
 
-    # Variable to maintain the order id
+    # Keep the Sales Invoice for the Payment Entry, but derive the iPay order id
+    # from the iPay Request name so it is unique per request. (A balance/repeat
+    # request for the same invoice then gets its own order id instead of a
+    # colliding one, and bundles that span several invoices still have one oid.)
     inv = oid
     logger.info(f"Invoice: {inv}")
 
-    # Remove unwanted characters from oid
-    # Expected output for oid: ACC-SINV-2024-00002 is ACCSINV202400002
     unwanted_characters = r"[-/;:~`!%^*<&_]"
-    oid = re.sub(unwanted_characters, "", oid)
-    logger.info(f"Cleaned OID: {oid}")
+    oid = re.sub(unwanted_characters, "", docid)
+    logger.info(f"Cleaned OID (from request {docid}): {oid}")
 
     # get vendor details
     vendor = frappe.get_doc("iPay Settings")
@@ -55,7 +56,7 @@ def lipana_mpesa(
     # check if payemnt_request_tyoe is Mpesa Paybill
     if payment_request_type == "Mpesa Paybill":
         # get session id
-        response = get_sid(vid, secret_key, amount, oid, phone)
+        response = get_sid(vid, secret_key, amount, oid, phone, eml=customer_email, sales_invoice=inv)
         sid = response.get("data", {})
 
         if not sid:
@@ -79,7 +80,7 @@ def lipana_mpesa(
 
         try:
             # get session id
-            response = get_sid(vid, secret_key, amount, oid, phone)
+            response = get_sid(vid, secret_key, amount, oid, phone, eml=customer_email, sales_invoice=inv)
             sid = response.get("data", {}).get("sid")
 
             if not sid:
@@ -122,15 +123,24 @@ def lipana_mpesa(
                 logger.info("response_data: %s", response_data)
 
                 # set status to success on the ipay request and show success message
-                frappe.db.set_value("iPay Request", docid, "status", "Success")
+                result_detail = (
+                    f"KES {response_data.get('transaction_amount')} received from "
+                    f"{response_data.get('payee')} ({response_data.get('telephone')}) — "
+                    f"M-Pesa ref {response_data.get('transaction_code')}, {response_data.get('paid_at')}"
+                )
+                frappe.db.set_value(
+                    "iPay Request",
+                    docid,
+                    {"status": "Success", "result_detail": result_detail},
+                )
                 frappe.db.commit()
                 frappe.msgprint("Payment received successfully")
 
                 # send post request to call back url
-                send_callback(response_data)
+                deliver_callback(docid, response_data)
 
                 # call function to create payment entry
-                result = make_payment_entry(user_id, customer_email, inv, response_data)
+                result = make_payment_entry(user_id, customer_email, inv, response_data, ipay_request=docid)
 
                 if isinstance(result, dict):
                     status = result.get("status")
@@ -181,7 +191,11 @@ def lipana_mpesa(
             create_log_entry(
                 "ERR", f"An error occurred during the payment proces: {error}"
             )
-            # set status to error
-            frappe.db.set_value("iPay Request", docid, "status", "Error")
+            # set status to error and record the reason for the operator
+            frappe.db.set_value(
+                "iPay Request",
+                docid,
+                {"status": "Error", "result_detail": str(error)},
+            )
             frappe.db.commit()
             # frappe.throw("An error occurred during the payment process")

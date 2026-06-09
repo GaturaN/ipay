@@ -138,6 +138,11 @@ scheduler_events = {
 	"daily": [
 		"ipay.ipay.main.utils.log_cleanup.del_old_logs"
 	],
+	"cron": {
+		"*/5 * * * *": [
+			"ipay.ipay.main.utils.reconcile_payments.reconcile_pending_payments"
+		]
+	},
 # 	"hourly": [
 # 		"ipay.tasks.hourly"
 # 	],

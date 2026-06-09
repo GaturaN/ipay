@@ -1,3 +1,4 @@
+import re
 import requests
 import hmac
 import hashlib
@@ -7,13 +8,20 @@ import frappe
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def get_sid(vid: str, secret_key: str, amount: str, oid: str, phone: str) -> dict:
+UNWANTED_OID_CHARACTERS = r"[-/;:~`!%^*<&_]"
+
+def get_sid(vid: str, secret_key: str, amount: str, oid: str, phone: str, eml: str = "", sales_invoice: str = None) -> dict:
     try:
-        inv = oid
-        
-        # Fetch Sales Invoice email
-        eml = frappe.db.get_value("Sales Invoice", inv, "contact_email") or ""
-        
+        # 'oid' is the iPay Request name (the search key). The iPay 'inv' field is
+        # the (cleaned) Sales Invoice, kept as metadata for iPay's records.
+        inv = re.sub(UNWANTED_OID_CHARACTERS, "", sales_invoice) if sales_invoice else oid
+
+        # Customer email: prefer the value passed in; fall back to the invoice's
+        # contact email looked up by the REAL invoice name (never the oid).
+        if not eml and sales_invoice:
+            eml = frappe.db.get_value("Sales Invoice", sales_invoice, "contact_email") or ""
+        eml = eml or ""
+
         # Fetch iPay Settings once
         ipay_settings = frappe.get_single("iPay Settings")
         

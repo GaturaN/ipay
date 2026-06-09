@@ -5,7 +5,7 @@ import logging
 import re
 import frappe
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
-from ipay.ipay.main.utils.send_callback import send_callback
+from ipay.ipay.main.utils.send_callback import deliver_callback
 
 
 logging.basicConfig(level=logging.INFO)
@@ -26,10 +26,10 @@ def confirm_payment(docid, user_id, phone, amount, order, customer_email):
     vid = vendor.vendor_id.lower()   # Must be lowercase
     secret_key = vendor.api_key
     
-    # Remove unwanted characters from oid
+    # Order id is the iPay Request name (must match what was sent at initiation).
     unwanted_characters = r'[-/;:~`!%^*<&_]'
-    oid = re.sub(unwanted_characters, '', order)
-    logger.info(f"Cleaned OID: {oid}")
+    oid = re.sub(unwanted_characters, '', docid)
+    logger.info(f"Cleaned OID (from request {docid}): {oid}")
     
     try:
         # Generate hash for verification
@@ -82,7 +82,7 @@ def confirm_payment(docid, user_id, phone, amount, order, customer_email):
                       }
 
                     # notify the configured callback URL
-                    send_callback(data)
+                    deliver_callback(docid, data)
 
                     return {"status": "success", "message": "Payment verified", "data": data}
                   

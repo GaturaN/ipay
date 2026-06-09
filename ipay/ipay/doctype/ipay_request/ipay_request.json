@@ -23,7 +23,12 @@
   "transaction_details_section",
   "sales_invoice",
   "amount",
-  "route"
+  "invoices",
+  "route",
+  "callback_delivered",
+  "result_detail",
+  "pay_token",
+  "payment_entry"
  ],
  "fields": [
   {
@@ -101,11 +106,18 @@
    "label": "Amount"
   },
   {
+   "description": "Invoices covered by this request. Populated for bundled (multi-invoice) payments; a single-invoice request leaves this empty and uses Sales Invoice above.",
+   "fieldname": "invoices",
+   "fieldtype": "Table",
+   "label": "Invoices",
+   "options": "iPay Request Invoice"
+  },
+  {
    "allow_on_submit": 1,
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "\nFailed to complete request\nSuccess\nError",
+   "options": "\nFailed to complete request\nSuccess\nError\nAmount Mismatch",
    "read_only": 1
   },
   {
@@ -152,6 +164,39 @@
    "fieldname": "published",
    "fieldtype": "Check",
    "label": "Published"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "fieldname": "callback_delivered",
+   "fieldtype": "Check",
+   "label": "Callback Delivered",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "result_detail",
+   "fieldtype": "Small Text",
+   "label": "Result Detail",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "pay_token",
+   "fieldtype": "Data",
+   "label": "Payment Link Token",
+   "read_only": 1,
+   "unique": 1,
+   "no_copy": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "payment_entry",
+   "fieldtype": "Link",
+   "label": "Payment Entry",
+   "options": "Payment Entry",
+   "read_only": 1,
+   "no_copy": 1
   }
  ],
  "has_web_view": 1,
