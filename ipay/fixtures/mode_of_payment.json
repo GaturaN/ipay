@@ -70,5 +70,14 @@
       "modified": "2025-02-05 09:50:46.803809",
       "name": "Ipay Mpesa",
       "type": "Cash"
+   },
+   {
+      "accounts": [],
+      "docstatus": 0,
+      "doctype": "Mode of Payment",
+      "enabled": 1,
+      "mode_of_payment": "MPESA",
+      "name": "MPESA",
+      "type": "Cash"
    }
 ]
