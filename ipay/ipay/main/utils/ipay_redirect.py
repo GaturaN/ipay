@@ -68,14 +68,23 @@ def normalize_phone(phone):
     return digits if re.fullmatch(r"254(7|1)\d{8}", digits) else ""
 
 
-def build_checkout_form(request_name, phone=None):
+def _checkout_email(entered, on_file):
+    """Pick the email for hosted checkout: prefer a caller-supplied address, else
+    the one on file. Returns "" for anything that is not a valid address, so the
+    checkout page treats junk as "no email" and prompts — mirroring how
+    normalize_phone treats a malformed number."""
+    candidate = (entered or on_file or "").strip()
+    return frappe.utils.validate_email_address(candidate) if candidate else ""
+
+
+def build_checkout_form(request_name, phone=None, email=None):
     """Build the field set (including the SHA1 hash) for an auto-submitting
     hosted-checkout form for the given iPay Request. The request name is sent as
     p1 so iPay echoes it back to the return handler.
 
-    iPay requires `tel` and locks the M-Pesa phone field to it, so the paying
-    number must be decided here (before redirect): use the caller-supplied phone
-    if given, else the customer's number on file."""
+    iPay requires `tel` and an `eml`, and locks the M-Pesa phone field to `tel`,
+    so the paying number and email must be decided here (before redirect): use the
+    caller-supplied values if given, else the customer's number/email on file."""
     settings = frappe.get_single("iPay Settings")
     req = frappe.get_doc("iPay Request", request_name)
 
@@ -96,7 +105,7 @@ def build_checkout_form(request_name, phone=None):
         "inv": clean_oid(req.sales_invoice),
         "ttl": f"{amount:.2f}",
         "tel": normalize_phone(phone or req.customer_phone),
-        "eml": req.customer_email or "",
+        "eml": _checkout_email(email, req.customer_email),
         "vid": (settings.vendor_id or "").lower(),
         "curr": "KES",
         "p1": req.name,

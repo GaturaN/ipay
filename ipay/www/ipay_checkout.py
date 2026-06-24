@@ -23,23 +23,37 @@ def get_context(context):
         return
 
     entered_phone = frappe.form_dict.get("phone")
-    action, fields = build_checkout_form(request_name, entered_phone)
+    entered_email = frappe.form_dict.get("email")
+    action, fields = build_checkout_form(request_name, entered_phone, entered_email)
 
-    # iPay requires a telephone number; if none was supplied or on file, ask for one.
+    # iPay requires a telephone number; if none was supplied or on file, ask for
+    # one. Phone is asked first; the email step carries the entered phone forward
+    # so a customer who supplies both in turn does not lose the first.
     if not fields.get("tel"):
         context.phone_required = True
         context.token = token
+        context.email = entered_email or ""
         return
 
-    # Persist an operator-entered number to the Customer (blanks only) so future
+    # Persist any operator-entered contact to the Customer (blanks only) so future
     # requests are pre-filled — matching the STK/desk paths. Guests never write
     # the Customer master. Best-effort: never block checkout on a save failure.
-    if entered_phone and frappe.session.user != "Guest":
+    # Done before the email gate so a just-entered phone is saved even when we
+    # still need to collect the email.
+    if frappe.session.user != "Guest" and (entered_phone or entered_email):
         try:
-            save_customer_contact(request_name, phone=entered_phone)
+            save_customer_contact(request_name, phone=entered_phone, email=entered_email)
             frappe.db.commit()
         except Exception:
             frappe.db.rollback()
+
+    # iPay also requires an email (for the receipt / card auth); if none was
+    # supplied or on file, ask for one — mirroring the phone prompt above.
+    if not fields.get("eml"):
+        context.email_required = True
+        context.token = token
+        context.phone = entered_phone or ""
+        return
 
     context.action = action
     context.fields = fields
