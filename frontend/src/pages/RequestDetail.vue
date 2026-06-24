@@ -24,6 +24,7 @@ const loading = ref(true)
 const link = ref(null)
 const linkBusy = ref(false)
 const copied = ref(false)
+const linkExpiry = ref(null)
 const prompting = ref(null)
 let pollTimer = null
 
@@ -99,7 +100,9 @@ function onPaid() {
 async function showLink() {
   linkBusy.value = true
   try {
-    link.value = (await getPaymentLink(name)).url
+    const res = await getPaymentLink(name)
+    link.value = res.url
+    linkExpiry.value = res.expiry || null
     copied.value = false
   } finally {
     linkBusy.value = false
@@ -109,7 +112,9 @@ async function showLink() {
 async function regenerate() {
   linkBusy.value = true
   try {
-    link.value = (await regeneratePaymentLink(name)).url
+    const res = await regeneratePaymentLink(name)
+    link.value = res.url
+    linkExpiry.value = res.expiry || null
     copied.value = false
   } finally {
     linkBusy.value = false

@@ -329,21 +329,17 @@ def _enqueue_stk(request_name, phone):
     return {"status": "sent", "message": "M-Pesa prompt sent. Awaiting payment."}
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def start_checkout(invoice):
     """Operator action from the collection page: ensure a submitted iPay Request
-    (and its token) exist, then send the browser to the hosted checkout."""
+    (and its token) exist, then return the hosted-checkout URL for the client to
+    navigate to. POST (not a GET redirect) so it can't be triggered cross-site —
+    it creates and commits a request."""
     _require_operator()
     _require_invoice_access(invoice)
     request_name = _ensure_request(invoice)
     token = _ensure_pay_token(request_name)
-    # This endpoint is reached by a GET (an <a> link), which Frappe treats as
-    # read-only and does NOT auto-commit — so the just-created request and token
-    # would be rolled back, and the checkout page would not find the token.
-    # Persist them explicitly before redirecting.
-    frappe.db.commit()
-    frappe.local.response["type"] = "redirect"
-    frappe.local.response["location"] = f"/ipay_checkout?token={token}"
+    return {"url": f"/ipay_checkout?token={token}"}
 
 
 @frappe.whitelist(methods=["POST"])
@@ -360,6 +356,7 @@ def get_payment_link(invoice=None, request=None):
     token = _ensure_pay_token(request_name)
     return {
         "url": frappe.utils.get_url("/pay?token=" + token),
+        "expiry": frappe.db.get_value("iPay Request", request_name, "pay_token_expiry"),
         "redirect_enabled": bool(
             frappe.db.get_single_value("iPay Settings", "enable_redirect")
         ),

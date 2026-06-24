@@ -1,7 +1,7 @@
 <script setup>
-import { computed } from 'vue'
+import { ref } from 'vue'
 import { formatKES } from '@/utils/format'
-import { checkoutUrl } from '@/data/collection'
+import { startCheckout } from '@/data/collection'
 
 const props = defineProps({
   invoice: { type: Object, required: true },
@@ -12,7 +12,17 @@ const props = defineProps({
 })
 defineEmits(['prompt', 'toggle-select'])
 
-const payUrl = computed(() => checkoutUrl(props.invoice.name))
+const checkoutBusy = ref(false)
+
+async function payViaIpay() {
+  checkoutBusy.value = true
+  try {
+    const res = await startCheckout(props.invoice.name)
+    if (res?.url) window.location = res.url
+  } finally {
+    checkoutBusy.value = false
+  }
+}
 </script>
 
 <template>
@@ -53,12 +63,16 @@ const payUrl = computed(() => checkoutUrl(props.invoice.name))
       >
         Prompt M-Pesa
       </Button>
-      <template v-if="enableRedirect">
-        <a v-if="!actionsDisabled" :href="payUrl" class="flex-1">
-          <Button variant="subtle" class="w-full">Pay via iPay</Button>
-        </a>
-        <Button v-else variant="subtle" class="flex-1" disabled>Pay via iPay</Button>
-      </template>
+      <Button
+        v-if="enableRedirect"
+        variant="subtle"
+        class="flex-1"
+        :disabled="actionsDisabled"
+        :loading="checkoutBusy"
+        @click="payViaIpay"
+      >
+        Pay via iPay
+      </Button>
     </div>
   </div>
 </template>

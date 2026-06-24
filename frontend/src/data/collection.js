@@ -51,7 +51,6 @@ export const regeneratePaymentLink = (request) => call(API.regenerateLink, { req
 // Cancel an unpaid bundle (the operator backed out) so its invoices return.
 export const discardBundle = (request) => call(API.discardBundle, { request })
 
-// start_checkout is a GET that creates the request and 302-redirects to the
-// hosted checkout, so it is used as a plain link target, not a fetch.
-export const checkoutUrl = (invoice) =>
-  `/api/method/${API.startCheckout}?invoice=${encodeURIComponent(invoice)}`
+// start_checkout (POST) ensures the request + token and returns the hosted
+// checkout URL; the caller navigates there.
+export const startCheckout = (invoice) => call(API.startCheckout, { invoice })
