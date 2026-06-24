@@ -125,25 +125,37 @@ async function copyLink() {
   }
 }
 
-// Leaving an unpaid bundle discards it so its invoices return to the list.
-onBeforeRouteLeave(async () => {
-  if (detail.value && detail.value.is_bundle && !detail.value.paid) {
-    try {
-      await discardBundle(name)
-    } catch {
-      // Best-effort; the server keeps a bundle that has been paid.
-    }
+// Discard an unpaid bundle on leave so its invoices return to the collection
+// list. discardBundle is a safe no-op server-side for a single or paid request,
+// so we call it on every leave (and don't depend on `detail` having loaded yet).
+// Guarded so the explicit Back and the route-leave guard don't both run it.
+let discarded = false
+async function discardIfNeeded() {
+  if (discarded) return
+  discarded = true
+  try {
+    await discardBundle(name)
+  } catch {
+    // Best-effort; the server keeps a bundle that has been paid.
   }
-})
+}
+
+// Discard BEFORE navigating so the Collect list reloads after the bundle is
+// cancelled (not before) — otherwise its invoices look lost.
+async function backToList() {
+  await discardIfNeeded()
+  router.push({ name: 'Collect' })
+}
+
+// Fallback for browser-back / any other navigation away.
+onBeforeRouteLeave(discardIfNeeded)
 
 onMounted(load)
 </script>
 
 <template>
   <main class="mx-auto flex min-h-full w-full max-w-md flex-col gap-4 p-4">
-    <button class="self-start text-sm text-gray-500" @click="router.push({ name: 'Collect' })">
-      ← Back
-    </button>
+    <button class="self-start text-sm text-gray-500" @click="backToList">← Back</button>
 
     <p v-if="loading" class="py-10 text-center text-sm text-gray-400">Loading…</p>
 

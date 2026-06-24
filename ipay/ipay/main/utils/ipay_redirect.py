@@ -505,8 +505,12 @@ def discard_bundle(request):
     with invoice rows) are discarded."""
     _require_full_operator()
     locked = frappe.db.get_value(
-        "iPay Request", request, ["status", "payment_entry"], as_dict=True, for_update=True
+        "iPay Request", request, ["status", "payment_entry", "docstatus"], as_dict=True, for_update=True
     ) or {}
+    # Idempotent: a second call (route guard + explicit back) on an
+    # already-cancelled request is a no-op rather than an error.
+    if locked.get("docstatus") != 1:
+        return {"cancelled": False}
     if locked.get("status") in ("Success", "Underpaid", "Overpaid") or locked.get("payment_entry"):
         return {"cancelled": False}
     bundle = frappe.get_doc("iPay Request", request)
