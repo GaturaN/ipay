@@ -15,6 +15,10 @@ const API = {
   saveContact: 'ipay.ipay.main.utils.ipay_redirect.save_customer_contact',
   paymentState: 'ipay.ipay.main.utils.ipay_redirect.payment_state',
   createBundle: 'ipay.ipay.main.utils.ipay_redirect.create_bundle',
+  requestDetail: 'ipay.ipay.main.utils.ipay_redirect.request_detail',
+  paymentLink: 'ipay.ipay.main.utils.ipay_redirect.get_payment_link',
+  regenerateLink: 'ipay.ipay.main.utils.ipay_redirect.regenerate_payment_link',
+  splitBundle: 'ipay.ipay.main.utils.ipay_redirect.split_bundle',
   startCheckout: 'ipay.ipay.main.utils.ipay_redirect.start_checkout',
 }
 
@@ -39,6 +43,12 @@ export const paymentState = (request) => call(API.paymentState, { request }, 'GE
 // re-checks that every invoice belongs to `customer` (and one company).
 export const createBundle = (customer, invoices) =>
   call(API.createBundle, { customer, invoices: JSON.stringify(invoices) })
+
+// Request-detail view (a bundle or single request).
+export const fetchRequestDetail = (request) => call(API.requestDetail, { request }, 'GET')
+export const getPaymentLink = (request) => call(API.paymentLink, { request })
+export const regeneratePaymentLink = (request) => call(API.regenerateLink, { request })
+export const splitBundle = (request) => call(API.splitBundle, { request })
 
 // start_checkout is a GET that creates the request and 302-redirects to the
 // hosted checkout, so it is used as a plain link target, not a fetch.

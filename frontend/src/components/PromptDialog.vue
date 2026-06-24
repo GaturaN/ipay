@@ -11,17 +11,14 @@ import {
 // existing request (a bundle, charged for its full amount). The number is ALWAYS
 // shown (pre-filled) so the operator confirms or changes it before any charge.
 // After sending, the request is polled until paid / partial / failed / timeout.
-// `link` (optional) is a shareable payment link shown as a fallback for bundles.
 const props = defineProps({
   // null = hidden. { name, label, phone, kind: 'invoice' | 'request' }
   target: { type: Object, default: null },
-  link: { type: String, default: null },
 })
 const emit = defineEmits(['close', 'paid'])
 
 const phone = ref('')
 const busy = ref(false)
-const copied = ref(false)
 const message = ref(null) // { tone, text }
 let pollTimer = null
 
@@ -37,7 +34,6 @@ watch(
   (target) => {
     phone.value = target?.phone || ''
     busy.value = false
-    copied.value = false
     message.value = null
     stopPolling()
   },
@@ -75,15 +71,6 @@ async function send() {
   } catch (error) {
     busy.value = false
     message.value = { tone: 'error', text: error.message || 'Something went wrong.' }
-  }
-}
-
-async function copyLink() {
-  try {
-    await navigator.clipboard.writeText(props.link)
-    copied.value = true
-  } catch {
-    // Clipboard unavailable — the operator can still send the STK prompt.
   }
 }
 
@@ -154,11 +141,6 @@ onUnmounted(stopPolling)
           Send prompt
         </Button>
       </div>
-
-      <!-- Fallback for bundles: share a link if the customer prefers to pay later. -->
-      <Button v-if="link" variant="ghost" class="mt-2 w-full" @click="copyLink">
-        {{ copied ? 'Link copied ✓' : 'Or copy a payment link' }}
-      </Button>
     </div>
   </div>
 </template>

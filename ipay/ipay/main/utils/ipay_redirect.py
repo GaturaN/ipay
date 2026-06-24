@@ -497,6 +497,53 @@ def payment_state(request):
     return _payment_state(request, include_detail=True)
 
 
+@frappe.whitelist()
+def request_detail(request):
+    """Detail for the SPA's request view (a bundle or single request): status,
+    amount, the invoices it covers, the payer result detail, and whether the
+    caller may split it (a full operator, on an unpaid bundle)."""
+    from ipay.ipay.main.utils.collector import is_collector_only
+
+    _require_operator()
+    _require_request_access(request)
+    req = frappe.db.get_value(
+        "iPay Request",
+        request,
+        ["name", "customer", "status", "amount", "sales_invoice", "result_detail", "payment_entry"],
+        as_dict=True,
+    )
+    if not req:
+        frappe.throw("Unknown request.")
+
+    invoices = [
+        name
+        for name in frappe.get_all(
+            "iPay Request Invoice", filters={"parent": request}, pluck="sales_invoice"
+        )
+        if name
+    ] or [req.sales_invoice]
+    status = req.status or "Pending"
+    is_bundle = len(invoices) > 1
+    return {
+        "name": req.name,
+        "customer": req.customer,
+        "customer_name": frappe.db.get_value("Customer", req.customer, "customer_name") or req.customer,
+        "customer_phone": frappe.db.get_value("Customer", req.customer, "mobile_no") or "",
+        "status": status,
+        "amount": frappe.utils.flt(req.amount),
+        "invoices": invoices,
+        "is_bundle": is_bundle,
+        "result_detail": req.result_detail or "",
+        "paid": status == "Success",
+        "can_split": (
+            is_bundle
+            and not req.payment_entry
+            and status not in ("Success", "Underpaid", "Overpaid")
+            and not is_collector_only(frappe.session.user)
+        ),
+    }
+
+
 @frappe.whitelist(methods=["POST"])
 def save_customer_contact(request, phone=None, email=None):
     """Persist an operator-entered phone/email so future requests never error for

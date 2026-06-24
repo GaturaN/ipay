@@ -7,6 +7,11 @@ const routes = [
     name: 'Collect',
     component: () => import('@/pages/Collect.vue'),
   },
+  {
+    path: '/request/:name',
+    name: 'Request',
+    component: () => import('@/pages/RequestDetail.vue'),
+  },
 ]
 
 // History base matches the mount route in hooks.py (/collect), so deep links and

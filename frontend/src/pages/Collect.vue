@@ -1,10 +1,13 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { createBundle, fetchCollectionList, fetchCollectionStats } from '@/data/collection'
 import { formatKES } from '@/utils/format'
 import StatCards from '@/components/StatCards.vue'
 import InvoiceCard from '@/components/InvoiceCard.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
+
+const router = useRouter()
 
 const invoices = ref([])
 const drivers = ref([])
@@ -18,10 +21,8 @@ const statsLoading = ref(false)
 const search = ref('')
 const driver = ref('') // '' = all drivers
 
-// The M-Pesa prompt target — a single invoice or a bundle request — and an
-// optional shareable link (bundles).
+// The M-Pesa prompt target for a single invoice (bundles open their detail page).
 const prompting = ref(null)
-const promptLink = ref(null)
 
 // Bundling (operators only): a bundle must be ONE customer. The operator may
 // select freely, but "Pay together" only appears when every selected invoice
@@ -48,7 +49,6 @@ const filtered = computed(() => {
 })
 
 function promptInvoice(inv) {
-  promptLink.value = null
   prompting.value = {
     name: inv.name,
     label: `${inv.customer_name} · ${inv.name}`,
@@ -73,12 +73,7 @@ function clearSelection() {
 
 async function createBundleNow() {
   if (!selected.value.length || !sameCustomer.value) return
-  // Capture before the selection is cleared.
   const names = selected.value.map((i) => i.name)
-  const head = selected.value[0]
-  const summary = `${head.customer_name} · ${names.length} invoices · ${formatKES(bundleTotal.value)}`
-  const phone = head.customer_phone || ''
-
   creatingBundle.value = true
   try {
     const res = await createBundle(bundleCustomer.value, names)
@@ -86,10 +81,9 @@ async function createBundleNow() {
       const bundled = new Set(names)
       invoices.value = invoices.value.filter((inv) => !bundled.has(inv.name))
       clearSelection()
-      loadStats()
-      // Prompt the customer for the FULL bundle amount; the link is a fallback.
-      promptLink.value = res.url || null
-      prompting.value = { name: res.request, label: summary, phone, kind: 'request' }
+      // Land on the bundle's detail page to prompt the full amount, share the
+      // link, or split it.
+      router.push({ name: 'Request', params: { name: res.request } })
     }
   } finally {
     creatingBundle.value = false
@@ -211,11 +205,6 @@ onMounted(() => {
       </div>
     </div>
 
-    <PromptDialog
-      :target="prompting"
-      :link="promptLink"
-      @close="prompting = null"
-      @paid="onPaid"
-    />
+    <PromptDialog :target="prompting" @close="prompting = null" @paid="onPaid" />
   </main>
 </template>
