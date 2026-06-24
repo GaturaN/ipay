@@ -2,15 +2,16 @@
 import { onUnmounted, ref, watch } from 'vue'
 import { paymentState, promptMpesa, saveCustomerContact } from '@/data/collection'
 
-// Drives one M-Pesa STK prompt: send it, capture a number if none is on file,
-// then poll the request until it is paid, partial, failed, or times out.
+// Drives one M-Pesa STK prompt. The number is ALWAYS shown (pre-filled with the
+// customer's on-file number) so the operator confirms or changes it before any
+// charge — it is never sent silently to a default. After sending, the request is
+// polled until it is paid, partial, failed, or times out.
 const props = defineProps({
   invoice: { type: Object, default: null }, // null = hidden
 })
 const emit = defineEmits(['close', 'paid'])
 
 const phone = ref('')
-const askPhone = ref(false)
 const busy = ref(false)
 const message = ref(null) // { tone, text }
 let pollTimer = null
@@ -22,12 +23,11 @@ const toneClass = {
   error: 'text-red-700',
 }
 
-// Reset whenever the dialog opens on a new invoice (or closes).
+// Reset and pre-fill with the on-file number whenever a new invoice opens.
 watch(
   () => props.invoice,
-  () => {
-    phone.value = ''
-    askPhone.value = false
+  (invoice) => {
+    phone.value = invoice?.customer_phone || ''
     busy.value = false
     message.value = null
     stopPolling()
@@ -36,14 +36,17 @@ watch(
 
 async function send() {
   if (!props.invoice) return
+  if (!phone.value.trim()) {
+    message.value = { tone: 'warn', text: 'Enter the M-Pesa number to charge.' }
+    return
+  }
   busy.value = true
   message.value = { tone: 'info', text: 'Sending M-Pesa prompt…' }
   try {
     const res = await promptMpesa(props.invoice.name, phone.value)
     if (res.status === 'missing_phone') {
-      askPhone.value = true
       busy.value = false
-      message.value = { tone: 'warn', text: 'No number on file — enter one to charge.' }
+      message.value = { tone: 'warn', text: 'Enter a valid M-Pesa number (e.g. 0712345678).' }
       return
     }
     if (res.status === 'error') {
@@ -51,10 +54,9 @@ async function send() {
       message.value = { tone: 'error', text: res.message || 'Could not send the prompt.' }
       return
     }
-    // Sent. Persist a newly-entered number for next time (best-effort).
-    if (phone.value && res.request) {
-      saveCustomerContact(res.request, phone.value).catch(() => {})
-    }
+    // Persist the confirmed number for next time (best-effort; the server only
+    // fills a blank Customer number, never overwrites one).
+    if (res.request) saveCustomerContact(res.request, phone.value).catch(() => {})
     message.value = { tone: 'info', text: 'Prompt sent — waiting for payment…' }
     startPolling(res.request)
   } catch (error) {
@@ -114,13 +116,13 @@ onUnmounted(stopPolling)
       </p>
 
       <FormControl
-        v-if="askPhone"
         v-model="phone"
         class="mt-4"
         type="tel"
-        label="M-Pesa number"
+        label="M-Pesa number to charge"
         placeholder="e.g. 0712345678"
       />
+      <p class="mt-1 text-xs text-gray-400">Confirm or change the number before sending.</p>
 
       <p v-if="message" class="mt-3 text-sm" :class="toneClass[message.tone]">
         {{ message.text }}
@@ -128,14 +130,8 @@ onUnmounted(stopPolling)
 
       <div class="mt-5 flex gap-2">
         <Button class="flex-1" @click="$emit('close')">Close</Button>
-        <Button
-          variant="solid"
-          theme="green"
-          class="flex-1"
-          :loading="busy"
-          @click="send"
-        >
-          {{ askPhone ? 'Charge number' : 'Send prompt' }}
+        <Button variant="solid" theme="green" class="flex-1" :loading="busy" @click="send">
+          Send prompt
         </Button>
       </div>
     </div>

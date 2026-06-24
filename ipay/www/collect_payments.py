@@ -127,9 +127,27 @@ def _collection_invoices(user):
         invoices = [inv for inv in invoices if inv.name not in prepaid]
     invoices = _drop_bundled(invoices)
     _annotate_delivery(invoices)
+    _annotate_customer_phone(invoices)
 
     drivers = sorted({d for inv in invoices for d in inv.get("drivers", [])})
     return invoices, drivers
+
+
+def _annotate_customer_phone(invoices):
+    """Attach each customer's on-file mobile number (batched) so the SPA can
+    pre-fill it and let the operator confirm or change the number before every
+    STK prompt — never silently charge a default."""
+    customers = list({inv.customer for inv in invoices if inv.customer})
+    if not customers:
+        return
+    phone_by_customer = {
+        c.name: c.mobile_no or ""
+        for c in frappe.get_all(
+            "Customer", filters={"name": ["in", customers]}, fields=["name", "mobile_no"]
+        )
+    }
+    for inv in invoices:
+        inv.customer_phone = phone_by_customer.get(inv.customer, "")
 
 
 def get_context(context):
