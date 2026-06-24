@@ -32,7 +32,7 @@
     <p>Redirecting you to iPay&hellip;</p>
     <form id="ipay-checkout-form" method="POST" action="{{ action }}">
       {% for key, value in fields.items() %}
-      <input type="hidden" name="{{ key }}" value="{{ value }}">
+      <input type="hidden" name="{{ key | e }}" value="{{ value | e }}">
       {% endfor %}
       <noscript>
         <button type="submit" class="btn btn-primary">Continue to iPay</button>
