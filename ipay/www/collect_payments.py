@@ -141,17 +141,13 @@ def get_context(context):
     context.drivers = sorted({d for inv in invoices for d in getattr(inv, "drivers", [])})
     context.enable_redirect = frappe.db.get_single_value("iPay Settings", "enable_redirect")
 
-    # Collection totals: collected via iPay vs still outstanding, today and
-    # overall — scoped to the collector's own book when applicable.
+    # Collection totals for today: collected via iPay vs still outstanding —
+    # scoped to the collector's own book when applicable.
     today_date = today()
     if collector:
         inv_filter = {"name": ["in", list(scope["invoices"]) or ["__none__"]]}
-        context.collected_total, context.collected_today = _collected_totals(
-            today_date, list(scope["requests"])
-        )
-        context.outstanding_total = _sum_outstanding(inv_filter)
+        _, context.collected_today = _collected_totals(today_date, list(scope["requests"]))
         context.outstanding_today = _sum_outstanding({**inv_filter, "posting_date": today_date})
     else:
-        context.collected_total, context.collected_today = _collected_totals(today_date)
-        context.outstanding_total = _sum_outstanding()
+        _, context.collected_today = _collected_totals(today_date)
         context.outstanding_today = _sum_outstanding({"posting_date": today_date})

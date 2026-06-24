@@ -46,12 +46,10 @@
         <div class="ipay-stat collected">
           <div class="label">Collected today</div>
           <div class="value">KES {{ "{:,.2f}".format(collected_today or 0) }}</div>
-          <div class="sub">All time: KES {{ "{:,.2f}".format(collected_total or 0) }}</div>
         </div>
         <div class="ipay-stat outstanding">
           <div class="label">Yet to collect &mdash; today's invoices</div>
           <div class="value">KES {{ "{:,.2f}".format(outstanding_today or 0) }}</div>
-          <div class="sub">All outstanding: KES {{ "{:,.2f}".format(outstanding_total or 0) }}</div>
         </div>
       </div>
 
