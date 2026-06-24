@@ -3,16 +3,10 @@ from frappe.utils import add_to_date, flt, now_datetime, today
 
 from ipay.ipay.main.utils.prepaid import prepaid_invoice_names
 from ipay.ipay.main.utils.collector import is_collector_only, collector_scope
+from ipay.ipay.main.utils.constants import ACTIVE_BUNDLE_WINDOW_MIN
 
 # Roles allowed to use the collection page.
 ALLOWED_ROLES = {"System Manager", "iPay Manager", "iPay User", "iPay Collector"}
-
-# How long a freshly-created, unpaid bundle keeps its invoices off the list. After
-# this it is treated as abandoned and the invoices return, so nothing can be "lost"
-# for more than this window even if the operator never explicitly cancels. The
-# bundle itself stays valid (its link can still be paid); live-amount charging keeps
-# concurrent collection safe.
-ACTIVE_BUNDLE_WINDOW_MIN = 30
 
 
 def _drop_bundled(invoices):

@@ -55,10 +55,21 @@ def finalize_payment(
     defaults = frappe.db.get_value(
         "iPay Request",
         request_name,
-        ["sales_invoice", "amount", "customer", "customer_email"],
+        ["sales_invoice", "amount", "customer", "customer_email", "docstatus"],
         as_dict=True,
         for_update=True,
     ) or {}
+    # A payment can land on a cancelled (split/discarded) request if it was already
+    # in flight when the bundle was cancelled. The money must still be recorded, so
+    # we proceed — make_payment_entry allocates against LIVE outstanding, so an
+    # invoice already collected elsewhere takes nothing here (the excess becomes
+    # customer credit) and can't be double-charged. Flag it for an operator to eye.
+    if defaults.get("docstatus") == 2:
+        frappe.log_error(
+            f"Payment finalised on cancelled iPay Request {request_name} — likely a "
+            f"post-discard race. Recorded against live outstanding (excess = credit).",
+            "iPay: payment on cancelled request",
+        )
     sales_invoice = sales_invoice or defaults.get("sales_invoice")
     customer = customer or defaults.get("customer")
     customer_email = customer_email or defaults.get("customer_email")
