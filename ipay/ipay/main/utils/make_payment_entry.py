@@ -146,14 +146,27 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
             )
 
         # Resolve the receiving account per the invoice's company: prefer the
-        # company's default cash account, then an iPay Settings override, then a
-        # legacy fallback. Setting company explicitly keeps multi-company correct.
+        # company's default cash account, then an iPay Settings override, then the
+        # MPESA mode-of-payment account mapped to this company. Setting company
+        # explicitly keeps multi-company correct. Fail loudly if none is
+        # configured rather than booking to a hardcoded, company-specific account
+        # (which silently loses the payment on any other site/company).
         company = primary.company
         cash_account = (
             frappe.get_cached_value("Company", company, "default_cash_account")
             or frappe.db.get_single_value("iPay Settings", "cash_account")
-            or "Cash - TSL"
+            or frappe.db.get_value(
+                "Mode of Payment Account",
+                {"parent": "MPESA", "company": company},
+                "default_account",
+            )
         )
+        if not cash_account:
+            frappe.throw(
+                f"No receiving account is configured for {company}. Set a Default "
+                f"Cash Account on the Company, or set iPay Settings → Cash Account "
+                f"(fallback)."
+            )
 
         # Create a new Payment Entry
         payment_entry = frappe.new_doc("Payment Entry")
