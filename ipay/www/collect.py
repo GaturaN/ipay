@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 import frappe
 from frappe.utils import get_system_timezone
 
@@ -14,7 +16,10 @@ def get_context():
     # guest — send them to log in first. (Row/role scoping is still enforced in
     # every API the app calls; this just keeps the page itself behind login.)
     if frappe.session.user == "Guest":
-        frappe.local.flags.redirect_location = "/login?redirect-to=/collect"
+        # Preserve the requested deep link (e.g. /collect/request/XXX) so the SPA
+        # restores it after login.
+        target = frappe.request.path if getattr(frappe.local, "request", None) else "/collect"
+        frappe.local.flags.redirect_location = f"/login?redirect-to={quote(target)}"
         raise frappe.Redirect
 
     frappe.db.commit()

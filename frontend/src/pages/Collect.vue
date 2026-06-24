@@ -119,6 +119,12 @@ function onPaid(name) {
   loadStats()
 }
 
+// A partial/failed payment moved an invoice's outstanding — re-pull the list.
+function resync() {
+  loadList()
+  loadStats()
+}
+
 onMounted(() => {
   loadList()
   loadStats()
@@ -205,6 +211,11 @@ onMounted(() => {
       </div>
     </div>
 
-    <PromptDialog :target="prompting" @close="prompting = null" @paid="onPaid" />
+    <PromptDialog
+      :target="prompting"
+      @close="prompting = null"
+      @paid="onPaid"
+      @changed="resync"
+    />
   </main>
 </template>

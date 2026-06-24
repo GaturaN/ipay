@@ -15,7 +15,7 @@ const props = defineProps({
   // null = hidden. { name, label, phone, kind: 'invoice' | 'request' }
   target: { type: Object, default: null },
 })
-const emit = defineEmits(['close', 'paid'])
+const emit = defineEmits(['close', 'paid', 'changed'])
 
 const phone = ref('')
 const busy = ref(false)
@@ -85,8 +85,10 @@ function startPolling(request) {
         emit('paid', props.target.name)
       } else if (state.partial) {
         settle('warn', 'Paid, but the amount differs — the team will reconcile it.')
+        emit('changed') // outstanding moved — let the list/stats resync
       } else if (state.failed) {
         settle('error', 'Payment failed. Please try again.')
+        emit('changed')
       } else if (tries >= 40) {
         settle('warn', 'Still waiting — it will reflect once the customer pays.')
       }
