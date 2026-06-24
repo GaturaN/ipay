@@ -1,6 +1,7 @@
 import frappe
 
 from ipay.ipay.main.utils.ipay_redirect import resolve_pay_token
+from ipay.www.collect_payments import ALLOWED_ROLES
 
 
 def get_context(context):
@@ -47,3 +48,13 @@ def get_context(context):
     context.enable_redirect = frappe.db.get_single_value(
         "iPay Settings", "enable_redirect"
     )
+
+    # Operator-only toolbar: copy the link to share, and a "back to collection" that
+    # discards an unpaid bundle so its invoices return to the list. A guest paying a
+    # shared link never sees these.
+    is_operator = frappe.session.user != "Guest" and bool(
+        set(frappe.get_roles(frappe.session.user)) & ALLOWED_ROLES
+    )
+    context.is_operator = is_operator
+    context.pay_link = frappe.utils.get_url("/pay?token=" + token)
+    context.request_name = request_name if is_operator else ""

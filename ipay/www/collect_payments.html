@@ -90,6 +90,7 @@
       </select>
       {% endif %}
 
+      {% if can_bundle %}
       <button type="button" id="ipay-bundle-btn" class="btn btn-primary btn-sm mb-2"
               onclick="ipayBundleSelected()" style="display: none;">
         Pay selected together
@@ -97,51 +98,14 @@
       <p id="ipay-bundle-warning" class="text-danger small mb-2" style="display: none;">
         Selected invoices belong to different customers — bundle one customer at a time.
       </p>
-
-      <!-- Inline bundle panel: shown after bundling so the operator never leaves
-           this page (its invoices can't get "lost"). Prompt the full amount, copy
-           the link to share, pay via iPay, or cancel to return the invoices. -->
-      <div id="ipay-bundle-panel" class="card mb-3" style="display: none; border: 1px solid #bcdffb;">
-        <div class="card-body">
-          <div class="d-flex justify-content-between align-items-start">
-            <h6 class="mb-1" id="ipay-bundle-title">Bundle</h6>
-            <button type="button" class="close" aria-label="Cancel bundle"
-                    onclick="ipayCancelBundle()">&times;</button>
-          </div>
-          <p class="text-muted small mb-2">
-            Prompt the full amount, share the link, or pay via iPay.
-            Cancelling returns the invoices to the list.
-          </p>
-          <div class="input-group input-group-sm mb-2">
-            <input type="text" id="ipay-bundle-link" class="form-control" readonly>
-            <div class="input-group-append">
-              <button class="btn btn-outline-secondary" type="button" onclick="ipayCopyBundleLink()">
-                Copy link
-              </button>
-            </div>
-          </div>
-          <div class="d-flex flex-wrap" style="gap: 8px;">
-            <button type="button" class="btn btn-success btn-sm" onclick="ipayPromptBundle()">
-              Prompt M-Pesa
-            </button>
-            {% if enable_redirect %}
-            <button type="button" class="btn btn-primary btn-sm" onclick="ipayBundleViaIpay()">
-              Pay via iPay
-            </button>
-            {% endif %}
-            <button type="button" class="btn btn-outline-danger btn-sm" onclick="ipayCancelBundle()">
-              Cancel bundle
-            </button>
-          </div>
-        </div>
-      </div>
+      {% endif %}
 
       {% if invoices %}
       <div class="table-responsive">
         <table class="table ipay-table" id="ipay-invoice-table">
           <thead>
             <tr>
-              <th style="width: 32px;"></th>
+              {% if can_bundle %}<th style="width: 32px;"></th>{% endif %}
               <th>Invoice</th>
               <th>Customer</th>
               <th>Delivery Note</th>
@@ -153,10 +117,12 @@
           <tbody>
             {% for inv in invoices %}
             <tr data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}" data-driver="{{ inv.driver_filter or '' }}">
+              {% if can_bundle %}
               <td>
                 <input type="checkbox" class="ipay-select"
                        data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}">
               </td>
+              {% endif %}
               <td class="ipay-inv">{{ inv.name }}</td>
               <td>{{ inv.customer_name }}</td>
               <td class="ipay-dn">{{ inv.delivery_note or "—" }}</td>
@@ -298,13 +264,8 @@ function ipayBundleSelected() {
       return row && row.style.display !== "none";
     });
   if (!checked.length) { ipayNotify("Select at least one visible invoice.", "warning"); return; }
-  var customers = {}, invoices = [], total = 0;
-  checked.forEach(function (cb) {
-    customers[cb.dataset.customer] = 1;
-    invoices.push(cb.dataset.invoice);
-    var amt = cb.closest("tr").querySelector(".ipay-amount");
-    if (amt) { total += parseFloat(amt.textContent.replace(/,/g, "")) || 0; }
-  });
+  var customers = {}, invoices = [];
+  checked.forEach(function (cb) { customers[cb.dataset.customer] = 1; invoices.push(cb.dataset.invoice); });
   var custList = Object.keys(customers);
   if (custList.length > 1) {
     ipayNotify("All selected invoices must belong to the same customer to bundle.", "danger");
@@ -316,127 +277,11 @@ function ipayBundleSelected() {
     freeze: true,
     callback: function (r) {
       var res = r.message || {};
-      // Open the bundle panel in place (no navigation) so the invoices can't get
-      // lost; the operator prompts, copies the link, pays via iPay, or cancels.
-      if (res.request) { ipayShowBundlePanel(res, invoices, total); }
+      // Take the operator to the bundle's payment page — it lists the invoices and
+      // total, a copyable link, Prompt M-Pesa, and Pay via iPay.
+      if (res.url) { window.location = res.url; }
       else { ipayNotify("Could not create the bundle.", "danger"); }
     }
-  });
-}
-
-// ---- Inline bundle panel: keeps the operator on this page so a bundle's invoices
-//      can't get "lost"; cancelling returns them to the list. ----
-var ipayBundle = null;            // { request, url, invoices }
-var ipayBundlePollTimer = null;
-
-function ipayShowBundlePanel(res, invoices, total) {
-  ipayBundle = { request: res.request, url: res.url, invoices: invoices };
-  document.getElementById("ipay-bundle-title").textContent =
-    "Bundle · " + invoices.length + " invoice" + (invoices.length > 1 ? "s" : "") + " · " + ipayFmtKES(total);
-  document.getElementById("ipay-bundle-link").value = res.url || "";
-  document.getElementById("ipay-bundle-panel").style.display = "";
-  // The bundled invoices are now collected via the bundle — drop their rows; they
-  // return (page reload) if the bundle is cancelled.
-  invoices.forEach(ipayRemoveRow);
-  ipayRefreshBundleSelection();
-  ipayStartBundlePoll();
-  document.getElementById("ipay-bundle-panel").scrollIntoView({ behavior: "smooth", block: "nearest" });
-}
-
-function ipayStartBundlePoll() {
-  // One poller while the panel is open — reflects payment from the prompt OR the
-  // hosted checkout (which opens in another tab).
-  ipayStopBundlePoll();
-  ipayBundlePollTimer = setInterval(function () {
-    if (!ipayBundle) { ipayStopBundlePoll(); return; }
-    frappe.call({
-      method: "ipay.ipay.main.utils.ipay_redirect.payment_state",
-      args: { request: ipayBundle.request },
-      callback: function (r) {
-        var s = r.message || {};
-        if (s.paid) {
-          ipayNotify("<strong>Payment received</strong> &mdash; bundle paid. " + (s.detail ? ipayEsc(s.detail) : ""), "success");
-          var df = document.getElementById("ipay-driver-filter");
-          ipayRefreshStats(df ? df.value : "");
-          ipayHideBundlePanel();
-        } else if (s.partial) {
-          ipayNotify("<strong>Payment received (" + ipayEsc(s.status) + ")</strong> &mdash; " + (s.detail ? ipayEsc(s.detail) : "amount differs; the balance is still outstanding"), "warning");
-        }
-      }
-    });
-  }, 3000);
-}
-
-function ipayStopBundlePoll() {
-  if (ipayBundlePollTimer) { clearInterval(ipayBundlePollTimer); ipayBundlePollTimer = null; }
-}
-
-function ipayHideBundlePanel() {
-  ipayStopBundlePoll();
-  ipayBundle = null;
-  document.getElementById("ipay-bundle-panel").style.display = "none";
-}
-
-function ipayCopyBundleLink() {
-  var inp = document.getElementById("ipay-bundle-link");
-  if (!inp || !inp.value) { return; }
-  inp.select();
-  inp.setSelectionRange(0, 99999);
-  function ok() { ipayNotify("Payment link copied.", "success"); }
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(inp.value).then(ok, function () { try { document.execCommand("copy"); ok(); } catch (e) {} });
-  } else {
-    try { document.execCommand("copy"); ok(); } catch (e) {}
-  }
-}
-
-function ipayBundleViaIpay() {
-  if (!ipayBundle || !ipayBundle.url) { return; }
-  var token = (ipayBundle.url.split("token=")[1] || "");
-  // New tab so the operator stays here; the panel poll picks up the payment.
-  window.open("/ipay_checkout?token=" + encodeURIComponent(token), "_blank");
-}
-
-function ipayPromptBundle(phone) {
-  if (!ipayBundle) { return; }
-  var request = ipayBundle.request, invoices = ipayBundle.invoices;
-  if (phone === undefined) {
-    phone = prompt("Customer phone for the M-Pesa prompt (leave blank to use the number on file):", "");
-    if (phone === null) { return; }
-  }
-  frappe.call({
-    method: "ipay.ipay.main.utils.ipay_redirect.prompt_request_mpesa",
-    args: { request: request, phone: phone },
-    freeze: true,
-    callback: function (r) {
-      var res = r.message || {};
-      if (res.status === "missing_phone") {
-        var entered = prompt("No phone on file. Enter an M-Pesa number to charge (saved for next time):", "");
-        if (!entered) { ipayNotify("A phone number is required to prompt the bundle.", "warning"); return; }
-        frappe.call({
-          method: "ipay.ipay.main.utils.ipay_redirect.save_customer_contact",
-          args: { request: request, phone: entered },
-          callback: function () { ipayPromptBundle(entered); }
-        });
-        return;
-      }
-      if (res.status === "error") {
-        ipayNotify("Cannot prompt the bundle: " + (res.message || "unknown error"), "danger");
-        return;
-      }
-      ipayNotify("M-Pesa prompt sent for " + invoices.length + " invoices. Waiting for the customer to pay&hellip;", "info");
-      ipayStartBundlePoll();
-    }
-  });
-}
-
-function ipayCancelBundle() {
-  if (!ipayBundle) { ipayHideBundlePanel(); return; }
-  frappe.call({
-    method: "ipay.ipay.main.utils.ipay_redirect.discard_bundle",
-    args: { request: ipayBundle.request },
-    freeze: true,
-    callback: function () { location.reload(); }   // invoices return to the list
   });
 }
 

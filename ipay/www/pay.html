@@ -34,6 +34,19 @@
         <p class="muted">Invoice {{ invoice | e }} has already been paid. Thank you!</p>
         {% endif %}
       {% else %}
+        {% if is_operator %}
+        <div class="ipay-op-bar text-left mb-3">
+          <div class="input-group input-group-sm mb-2">
+            <input type="text" id="ipay-pay-link" class="form-control" readonly value="{{ pay_link | e }}">
+            <div class="input-group-append">
+              <button class="btn btn-outline-secondary" type="button" onclick="ipayCopyPayLink()">Copy link</button>
+            </div>
+          </div>
+          <button type="button" class="btn btn-link btn-sm p-0" onclick="ipayBackToCollection()">
+            &larr; Back to collection
+          </button>
+        </div>
+        {% endif %}
         {% if invoices | length > 1 %}
         <p class="muted mb-1">Payment for {{ invoices | length }} invoices</p>
         <ul class="ipay-inv-list">
@@ -76,6 +89,31 @@
 {% if not invalid and not paid %}
 <script>
 var IPAY_TOKEN = "{{ token }}";
+var IPAY_REQUEST = "{{ request_name }}";
+
+// Operator-only: copy the link to share.
+function ipayCopyPayLink() {
+  var inp = document.getElementById("ipay-pay-link");
+  if (!inp || !inp.value) { return; }
+  inp.select();
+  inp.setSelectionRange(0, 99999);
+  function ok() { ipayPayNotify("Payment link copied.", "success"); }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(inp.value).then(ok, function () { try { document.execCommand("copy"); ok(); } catch (e) {} });
+  } else {
+    try { document.execCommand("copy"); ok(); } catch (e) {}
+  }
+}
+
+// Operator-only: discard an unpaid bundle (so its invoices return) then go back.
+function ipayBackToCollection() {
+  if (!IPAY_REQUEST) { window.location = "/collect_payments"; return; }
+  frappe.call({
+    method: "ipay.ipay.main.utils.ipay_redirect.discard_bundle",
+    args: { request: IPAY_REQUEST },
+    always: function () { window.location = "/collect_payments"; }
+  });
+}
 
 function ipayPayNotify(message, type) {
   var c = document.getElementById("ipay-pay-alerts");
