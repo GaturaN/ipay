@@ -23,13 +23,15 @@ const driver = ref('') // '' = all drivers
 const prompting = ref(null)
 const promptLink = ref(null)
 
-// Bundling (operators only): selection is constrained to a single customer,
-// mirroring the server-side rule in create_bundle.
+// Bundling (operators only): a bundle must be ONE customer. The operator may
+// select freely, but "Pay together" only appears when every selected invoice
+// shares a customer — a mixed selection can never be prompted (the server
+// enforces this too).
 const selected = ref([])
-const bundleNote = ref('')
 const creatingBundle = ref(false)
 
 const bundleCustomer = computed(() => selected.value[0]?.customer || null)
+const sameCustomer = computed(() => new Set(selected.value.map((i) => i.customer)).size <= 1)
 const bundleTotal = computed(() =>
   selected.value.reduce((sum, inv) => sum + Number(inv.outstanding_amount || 0), 0),
 )
@@ -60,26 +62,17 @@ function isSelected(inv) {
 }
 
 function toggleSelect(inv) {
-  if (isSelected(inv)) {
-    selected.value = selected.value.filter((i) => i.name !== inv.name)
-    if (!selected.value.length) bundleNote.value = ''
-    return
-  }
-  if (bundleCustomer.value && inv.customer !== bundleCustomer.value) {
-    bundleNote.value = 'Bundling is per customer — clear the selection to switch customers.'
-    return
-  }
-  bundleNote.value = ''
-  selected.value = [...selected.value, inv]
+  selected.value = isSelected(inv)
+    ? selected.value.filter((i) => i.name !== inv.name)
+    : [...selected.value, inv]
 }
 
 function clearSelection() {
   selected.value = []
-  bundleNote.value = ''
 }
 
 async function createBundleNow() {
-  if (!selected.value.length) return
+  if (!selected.value.length || !sameCustomer.value) return
   // Capture before the selection is cleared.
   const names = selected.value.map((i) => i.name)
   const head = selected.value[0]
@@ -169,8 +162,6 @@ onMounted(() => {
       </select>
     </div>
 
-    <p v-if="bundleNote" class="text-sm text-amber-700">{{ bundleNote }}</p>
-
     <p v-if="listLoading" class="py-10 text-center text-sm text-gray-400">Loading…</p>
     <p v-else-if="!filtered.length" class="py-10 text-center text-sm text-gray-400">
       No invoices to collect.
@@ -188,18 +179,32 @@ onMounted(() => {
       />
     </div>
 
-    <!-- Bundle bar: pinned to the bottom while invoices are selected. -->
+    <!-- Bundle bar: pinned to the bottom (always visible) while invoices are
+         selected. A mixed-customer selection turns it into a warning with no
+         "Pay together" button — bundling is per customer. -->
     <div
       v-if="selected.length"
-      class="fixed inset-x-0 bottom-0 z-40 border-t border-gray-200 bg-white/95 p-3 backdrop-blur"
+      class="fixed inset-x-0 bottom-0 z-40 border-t p-3 backdrop-blur"
+      :class="sameCustomer ? 'border-gray-200 bg-white/95' : 'border-amber-200 bg-amber-50'"
     >
       <div class="mx-auto flex max-w-5xl items-center gap-3">
         <div class="min-w-0 flex-1 text-sm">
-          <span class="font-medium">{{ selected.length }} selected</span>
-          <span class="text-gray-500"> · {{ formatKES(bundleTotal) }}</span>
+          <template v-if="sameCustomer">
+            <span class="font-medium">{{ selected.length }} selected</span>
+            <span class="text-gray-500"> · {{ formatKES(bundleTotal) }}</span>
+          </template>
+          <span v-else class="font-medium text-amber-800">
+            {{ selected.length }} selected across different customers — bundling is per customer.
+          </span>
         </div>
         <Button @click="clearSelection">Clear</Button>
-        <Button variant="solid" theme="green" :loading="creatingBundle" @click="createBundleNow">
+        <Button
+          v-if="sameCustomer"
+          variant="solid"
+          theme="green"
+          :loading="creatingBundle"
+          @click="createBundleNow"
+        >
           Pay together
         </Button>
       </div>
