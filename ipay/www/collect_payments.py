@@ -151,3 +151,68 @@ def get_context(context):
     else:
         _, context.collected_today = _collected_totals(today_date)
         context.outstanding_today = _sum_outstanding({"posting_date": today_date})
+
+
+def _invoices_for_driver_name(driver_name):
+    """Sales Invoices delivered by the driver of the given name (via their
+    delivery notes)."""
+    if not driver_name:
+        return set()
+    dns = frappe.get_all(
+        "Delivery Note",
+        filters={"driver_name": driver_name, "docstatus": 1},
+        pluck="name",
+    )
+    if not dns:
+        return set()
+    return set(frappe.get_all(
+        "Sales Invoice Item", filters={"delivery_note": ["in", dns]}, pluck="parent"
+    ))
+
+
+def _requests_for_invoices(invoices):
+    """iPay Requests (single + bundle) covering any of the given invoices."""
+    invoices = list(invoices or [])
+    if not invoices:
+        return []
+    reqs = set(frappe.get_all(
+        "iPay Request", filters={"sales_invoice": ["in", invoices]}, pluck="name"
+    ))
+    reqs.update(frappe.get_all(
+        "iPay Request Invoice", filters={"sales_invoice": ["in", invoices]}, pluck="parent"
+    ))
+    return list(reqs)
+
+
+@frappe.whitelist()
+def collection_stats(driver=None):
+    """Today's collected + yet-to-collect totals, optionally scoped to a single
+    driver (by name) — backs the driver filter on the collection page. Operator/
+    collector gated; a collector is always restricted to their own book, so the
+    driver argument can only narrow within it, never widen it."""
+    if frappe.session.user == "Guest" or not (ALLOWED_ROLES & set(frappe.get_roles())):
+        frappe.throw("You are not permitted to view collection stats.", frappe.PermissionError)
+
+    today_date = today()
+
+    # Universe of invoices/requests the figures cover: a collector's own book,
+    # else everything; narrowed to one driver when a driver is given.
+    invoices = requests = None
+    if is_collector_only(frappe.session.user):
+        scope = collector_scope(frappe.session.user)
+        invoices, requests = scope["invoices"], list(scope["requests"])
+
+    if driver:
+        driver_invoices = _invoices_for_driver_name(driver)
+        invoices = driver_invoices if invoices is None else (invoices & driver_invoices)
+        requests = _requests_for_invoices(invoices)
+    elif invoices is not None and requests is None:
+        requests = _requests_for_invoices(invoices)
+
+    _, collected_today = _collected_totals(today_date, requests)
+    out_filter = {"posting_date": today_date}
+    if invoices is not None:
+        out_filter["name"] = ["in", list(invoices) or ["__none__"]]
+    outstanding_today = _sum_outstanding(out_filter)
+
+    return {"collected_today": collected_today, "outstanding_today": outstanding_today}

@@ -45,11 +45,11 @@
       <div class="ipay-stats">
         <div class="ipay-stat collected">
           <div class="label">Collected today</div>
-          <div class="value">KES {{ "{:,.2f}".format(collected_today or 0) }}</div>
+          <div class="value" id="ipay-collected-today">KES {{ "{:,.2f}".format(collected_today or 0) }}</div>
         </div>
         <div class="ipay-stat outstanding">
           <div class="label">Yet to collect &mdash; today's invoices</div>
-          <div class="value">KES {{ "{:,.2f}".format(outstanding_today or 0) }}</div>
+          <div class="value" id="ipay-outstanding-today">KES {{ "{:,.2f}".format(outstanding_today or 0) }}</div>
         </div>
       </div>
 
@@ -272,6 +272,27 @@ function ipayBundleSelected() {
   });
 })();
 
+function ipayFmtKES(n) {
+  return "KES " + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Refresh the two stat cards to reflect the selected driver (empty = all).
+// Collected-today comes from Payment Entries, so it can't be derived from the
+// table rows — recompute it server-side, scoped/permission-checked there.
+function ipayRefreshStats(driver) {
+  frappe.call({
+    method: "ipay.www.collect_payments.collection_stats",
+    args: { driver: driver || "" },
+    callback: function (r) {
+      var s = r.message || {};
+      var c = document.getElementById("ipay-collected-today");
+      var o = document.getElementById("ipay-outstanding-today");
+      if (c) { c.textContent = ipayFmtKES(s.collected_today); }
+      if (o) { o.textContent = ipayFmtKES(s.outstanding_today); }
+    }
+  });
+}
+
 (function () {
   var search = document.getElementById("ipay-search");
   var driverFilter = document.getElementById("ipay-driver-filter");
@@ -295,7 +316,12 @@ function ipayBundleSelected() {
   }
 
   if (search) { search.addEventListener("keyup", applyFilters); }
-  if (driverFilter) { driverFilter.addEventListener("change", applyFilters); }
+  if (driverFilter) {
+    driverFilter.addEventListener("change", function () {
+      applyFilters();
+      ipayRefreshStats(driverFilter.value);
+    });
+  }
 })();
 </script>
 {% endblock %}
