@@ -87,12 +87,17 @@ def reconcile_pending_payments():
             # payment was recorded — so a payment whose callback merely failed
             # (status paid, Payment Entry present) is never mislabelled Abandoned
             # and keeps being retried for delivery.
+            # Re-read under a row lock so the abandon decision is mutually
+            # exclusive with finalize_payment's lock: a payment recorded for this
+            # request concurrently is always observed here and never clobbered to
+            # 'Abandoned'.
             current = frappe.db.get_value(
-                "iPay Request", req.name, ["status", "payment_entry"], as_dict=True
+                "iPay Request", req.name, ["status", "payment_entry"],
+                as_dict=True, for_update=True,
             )
             if current and not current.payment_entry and current.status not in PAID_STATUSES:
                 frappe.db.set_value("iPay Request", req.name, "status", "Abandoned")
-                frappe.db.commit()
+            frappe.db.commit()
         except Exception as error:
             frappe.db.rollback()
             create_log_entry("ERR", f"Reconcile (stale) failed for {req.name}: {error}")

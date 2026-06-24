@@ -135,7 +135,14 @@ def ipay_return(**kwargs):
 
     try:
         if request_name:
-            reconcile_request(request_name)
+            # Throttle the outbound iPay lookup per request so an unauthenticated
+            # client can't amplify repeated GETs into a flood of 15s iPay calls;
+            # the legitimate browser return fires once and the poller backstops.
+            cache = frappe.cache()
+            throttle_key = f"ipay_return_throttle:{request_name}"
+            if not cache.get_value(throttle_key):
+                cache.set_value(throttle_key, 1, expires_in_sec=10)
+                reconcile_request(request_name)
     except Exception as error:
         create_log_entry(
             "ERR", f"iPay return handler failed for {request_name}: {error}"
@@ -147,7 +154,12 @@ def ipay_return(**kwargs):
 
 def _ensure_request(invoice):
     """Return the name of a submitted iPay Request for the invoice, creating one
-    if none exists yet."""
+    if none exists yet. Serialised per invoice so two concurrent operator actions
+    (e.g. start_checkout + get_payment_link) can't both insert a duplicate."""
+    # Lock the invoice row for the rest of this transaction; a concurrent
+    # _ensure_request for the same invoice blocks here until we commit, then sees
+    # the request we created and reuses it instead of inserting a second one.
+    frappe.db.get_value("Sales Invoice", invoice, "name", for_update=True)
     request_name = frappe.db.get_value(
         "iPay Request", {"sales_invoice": invoice, "docstatus": 1}, "name"
     )
@@ -260,6 +272,18 @@ def _enqueue_stk(request_name, phone):
             "status": "missing_phone",
             "message": "No M-Pesa phone number on file. Enter a number to charge.",
         }
+
+    # Per-request cooldown: a double-click (or a retried call) can't enqueue a
+    # second STK prompt for the same request within the window — the operator
+    # prompt_mpesa path has no other guard (pay_prompt_mpesa adds a per-token one).
+    cache = frappe.cache()
+    cooldown_key = f"ipay_stk_req_cooldown:{request_name}"
+    if cache.get_value(cooldown_key):
+        return {
+            "status": "error",
+            "message": "An M-Pesa prompt was just sent for this request — please wait a moment before retrying.",
+        }
+    cache.set_value(cooldown_key, 1, expires_in_sec=15)
 
     frappe.enqueue(
         "ipay.ipay.main.main.lipana_mpesa",
@@ -399,9 +423,17 @@ def split_bundle(request):
     """Split an unpaid bundle back into individual single-invoice requests and
     cancel the bundle. Only allowed before any payment is recorded."""
     _require_full_operator()
-    bundle = frappe.get_doc("iPay Request", request)
-    if bundle.status in ("Success", "Underpaid", "Overpaid") or bundle.payment_entry:
+    # Lock the bundle row for the whole split so a payment landing mid-split
+    # (finalize_payment takes the same row lock) is serialised against it: either
+    # the payment commits first and we refuse to split, or we cancel first and the
+    # payment then allocates against the now-cleared invoices — never an interleave
+    # that both charges the bundle and re-issues chargeable singles.
+    locked = frappe.db.get_value(
+        "iPay Request", request, ["status", "payment_entry"], as_dict=True, for_update=True
+    ) or {}
+    if locked.get("status") in ("Success", "Underpaid", "Overpaid") or locked.get("payment_entry"):
         frappe.throw("This request has a recorded payment and cannot be split.")
+    bundle = frappe.get_doc("iPay Request", request)
     invoice_names = [row.sales_invoice for row in (bundle.invoices or []) if row.sales_invoice]
     if len(invoice_names) < 2:
         frappe.throw("This is not a bundle (it covers fewer than two invoices).")
