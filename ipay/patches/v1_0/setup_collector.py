@@ -17,19 +17,23 @@ def execute():
     for ptype in ("read", "report", "print", "email", "export"):
         update_permission_property("iPay Request", "iPay Collector", 0, ptype, 1)
 
-    # Map a collector's login to their Driver record, for driver-based scoping.
-    create_custom_fields(
-        {
-            "Driver": [
-                {
-                    "fieldname": "user",
-                    "label": "User",
-                    "fieldtype": "Link",
-                    "options": "User",
-                    "insert_after": "employee",
-                    "description": "Login mapped to this driver, for iPay Collector visibility scoping.",
-                }
-            ]
-        },
-        ignore_validate=True,
-    )
+    # Map a collector's login to their Driver record, for driver-based scoping —
+    # only if ERPNext's Driver doctype is installed. A Driver-less site (ipay
+    # without the delivery module) still migrates cleanly; the driver-scoping
+    # feature simply stays inert, matching collector.py's defensive has_field guard.
+    if frappe.db.exists("DocType", "Driver"):
+        create_custom_fields(
+            {
+                "Driver": [
+                    {
+                        "fieldname": "user",
+                        "label": "User",
+                        "fieldtype": "Link",
+                        "options": "User",
+                        "insert_after": "employee",
+                        "description": "Login mapped to this driver, for iPay Collector visibility scoping.",
+                    }
+                ]
+            },
+            ignore_validate=True,
+        )

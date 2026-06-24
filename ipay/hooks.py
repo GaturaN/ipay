@@ -6,7 +6,9 @@ app_email = "gaturanjenga@gmail.com"
 app_license = "MIT"
 
 
-fixtures = ["Mode of Payment"]
+# The "MPESA" Mode of Payment that make_payment_entry writes is seeded by the
+# patch ipay.patches.v1_0.seed_mpesa_mode_of_payment (not a fixture), so a
+# migrate never re-imports/overwrites a site's own Mode-of-Payment records.
 
 # Includes in <head>
 # ------------------
