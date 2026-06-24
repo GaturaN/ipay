@@ -1,0 +1,40 @@
+import frappe
+from frappe.utils import get_system_timezone
+
+# Entry controller for the iPay Collect SPA. The built index.html (served here as
+# collect.html) is Jinja-templated by the frappeui Vite plugin and reads the
+# `boot` dict below to expose window.csrf_token etc. to the Vue app. Serving the
+# file as collect.html makes the app available at /collect; the website_route_rule
+# in hooks.py routes /collect/<sub-path> here too so the client router owns them.
+no_cache = 1
+
+
+def get_context():
+    frappe.db.commit()
+    context = frappe._dict()
+    context.boot = get_boot()
+    return context
+
+
+@frappe.whitelist(methods=["POST"], allow_guest=True)
+def get_context_for_dev():
+    """Boot data for `yarn dev`, where Vite (not Frappe) serves the page."""
+    if not frappe.conf.developer_mode:
+        frappe.throw("This method is only meant for developer mode")
+    return get_boot()
+
+
+def get_boot():
+    return frappe._dict(
+        {
+            "frappe_version": frappe.__version__,
+            "default_route": "/collect",
+            "site_name": frappe.local.site,
+            "csrf_token": frappe.sessions.get_csrf_token(),
+            "timezone": {
+                "system": get_system_timezone(),
+                "user": frappe.db.get_value("User", frappe.session.user, "time_zone")
+                or get_system_timezone(),
+            },
+        }
+    )

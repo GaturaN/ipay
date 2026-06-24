@@ -1,0 +1,24 @@
+{
+  "name": "ipay-collect",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build --base=/assets/ipay/frontend/ && yarn copy-html-entry",
+    "copy-html-entry": "cp ../ipay/public/frontend/index.html ../ipay/www/collect.html",
+    "serve": "vite preview"
+  },
+  "dependencies": {
+    "frappe-ui": "^0.1.171",
+    "pinia": "^2.0.33",
+    "vue": "^3.5.13",
+    "vue-router": "^4.2.2"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.2.3",
+    "autoprefixer": "^10.4.14",
+    "postcss": "^8.4.5",
+    "tailwindcss": "^3.4.15",
+    "vite": "^4.4.9"
+  }
+}
