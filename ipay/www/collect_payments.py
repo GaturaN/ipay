@@ -243,4 +243,7 @@ def collection_list():
         "invoices": invoices,
         "drivers": drivers,
         "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
+        # Bundling is a full-operator action (create_bundle gates on it); collectors
+        # never see the select/bundle UI.
+        "can_bundle": not is_collector_only(frappe.session.user),
     }

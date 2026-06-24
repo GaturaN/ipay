@@ -13,6 +13,7 @@ const API = {
   promptMpesa: 'ipay.ipay.main.utils.ipay_redirect.prompt_mpesa',
   saveContact: 'ipay.ipay.main.utils.ipay_redirect.save_customer_contact',
   paymentState: 'ipay.ipay.main.utils.ipay_redirect.payment_state',
+  createBundle: 'ipay.ipay.main.utils.ipay_redirect.create_bundle',
   startCheckout: 'ipay.ipay.main.utils.ipay_redirect.start_checkout',
 }
 
@@ -28,6 +29,11 @@ export const saveCustomerContact = (request, phone) =>
   call(API.saveContact, { request, phone })
 
 export const paymentState = (request) => call(API.paymentState, { request }, 'GET')
+
+// Bundle several of ONE customer's invoices into a single payment. The server
+// re-checks that every invoice belongs to `customer` (and one company).
+export const createBundle = (customer, invoices) =>
+  call(API.createBundle, { customer, invoices: JSON.stringify(invoices) })
 
 // start_checkout is a GET that creates the request and 302-redirects to the
 // hosted checkout, so it is used as a plain link target, not a fetch.
