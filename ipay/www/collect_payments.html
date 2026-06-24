@@ -215,6 +215,7 @@ function ipayPromptMpesa(invoice, phone) {
   frappe.call({
     method: "ipay.ipay.main.utils.ipay_redirect.prompt_mpesa",
     args: { invoice: invoice, phone: phone },
+    freeze: true,
     callback: function (r) {
       var res = r.message || {};
       if (res.status === "missing_phone") {
@@ -238,8 +239,14 @@ function ipayPromptMpesa(invoice, phone) {
 }
 
 function ipayBundleSelected() {
-  var checked = Array.prototype.slice.call(document.querySelectorAll(".ipay-select:checked"));
-  if (!checked.length) { ipayNotify("Select at least one invoice.", "warning"); return; }
+  // Only bundle invoices that are actually visible — a checkbox in a row hidden
+  // by the driver/search filter must not be silently included in the bundle.
+  var checked = Array.prototype.slice.call(document.querySelectorAll(".ipay-select:checked"))
+    .filter(function (cb) {
+      var row = cb.closest("tr");
+      return row && row.style.display !== "none";
+    });
+  if (!checked.length) { ipayNotify("Select at least one visible invoice.", "warning"); return; }
   var customers = {}, invoices = [];
   checked.forEach(function (cb) { customers[cb.dataset.customer] = 1; invoices.push(cb.dataset.invoice); });
   var custList = Object.keys(customers);

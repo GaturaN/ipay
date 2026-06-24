@@ -322,11 +322,17 @@ function confirmPayment(frm) {
             if (status === 'success') {
                // confirm_payment now records the Payment Entry server-side and
                // returns it, so just surface the result here.
-               const transactionCode = data?.transaction_code || 'N/A';
-               const paymentMode = data?.payment_mode || 'N/A';
-               const paidAt = data?.paid_at || 'N/A';
-               const paymentEntry = r.message.payment_entry;
-               const requestStatus = r.message.request_status || 'Recorded';
+               // Escape values that originate from iPay's API response before
+               // embedding them in msgprint HTML (defence against a malicious /
+               // MITM'd response injecting markup).
+               const esc = frappe.utils.escape_html;
+               const transactionCode = esc(data?.transaction_code || 'N/A');
+               const paymentMode = esc(data?.payment_mode || 'N/A');
+               const paidAt = esc(data?.paid_at || 'N/A');
+               const peName = r.message.payment_entry || '';
+               const paymentEntry = esc(peName);
+               const paymentEntryUrl = encodeURIComponent(peName);
+               const requestStatus = esc(r.message.request_status || 'Recorded');
                const dupNote = r.message.is_duplicate
                   ? '<p><em>This payment was already recorded.</em></p>'
                   : '';
@@ -339,7 +345,7 @@ function confirmPayment(frm) {
                     <p><strong>Payment Mode:</strong> ${paymentMode}</p>
                     <p><strong>Paid At:</strong> ${paidAt}</p>
                     ${dupNote}
-                    <p><strong>Payment Entry:</strong> <a href="/app/payment-entry/${paymentEntry}" target="_blank">${paymentEntry}</a></p>
+                    <p><strong>Payment Entry:</strong> <a href="/app/payment-entry/${paymentEntryUrl}" target="_blank">${paymentEntry}</a></p>
                     `,
                   indicator: 'green',
                });
