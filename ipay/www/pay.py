@@ -26,6 +26,15 @@ def get_context(context):
     # stored amount is ever blank. Matches build_checkout_form's charge amount.
     context.token = token
     context.invoice = req.sales_invoice
+    # Every invoice the link collects, so the payer sees the whole bundle and not
+    # just the primary. A single request has no child rows — fall back to it.
+    context.invoices = [
+        inv
+        for inv in frappe.get_all(
+            "iPay Request Invoice", filters={"parent": request_name}, pluck="sales_invoice"
+        )
+        if inv
+    ] or [req.sales_invoice]
     context.amount = frappe.utils.flt(req.amount) or frappe.utils.flt(outstanding)
     context.paid = req.status == "Success"
     context.enable_redirect = frappe.db.get_single_value(
