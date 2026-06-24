@@ -6,7 +6,9 @@ app_email = "gaturanjenga@gmail.com"
 app_license = "MIT"
 
 
-fixtures = ["Mode of Payment"]
+# The "MPESA" Mode of Payment that make_payment_entry writes is seeded by the
+# patch ipay.patches.v1_0.seed_mpesa_mode_of_payment (not a fixture), so a
+# migrate never re-imports/overwrites a site's own Mode-of-Payment records.
 
 # Includes in <head>
 # ------------------
@@ -100,13 +102,13 @@ app_include_js = 'sales_invoice.bundle.js'
 # -----------
 # Permissions evaluated in scripted ways
 
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+permission_query_conditions = {
+	"iPay Request": "ipay.ipay.main.utils.permissions.ipay_request_query_conditions",
+}
+
+has_permission = {
+	"iPay Request": "ipay.ipay.main.utils.permissions.ipay_request_has_permission",
+}
 
 # DocType Class
 # ---------------

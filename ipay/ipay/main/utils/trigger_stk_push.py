@@ -4,7 +4,6 @@ import hashlib
 import logging
 import frappe  
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def trigger_stk_push(phone: str, sid: str, vid: str, secret_key: str) -> dict:

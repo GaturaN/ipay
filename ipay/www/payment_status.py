@@ -10,4 +10,4 @@ def get_context(context):
         status = frappe.db.get_value("iPay Request", request_name, "status")
 
     context.confirmed = status == "Success"
-    context.mismatch = status == "Amount Mismatch"
+    context.mismatch = status in ("Underpaid", "Overpaid")

@@ -25,6 +25,13 @@
   .ipay-amount { font-weight: 600; font-variant-numeric: tabular-nums; color: #1f2937; }
   .ipay-actions .btn { border-radius: 8px; font-weight: 500; }
   .ipay-empty { text-align: center; color: #94a3b8; padding: 48px 0; }
+  .ipay-stats { display: flex; flex-wrap: wrap; gap: 12px; margin: 4px 0 18px; }
+  .ipay-stat { flex: 1 1 0; min-width: 150px; border: 1px solid #edf2f7; border-radius: 12px; padding: 12px 14px; }
+  .ipay-stat .label { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: #94a3b8; }
+  .ipay-stat .value { font-size: 1.3rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .ipay-stat .sub { font-size: .8rem; color: #94a3b8; }
+  .ipay-stat.collected .value { color: #15803d; }
+  .ipay-stat.outstanding .value { color: #b45309; }
   #ipay-alerts:not(:empty) { margin-top: 16px; }
   @media (max-width: 576px) { .ipay-collect { margin: 16px; } .ipay-collect .card-body { padding: 1.25rem !important; } }
 </style>
@@ -34,6 +41,17 @@
     <div class="card-body p-4">
       <h3 class="mb-1">Collect Payment</h3>
       <p class="text-muted mb-2">Prompt a customer for payment. Pick the option that matches how they want to pay.</p>
+
+      <div class="ipay-stats">
+        <div class="ipay-stat collected">
+          <div class="label">Collected today</div>
+          <div class="value" id="ipay-collected-today">KES {{ "{:,.2f}".format(collected_today or 0) }}</div>
+        </div>
+        <div class="ipay-stat outstanding">
+          <div class="label">Yet to collect &mdash; today's invoices</div>
+          <div class="value" id="ipay-outstanding-today">KES {{ "{:,.2f}".format(outstanding_today or 0) }}</div>
+        </div>
+      </div>
 
       <span class="ipay-help-toggle" onclick="ipayToggleHelp()">
         <span id="ipay-help-caret">&#9656;</span> Which option should I use?
@@ -65,24 +83,43 @@
                placeholder="Search invoice, customer or delivery note…" autocomplete="off">
       </div>
 
+      {% if drivers %}
+      <select id="ipay-driver-filter" class="form-control mt-2" style="max-width: 280px;">
+        <option value="">All drivers</option>
+        {% for d in drivers %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+      </select>
+      {% endif %}
+
+      <button type="button" id="ipay-bundle-btn" class="btn btn-outline-primary btn-sm mb-2"
+              onclick="ipayBundleSelected()" style="display: none;">
+        Pay selected together
+      </button>
+
       {% if invoices %}
       <div class="table-responsive">
         <table class="table ipay-table" id="ipay-invoice-table">
           <thead>
             <tr>
+              <th style="width: 32px;"></th>
               <th>Invoice</th>
               <th>Customer</th>
               <th>Delivery Note</th>
+              <th>Driver</th>
               <th class="text-right">Outstanding</th>
               <th class="text-right">Action</th>
             </tr>
           </thead>
           <tbody>
             {% for inv in invoices %}
-            <tr data-invoice="{{ inv.name }}">
+            <tr data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}" data-driver="{{ inv.driver_filter or '' }}">
+              <td>
+                <input type="checkbox" class="ipay-select"
+                       data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}">
+              </td>
               <td class="ipay-inv">{{ inv.name }}</td>
               <td>{{ inv.customer_name }}</td>
               <td class="ipay-dn">{{ inv.delivery_note or "—" }}</td>
+              <td>{{ inv.driver_name or "—" }}</td>
               <td class="text-right ipay-amount">{{ "{:,.2f}".format(inv.outstanding_amount) }}</td>
               <td class="text-right ipay-actions" style="white-space: nowrap;">
                 <button type="button" class="btn btn-success btn-sm"
@@ -153,6 +190,9 @@ function ipayPoll(request, invoice) {
           clearInterval(iv);
           ipayNotify("<strong>Payment received</strong> &mdash; " + (s.detail ? ipayEsc(s.detail) : ipayEsc(invoice)), "success");
           ipayRemoveRow(invoice);
+        } else if (s.partial) {
+          clearInterval(iv);
+          ipayNotify("<strong>Payment received (" + ipayEsc(s.status) + ")</strong> for " + ipayEsc(invoice) + " &mdash; " + (s.detail ? ipayEsc(s.detail) : "amount differs from the balance; the balance is still outstanding"), "warning");
         } else if (s.failed) {
           clearInterval(iv);
           ipayNotify("<strong>Payment failed</strong> (" + ipayEsc(invoice) + ") &mdash; " + (s.detail ? ipayEsc(s.detail) : "no reason given"), "danger");
@@ -167,14 +207,27 @@ function ipayPoll(request, invoice) {
   iv = setInterval(check, 3000);
 }
 
-function ipayPromptMpesa(invoice) {
-  var phone = prompt("Customer phone for M-Pesa (leave blank to use the number on file):", "");
-  if (phone === null) { return; }
+function ipayPromptMpesa(invoice, phone) {
+  if (phone === undefined) {
+    phone = prompt("Customer phone for M-Pesa (leave blank to use the number on file):", "");
+    if (phone === null) { return; }
+  }
   frappe.call({
     method: "ipay.ipay.main.utils.ipay_redirect.prompt_mpesa",
     args: { invoice: invoice, phone: phone },
+    freeze: true,
     callback: function (r) {
       var res = r.message || {};
+      if (res.status === "missing_phone") {
+        var entered = prompt("No phone on file for this customer. Enter an M-Pesa number to charge (saved for next time):", "");
+        if (!entered) { ipayNotify("A phone number is required to prompt " + invoice + ".", "warning"); return; }
+        frappe.call({
+          method: "ipay.ipay.main.utils.ipay_redirect.save_customer_contact",
+          args: { request: res.request, phone: entered },
+          callback: function () { ipayPromptMpesa(invoice, entered); }
+        });
+        return;
+      }
       if (res.status === "error") {
         ipayNotify("Cannot prompt " + invoice + ": " + (res.message || "unknown error"), "danger");
         return;
@@ -185,21 +238,97 @@ function ipayPromptMpesa(invoice) {
   });
 }
 
+function ipayBundleSelected() {
+  // Only bundle invoices that are actually visible — a checkbox in a row hidden
+  // by the driver/search filter must not be silently included in the bundle.
+  var checked = Array.prototype.slice.call(document.querySelectorAll(".ipay-select:checked"))
+    .filter(function (cb) {
+      var row = cb.closest("tr");
+      return row && row.style.display !== "none";
+    });
+  if (!checked.length) { ipayNotify("Select at least one visible invoice.", "warning"); return; }
+  var customers = {}, invoices = [];
+  checked.forEach(function (cb) { customers[cb.dataset.customer] = 1; invoices.push(cb.dataset.invoice); });
+  var custList = Object.keys(customers);
+  if (custList.length > 1) {
+    ipayNotify("All selected invoices must belong to the same customer to bundle.", "danger");
+    return;
+  }
+  frappe.call({
+    method: "ipay.ipay.main.utils.ipay_redirect.create_bundle",
+    args: { customer: custList[0], invoices: JSON.stringify(invoices) },
+    freeze: true,
+    callback: function (r) {
+      var res = r.message || {};
+      if (res.url) { window.location = res.url; }
+      else { ipayNotify("Could not create the bundle.", "danger"); }
+    }
+  });
+}
+
+(function () {
+  function refreshBundleBtn() {
+    var checked = document.querySelectorAll(".ipay-select:checked");
+    var btn = document.getElementById("ipay-bundle-btn");
+    if (!btn) { return; }
+    btn.style.display = checked.length ? "" : "none";
+    btn.textContent = "Pay " + checked.length + " selected together";
+  }
+  document.querySelectorAll(".ipay-select").forEach(function (cb) {
+    cb.addEventListener("change", refreshBundleBtn);
+  });
+})();
+
+function ipayFmtKES(n) {
+  return "KES " + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// Refresh the two stat cards to reflect the selected driver (empty = all).
+// Collected-today comes from Payment Entries, so it can't be derived from the
+// table rows — recompute it server-side, scoped/permission-checked there.
+function ipayRefreshStats(driver) {
+  frappe.call({
+    method: "ipay.www.collect_payments.collection_stats",
+    args: { driver: driver || "" },
+    callback: function (r) {
+      var s = r.message || {};
+      var c = document.getElementById("ipay-collected-today");
+      var o = document.getElementById("ipay-outstanding-today");
+      if (c) { c.textContent = ipayFmtKES(s.collected_today); }
+      if (o) { o.textContent = ipayFmtKES(s.outstanding_today); }
+    }
+  });
+}
+
 (function () {
   var search = document.getElementById("ipay-search");
-  if (!search) { return; }
-  search.addEventListener("keyup", function () {
-    var q = this.value.toLowerCase();
+  var driverFilter = document.getElementById("ipay-driver-filter");
+  if (!search && !driverFilter) { return; }
+
+  function applyFilters() {
+    var q = (search ? search.value : "").toLowerCase();
+    var driver = driverFilter ? driverFilter.value : "";
     var rows = document.querySelectorAll("#ipay-invoice-table tbody tr");
     var shown = 0;
     rows.forEach(function (row) {
-      var match = row.textContent.toLowerCase().indexOf(q) > -1;
+      var textMatch = row.textContent.toLowerCase().indexOf(q) > -1;
+      var rowDrivers = (row.dataset.driver || "").split("|");
+      var driverMatch = !driver || rowDrivers.indexOf(driver) > -1;
+      var match = textMatch && driverMatch;
       row.style.display = match ? "" : "none";
       if (match) { shown++; }
     });
     var none = document.getElementById("ipay-no-match");
     if (none) { none.style.display = shown ? "none" : ""; }
-  });
+  }
+
+  if (search) { search.addEventListener("keyup", applyFilters); }
+  if (driverFilter) {
+    driverFilter.addEventListener("change", function () {
+      applyFilters();
+      ipayRefreshStats(driverFilter.value);
+    });
+  }
 })();
 </script>
 {% endblock %}

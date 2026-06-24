@@ -79,6 +79,9 @@ function ipayPayPoll() {
         if (s.paid) {
           clearInterval(iv);
           ipayPayNotify("<strong>Payment received.</strong> Thank you!", "success");
+        } else if (s.partial) {
+          clearInterval(iv);
+          ipayPayNotify("<strong>Payment received.</strong> The amount differs from the balance &mdash; our team will reconcile it shortly.", "info");
         } else if (s.failed) {
           clearInterval(iv);
           ipayPayNotify("<strong>Payment failed.</strong> Please try again.", "danger");
@@ -101,7 +104,9 @@ function ipayPaySubmitMpesa() {
     args: { token: IPAY_TOKEN, phone: phone },
     callback: function (r) {
       var res = r.message || {};
-      if (res.status === "error") { ipayPayNotify(res.message || "Could not start the payment.", "danger"); return; }
+      if (res.status === "error" || res.status === "missing_phone") {
+        ipayPayNotify(res.message || "Please enter a valid M-Pesa number.", "danger"); return;
+      }
       ipayPayNotify("M-Pesa prompt sent to " + phone + ". Enter your PIN on your phone&hellip;", "info");
       ipayPayPoll();
     }

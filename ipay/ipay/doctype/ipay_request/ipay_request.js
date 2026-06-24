@@ -12,6 +12,11 @@ frappe.ui.form.on('iPay Request', {
          frm.set_df_property('status', 'read_only', 1);
       }
 
+      // Render a persistent, clickable payment link on the form.
+      if (submitted) {
+         render_payment_link(frm);
+      }
+
       // Copy a shareable payment link to send to the customer
       if (submitted && status !== 'Success') {
          frm.add_custom_button(__('Copy Payment Link'), () => {
@@ -23,6 +28,9 @@ frappe.ui.form.on('iPay Request', {
                   const res = r.message || {};
                   if (!res.url) { frappe.msgprint(__('Could not generate a payment link.')); return; }
                   if (navigator.clipboard) { navigator.clipboard.writeText(res.url); }
+                  // Populate the persistent field immediately (frm.doc.pay_token
+                  // is still stale on the client until the next reload).
+                  set_payment_link_html(frm, res.url);
                   const warn = res.redirect_enabled ? '' :
                      '<br><span style="color:#b7791f">Enable "Use Hosted Checkout Redirect" in iPay Settings so the card/iPay option works.</span>';
                   frappe.msgprint({
@@ -35,46 +43,89 @@ frappe.ui.form.on('iPay Request', {
          });
       }
 
+      // Regenerate the link (new token + expiry) if the old one lapsed or was
+      // never used. Only while there is still a balance to collect.
+      if (submitted && status !== 'Success' && status !== 'Overpaid') {
+         frm.add_custom_button(__('Regenerate Payment Link'), () => {
+            frappe.confirm(
+               __('Issue a new payment link? The previous link will stop working.'),
+               () => {
+                  frappe.call({
+                     method: 'ipay.ipay.main.utils.ipay_redirect.regenerate_payment_link',
+                     args: { request: frm.doc.name },
+                     freeze: true,
+                     callback: function (r) {
+                        const res = r.message || {};
+                        if (!res.url) { frappe.msgprint(__('Could not regenerate the link.')); return; }
+                        if (navigator.clipboard) { navigator.clipboard.writeText(res.url); }
+                        frappe.show_alert({ message: __('New link generated and copied.'), indicator: 'green' });
+                        frm.reload_doc();
+                     },
+                  });
+               }
+            );
+         });
+      }
+
+      // Split a bundle back into individual requests (only before payment)
+      if (submitted && status !== 'Success' && (frm.doc.invoices || []).length > 1) {
+         frm.add_custom_button(__('Split into Individual Requests'), () => {
+            frappe.confirm(
+               __('Split this bundle into one request per invoice and cancel the bundle?'),
+               () => {
+                  frappe.call({
+                     method: 'ipay.ipay.main.utils.ipay_redirect.split_bundle',
+                     args: { request: frm.doc.name },
+                     freeze: true,
+                     callback: function (r) {
+                        const res = r.message || {};
+                        if (res.created) {
+                           frappe.show_alert({ message: __(`Created ${res.created.length} request(s)`), indicator: 'green' });
+                           frm.reload_doc();
+                        }
+                     },
+                  });
+               }
+            );
+         });
+      }
+
       // Add "Prompt iPay" button if submitted and status is not success
       if (submitted && status !== 'Success') {
          frm.add_custom_button(__('Prompt iPay'), () => {
-            // Check if customer phone or email is missing
-            if (!frm.doc.customer_phone || !frm.doc.customer_email) {
+            // Block only on a missing PHONE (email is optional for iPay). Offer
+            // to enter a number now and save it to the Customer for next time.
+            if (!frm.doc.customer_phone) {
                frappe.msgprint({
-                  title: __('Customer Phone OR Email Missing'),
-                  message: __('The Phone and Email of the customer has to be provided in the Customer Doctype.'),
+                  title: __('Customer Phone Missing'),
+                  message: __('This customer has no phone number on file. Enter one to prompt for payment — it is saved to the Customer so future requests are pre-filled.'),
                   primary_action: {
-                     label: __('Go to Customer'),
+                     label: __('Enter & Save Number'),
                      action() {
-                        frappe.set_route('Form', 'Customer', frm.doc.customer);
+                        frappe.prompt(
+                           [
+                              { label: 'Customer Phone', fieldname: 'phone', fieldtype: 'Data', reqd: 1 },
+                              { label: 'Customer Email (optional)', fieldname: 'email', fieldtype: 'Data' },
+                           ],
+                           (v) => {
+                              frappe.call({
+                                 method: 'ipay.ipay.main.utils.ipay_redirect.save_customer_contact',
+                                 args: { request: frm.doc.name, phone: v.phone, email: v.email },
+                                 callback: () => {
+                                    frappe.hide_msgprint();
+                                    frappe.show_alert({ message: __('Saved. Click "Prompt iPay" again to continue.'), indicator: 'green' });
+                                    frm.reload_doc();
+                                 },
+                              });
+                           },
+                           __('Enter Customer Contact'), __('Save')
+                        );
                      },
                   },
                   secondary_action: {
-                     label: __('Fetch Customer Details'),
+                     label: __('Go to Customer'),
                      action() {
-                        // Fetch customer details via API call
-                        frappe.call({
-                           method: 'frappe.client.get',
-                           args: {
-                              doctype: 'Customer',
-                              name: frm.doc.customer,
-                           },
-                           callback: function (r) {
-                              if (r.message) {
-                                 const customer = r.message;
-                                 frm.set_value('customer_phone', customer.mobile_no || '');
-                                 frm.set_value('customer_email', customer.email_id || '');
-                                 frappe.msgprint(__('Customer details fetched successfully'));
-                                 frm.save(); // Save updated values
-                              } else {
-                                 frappe.msgprint(__('No customer details found'));
-                              }
-                           },
-                           error: function (err) {
-                              frappe.msgprint(__('Failed to fetch customer details.'));
-                              console.error('Fetch Customer Details Error:', err);
-                           },
-                        });
+                        frappe.set_route('Form', 'Customer', frm.doc.customer);
                      },
                   },
                });
@@ -115,7 +166,7 @@ frappe.ui.form.on('iPay Request', {
                         fieldname: 'customer_email',
                         fieldtype: 'Data',
                         default: frm.doc.customer_email,
-                        reqd: 1,
+                        reqd: 0,
                      },
                      {
                         label: 'Payment Method',
@@ -143,6 +194,14 @@ frappe.ui.form.on('iPay Request', {
                            if (frm.doc.prompted_number && customerPhoneLast8 === promptedPhoneLast8) {
                               frappe.db.set_value('iPay Request', frm.doc.name, 'prompted_number', null);
                            }
+
+                           // Persist any newly-entered contact to the Customer
+                           // (the server writes only blank fields), so future
+                           // requests are pre-filled and never error.
+                           frappe.call({
+                              method: 'ipay.ipay.main.utils.ipay_redirect.save_customer_contact',
+                              args: { request: frm.doc.name, phone: values.customer_phone, email: values.customer_email },
+                           });
 
                            // Display success alert
                            frappe.show_alert({ message: 'iPay Prompted', indicator: 'green' }, 7);
@@ -191,9 +250,12 @@ frappe.ui.form.on('iPay Request', {
                                           indicator: 'green',
                                        });
                                     } else {
+                                       // Express STK is processed on a background
+                                       // worker; the result appears on the request
+                                       // shortly (status / Payment Entry).
                                        frappe.show_alert(
                                           {
-                                             message: `iPay Prompted Successfully. The Payment Entry has been created`,
+                                             message: `M-Pesa prompt sent. It will confirm in the background — reload or use "Verify Payment" to see the result.`,
                                              indicator: 'blue',
                                           },
                                           15
@@ -258,62 +320,43 @@ function confirmPayment(frm) {
             const { status, message, data } = r.message;
 
             if (status === 'success') {
-               // Extract transaction details
-               const transactionCode = data?.transaction_code || 'N/A';
-               const paymentMode = data?.payment_mode || 'N/A';
-               const paidAt = data?.paid_at || 'N/A';
+               // confirm_payment now records the Payment Entry server-side and
+               // returns it, so just surface the result here.
+               // Escape values that originate from iPay's API response before
+               // embedding them in msgprint HTML (defence against a malicious /
+               // MITM'd response injecting markup).
+               const esc = frappe.utils.escape_html;
+               const transactionCode = esc(data?.transaction_code || 'N/A');
+               const paymentMode = esc(data?.payment_mode || 'N/A');
+               const paidAt = esc(data?.paid_at || 'N/A');
+               const peName = r.message.payment_entry || '';
+               const paymentEntry = esc(peName);
+               const paymentEntryUrl = encodeURIComponent(peName);
+               const requestStatus = esc(r.message.request_status || 'Recorded');
+               const dupNote = r.message.is_duplicate
+                  ? '<p><em>This payment was already recorded.</em></p>'
+                  : '';
 
-               // Display payment verification success message
                frappe.msgprint({
                   title: __('Payment Verified'),
                   message: `
-                    <p><strong>Status:</strong> The payment has been verified successfully.</p>
+                    <p><strong>Status:</strong> ${requestStatus}</p>
                     <p><strong>Transaction Code:</strong> ${transactionCode}</p>
                     <p><strong>Payment Mode:</strong> ${paymentMode}</p>
                     <p><strong>Paid At:</strong> ${paidAt}</p>
+                    ${dupNote}
+                    <p><strong>Payment Entry:</strong> <a href="/app/payment-entry/${paymentEntryUrl}" target="_blank">${paymentEntry}</a></p>
                     `,
                   indicator: 'green',
                });
-
-               const inv = order;
-               const response_data = data;
-
-               frappe.call({
-                  method: 'ipay.ipay.main.utils.make_payment_entry.make_payment_entry',
-                  args: { user_id, customer_email, inv, response_data, ipay_request: frm.doc.name },
-                  freeze: false,
-                  async: true,
-
-                  callback: function (r) {
-                     const res = r.message;
-                     if (res.status === 'duplicate') {
-                        frappe.msgprint({
-                           title: __('Duplicate Payment Entry'),
-                           message: `A Payment Entry with the same transaction code already exists: 
-                                    <a href="/app/payment-entry/${res.payment_entry}" target="_blank">${res.payment_entry}</a>`,
-                           indicator: 'orange',
-                        });
-                     } else if (res.status === 'success') {
-                        frappe.msgprint({
-                           title: __('Payment Entry Created'),
-                           message: `Payment Entry: <a href="/app/payment-entry/${res.payment_entry}" target="_blank">${res.payment_entry}</a>`,
-                           indicator: 'green',
-                        });
-                     } else {
-                        frappe.msgprint({
-                           title: __('Payment Entry Error'),
-                           message: __(res.message || 'An unknown error occurred while creating the payment entry.'),
-                           indicator: 'red',
-                        });
-                     }
-                  },
-               });
+               frm.reload_doc();
             } else {
-               // Handle verification failure
+               // Surface the real reason from the server (payment not found, or
+               // the payment was found but could not be recorded) so the
+               // operator can act on a received-but-unrecorded payment.
                frappe.msgprint({
                   title: __('Verification Failed'),
-                  //  message: __(`Error: ${message}`),
-                  message: `Error: Payment Not Found.`,
+                  message: __(message || 'Payment not found.'),
                   indicator: 'red',
                });
             }
@@ -334,4 +377,35 @@ function confirmPayment(frm) {
          console.error('Verification Error:', err);
       },
    });
+}
+
+// Render the payment link into the read-only "Payment Link" HTML field so the
+// operator can click it directly from the form (not only via the popup).
+function render_payment_link(frm) {
+   const field = frm.get_field('payment_link');
+   if (!field) { return; }
+   if (frm.doc.status === 'Success') {
+      field.$wrapper.html('<span class="text-muted">This request has been paid.</span>');
+   } else if (frm.doc.pay_token) {
+      const url = `${window.location.origin}/pay?token=${encodeURIComponent(frm.doc.pay_token)}`;
+      set_payment_link_html(frm, url, frm.doc.pay_token_expiry);
+   } else {
+      field.$wrapper.html('<span class="text-muted">Use "Copy Payment Link" to generate the link.</span>');
+   }
+}
+
+function set_payment_link_html(frm, url, expiry) {
+   const field = frm.get_field('payment_link');
+   if (!field) { return; }
+   const safe = frappe.utils.escape_html(url);
+   let note = '';
+   if (expiry) {
+      const expired = frappe.datetime.now_datetime() > expiry;
+      note = expired
+         ? '<br><span style="color:#c0392b">Link expired &mdash; click "Regenerate Payment Link".</span>'
+         : `<br><span class="text-muted">Valid until ${frappe.datetime.str_to_user(expiry)}</span>`;
+   }
+   field.$wrapper.html(
+      `<a href="${safe}" target="_blank" rel="noopener" style="word-break:break-all">${safe}</a>${note}`
+   );
 }

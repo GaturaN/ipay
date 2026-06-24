@@ -9,9 +9,12 @@
   "vendor_id",
   "api_key",
   "callback_url",
+  "callback_secret",
   "is_live",
   "request_for_cod",
-  "enable_redirect"
+  "enable_redirect",
+  "payment_link_ttl_days",
+  "cash_account"
  ],
  "fields": [
   {
@@ -40,6 +43,12 @@
    "label": "Callback URL"
   },
   {
+   "fieldname": "callback_secret",
+   "fieldtype": "Password",
+   "label": "Callback Signing Secret",
+   "description": "Shared secret used to HMAC-sign outbound callbacks (X-iPay-Signature). Set the same value in n8n. Leave blank to send unsigned."
+  },
+  {
    "default": "0",
    "fieldname": "request_for_cod",
    "fieldtype": "Check",
@@ -50,6 +59,20 @@
    "fieldname": "enable_redirect",
    "fieldtype": "Check",
    "label": "Use Hosted Checkout Redirect"
+  },
+  {
+   "fieldname": "payment_link_ttl_days",
+   "fieldtype": "Int",
+   "label": "Payment Link Validity (days)",
+   "default": "7",
+   "description": "Days a payment link stays valid before it must be regenerated. Default 7."
+  },
+  {
+   "description": "Fallback receiving account, used only when the invoice's company has no Default Cash Account set.",
+   "fieldname": "cash_account",
+   "fieldtype": "Link",
+   "label": "Cash Account (fallback)",
+   "options": "Account"
   }
  ],
  "index_web_pages_for_search": 1,
