@@ -45,10 +45,11 @@ def confirm_payment(docid, user_id, phone, amount, order, customer_email):
         if not data.get("transaction_code"):
             return {"status": "error", "message": "Payment not found"}
 
-        result = finalize_payment(
-            docid, data, amount,
-            sales_invoice=order, customer=user_id, customer_email=customer_email,
-        )
+        # Allocation target is derived from the request itself inside
+        # finalize_payment, NOT from the operator-supplied order/customer/amount —
+        # so a payment can only ever be booked against its own request's invoice
+        # (no confused-deputy diversion to an unrelated invoice).
+        result = finalize_payment(docid, data)
         if result.get("status") not in ("success", "duplicate"):
             return {"status": "error", "message": result.get("message", "Could not record payment")}
 

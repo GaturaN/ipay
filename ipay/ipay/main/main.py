@@ -132,10 +132,11 @@ def lipana_mpesa(
                 # the request status (Success / Underpaid / Overpaid) and notify
                 # the n8n callback exactly once.
                 data = verification_response.get("data", {})
-                result = finalize_payment(
-                    docid, data, amount,
-                    sales_invoice=inv, customer=user_id, customer_email=customer_email,
-                )
+                # Allocate against the request's own invoice/amount (read server-
+                # side inside finalize_payment), never the client-supplied oid —
+                # the STK lookup already used the request's own order id, so the
+                # money found is this request's.
+                result = finalize_payment(docid, data)
                 response_data = result.get("response_data", {})
                 create_log_entry(
                     "INF", f"Payment received with response_data: {response_data}"
