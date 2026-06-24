@@ -11,6 +11,7 @@ const API = {
   collectionList: 'ipay.www.collect_payments.collection_list',
   collectionStats: 'ipay.www.collect_payments.collection_stats',
   promptMpesa: 'ipay.ipay.main.utils.ipay_redirect.prompt_mpesa',
+  promptRequest: 'ipay.ipay.main.utils.ipay_redirect.prompt_request_mpesa',
   saveContact: 'ipay.ipay.main.utils.ipay_redirect.save_customer_contact',
   paymentState: 'ipay.ipay.main.utils.ipay_redirect.payment_state',
   createBundle: 'ipay.ipay.main.utils.ipay_redirect.create_bundle',
@@ -24,6 +25,10 @@ export const fetchCollectionStats = (driver) =>
 
 export const promptMpesa = (invoice, phone) =>
   call(API.promptMpesa, { invoice, phone: phone || '' })
+
+// STK an existing request (e.g. a bundle) for its full amount.
+export const promptRequestMpesa = (request, phone) =>
+  call(API.promptRequest, { request, phone: phone || '' })
 
 export const saveCustomerContact = (request, phone) =>
   call(API.saveContact, { request, phone })

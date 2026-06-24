@@ -477,6 +477,18 @@ def prompt_mpesa(invoice, phone=None):
     return result
 
 
+@frappe.whitelist(methods=["POST"])
+def prompt_request_mpesa(request, phone=None):
+    """Operator action: send an M-Pesa STK push for an existing iPay Request — e.g.
+    a bundle, charging its full amount; on payment make_payment_entry allocates
+    across all the request's invoices. Single invoices use prompt_mpesa."""
+    _require_operator()
+    _require_request_access(request)
+    result = _enqueue_stk(request, phone)
+    result["request"] = request
+    return result
+
+
 @frappe.whitelist()
 def payment_state(request):
     """Poll target for the collection page (operator, by request name)."""

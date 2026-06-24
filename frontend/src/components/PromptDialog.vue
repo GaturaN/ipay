@@ -1,18 +1,27 @@
 <script setup>
 import { onUnmounted, ref, watch } from 'vue'
-import { paymentState, promptMpesa, saveCustomerContact } from '@/data/collection'
+import {
+  paymentState,
+  promptMpesa,
+  promptRequestMpesa,
+  saveCustomerContact,
+} from '@/data/collection'
 
-// Drives one M-Pesa STK prompt. The number is ALWAYS shown (pre-filled with the
-// customer's on-file number) so the operator confirms or changes it before any
-// charge — it is never sent silently to a default. After sending, the request is
-// polled until it is paid, partial, failed, or times out.
+// Drives one M-Pesa STK prompt for a target — either a single invoice or an
+// existing request (a bundle, charged for its full amount). The number is ALWAYS
+// shown (pre-filled) so the operator confirms or changes it before any charge.
+// After sending, the request is polled until paid / partial / failed / timeout.
+// `link` (optional) is a shareable payment link shown as a fallback for bundles.
 const props = defineProps({
-  invoice: { type: Object, default: null }, // null = hidden
+  // null = hidden. { name, label, phone, kind: 'invoice' | 'request' }
+  target: { type: Object, default: null },
+  link: { type: String, default: null },
 })
 const emit = defineEmits(['close', 'paid'])
 
 const phone = ref('')
 const busy = ref(false)
+const copied = ref(false)
 const message = ref(null) // { tone, text }
 let pollTimer = null
 
@@ -23,19 +32,25 @@ const toneClass = {
   error: 'text-red-700',
 }
 
-// Reset and pre-fill with the on-file number whenever a new invoice opens.
 watch(
-  () => props.invoice,
-  (invoice) => {
-    phone.value = invoice?.customer_phone || ''
+  () => props.target,
+  (target) => {
+    phone.value = target?.phone || ''
     busy.value = false
+    copied.value = false
     message.value = null
     stopPolling()
   },
 )
 
+function sendPrompt(name, value) {
+  return props.target.kind === 'request'
+    ? promptRequestMpesa(name, value)
+    : promptMpesa(name, value)
+}
+
 async function send() {
-  if (!props.invoice) return
+  if (!props.target) return
   if (!phone.value.trim()) {
     message.value = { tone: 'warn', text: 'Enter the M-Pesa number to charge.' }
     return
@@ -43,7 +58,7 @@ async function send() {
   busy.value = true
   message.value = { tone: 'info', text: 'Sending M-Pesa prompt…' }
   try {
-    const res = await promptMpesa(props.invoice.name, phone.value)
+    const res = await sendPrompt(props.target.name, phone.value)
     if (res.status === 'missing_phone') {
       busy.value = false
       message.value = { tone: 'warn', text: 'Enter a valid M-Pesa number (e.g. 0712345678).' }
@@ -54,14 +69,21 @@ async function send() {
       message.value = { tone: 'error', text: res.message || 'Could not send the prompt.' }
       return
     }
-    // Persist the confirmed number for next time (best-effort; the server only
-    // fills a blank Customer number, never overwrites one).
     if (res.request) saveCustomerContact(res.request, phone.value).catch(() => {})
     message.value = { tone: 'info', text: 'Prompt sent — waiting for payment…' }
     startPolling(res.request)
   } catch (error) {
     busy.value = false
     message.value = { tone: 'error', text: error.message || 'Something went wrong.' }
+  }
+}
+
+async function copyLink() {
+  try {
+    await navigator.clipboard.writeText(props.link)
+    copied.value = true
+  } catch {
+    // Clipboard unavailable — the operator can still send the STK prompt.
   }
 }
 
@@ -73,7 +95,7 @@ function startPolling(request) {
       const state = await paymentState(request)
       if (state.paid) {
         settle('success', 'Payment received. Thank you!')
-        emit('paid', props.invoice.name)
+        emit('paid', props.target.name)
       } else if (state.partial) {
         settle('warn', 'Paid, but the amount differs — the team will reconcile it.')
       } else if (state.failed) {
@@ -105,15 +127,13 @@ onUnmounted(stopPolling)
 
 <template>
   <div
-    v-if="invoice"
+    v-if="target"
     class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
     @click.self="$emit('close')"
   >
     <div class="w-full max-w-md rounded-2xl bg-white p-5">
       <h2 class="text-lg font-semibold text-gray-900">Prompt M-Pesa</h2>
-      <p class="mt-0.5 truncate text-sm text-gray-500">
-        {{ invoice.customer_name }} · {{ invoice.name }}
-      </p>
+      <p class="mt-0.5 truncate text-sm text-gray-500">{{ target.label }}</p>
 
       <FormControl
         v-model="phone"
@@ -134,6 +154,11 @@ onUnmounted(stopPolling)
           Send prompt
         </Button>
       </div>
+
+      <!-- Fallback for bundles: share a link if the customer prefers to pay later. -->
+      <Button v-if="link" variant="ghost" class="mt-2 w-full" @click="copyLink">
+        {{ copied ? 'Link copied ✓' : 'Or copy a payment link' }}
+      </Button>
     </div>
   </div>
 </template>

@@ -5,7 +5,6 @@ import { formatKES } from '@/utils/format'
 import StatCards from '@/components/StatCards.vue'
 import InvoiceCard from '@/components/InvoiceCard.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
-import LinkDialog from '@/components/LinkDialog.vue'
 
 const invoices = ref([])
 const drivers = ref([])
@@ -18,14 +17,17 @@ const statsLoading = ref(false)
 
 const search = ref('')
 const driver = ref('') // '' = all drivers
-const prompting = ref(null) // invoice being prompted, or null
+
+// The M-Pesa prompt target — a single invoice or a bundle request — and an
+// optional shareable link (bundles).
+const prompting = ref(null)
+const promptLink = ref(null)
 
 // Bundling (operators only): selection is constrained to a single customer,
 // mirroring the server-side rule in create_bundle.
 const selected = ref([])
 const bundleNote = ref('')
 const creatingBundle = ref(false)
-const bundleLink = ref(null)
 
 const bundleCustomer = computed(() => selected.value[0]?.customer || null)
 const bundleTotal = computed(() =>
@@ -42,6 +44,16 @@ const filtered = computed(() => {
     return matchesDriver && (!query || haystack.includes(query))
   })
 })
+
+function promptInvoice(inv) {
+  promptLink.value = null
+  prompting.value = {
+    name: inv.name,
+    label: `${inv.customer_name} · ${inv.name}`,
+    phone: inv.customer_phone || '',
+    kind: 'invoice',
+  }
+}
 
 function isSelected(inv) {
   return selected.value.some((i) => i.name === inv.name)
@@ -68,16 +80,23 @@ function clearSelection() {
 
 async function createBundleNow() {
   if (!selected.value.length) return
+  // Capture before the selection is cleared.
+  const names = selected.value.map((i) => i.name)
+  const head = selected.value[0]
+  const summary = `${head.customer_name} · ${names.length} invoices · ${formatKES(bundleTotal.value)}`
+  const phone = head.customer_phone || ''
+
   creatingBundle.value = true
   try {
-    const names = selected.value.map((i) => i.name)
     const res = await createBundle(bundleCustomer.value, names)
-    if (res?.url) {
+    if (res?.request) {
       const bundled = new Set(names)
       invoices.value = invoices.value.filter((inv) => !bundled.has(inv.name))
       clearSelection()
       loadStats()
-      bundleLink.value = res.url
+      // Prompt the customer for the FULL bundle amount; the link is a fallback.
+      promptLink.value = res.url || null
+      prompting.value = { name: res.request, label: summary, phone, kind: 'request' }
     }
   } finally {
     creatingBundle.value = false
@@ -106,8 +125,10 @@ async function loadStats() {
   }
 }
 
-function onPaid(invoiceName) {
-  invoices.value = invoices.value.filter((inv) => inv.name !== invoiceName)
+function onPaid(name) {
+  // For an invoice, drop it from the list; for a bundle the invoices were already
+  // removed at creation, so this is a no-op besides refreshing the stats.
+  invoices.value = invoices.value.filter((inv) => inv.name !== name)
   loadStats()
 }
 
@@ -162,7 +183,7 @@ onMounted(() => {
         :enable-redirect="enableRedirect"
         :selectable="canBundle"
         :selected="isSelected(inv)"
-        @prompt="prompting = inv"
+        @prompt="promptInvoice(inv)"
         @toggle-select="toggleSelect(inv)"
       />
     </div>
@@ -184,7 +205,11 @@ onMounted(() => {
       </div>
     </div>
 
-    <PromptDialog :invoice="prompting" @close="prompting = null" @paid="onPaid" />
-    <LinkDialog :url="bundleLink" title="Bundle payment link" @close="bundleLink = null" />
+    <PromptDialog
+      :target="prompting"
+      :link="promptLink"
+      @close="prompting = null"
+      @paid="onPaid"
+    />
   </main>
 </template>
