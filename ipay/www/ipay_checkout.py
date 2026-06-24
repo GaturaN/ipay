@@ -2,6 +2,7 @@ import frappe
 
 from ipay.ipay.main.utils.ipay_redirect import (
     build_checkout_form,
+    normalize_phone,
     resolve_pay_token,
     save_customer_contact,
 )
@@ -32,7 +33,9 @@ def get_context(context):
     if not fields.get("tel"):
         context.phone_required = True
         context.token = token
-        context.email = entered_email or ""
+        # Carry only a *validated* email forward — this value is reflected into a
+        # hidden input and Frappe web pages do not autoescape.
+        context.email = frappe.utils.validate_email_address(entered_email or "")
         return
 
     # Persist any operator-entered contact to the Customer (blanks only) so future
@@ -52,7 +55,9 @@ def get_context(context):
     if not fields.get("eml"):
         context.email_required = True
         context.token = token
-        context.phone = entered_phone or ""
+        # Carry only a *normalized* (digits-only) phone forward — reflected into a
+        # hidden input, and the web template does not autoescape.
+        context.phone = normalize_phone(entered_phone)
         return
 
     context.action = action

@@ -13,8 +13,8 @@
   {% elif phone_required %}
     <p>This customer has no phone number on file. Enter the number to use for this payment:</p>
     <form method="GET" action="/ipay_checkout">
-      <input type="hidden" name="token" value="{{ token }}">
-      {% if email %}<input type="hidden" name="email" value="{{ email }}">{% endif %}
+      <input type="hidden" name="token" value="{{ token | e }}">
+      {% if email %}<input type="hidden" name="email" value="{{ email | e }}">{% endif %}
       <input type="tel" name="phone" class="form-control mb-2" placeholder="e.g. 0712345678"
              required style="max-width: 280px; margin: 0 auto;">
       <button type="submit" class="btn btn-primary">Continue</button>
@@ -22,8 +22,8 @@
   {% elif email_required %}
     <p>This customer has no email on file. Enter an email for the payment receipt:</p>
     <form method="GET" action="/ipay_checkout">
-      <input type="hidden" name="token" value="{{ token }}">
-      {% if phone %}<input type="hidden" name="phone" value="{{ phone }}">{% endif %}
+      <input type="hidden" name="token" value="{{ token | e }}">
+      {% if phone %}<input type="hidden" name="phone" value="{{ phone | e }}">{% endif %}
       <input type="email" name="email" class="form-control mb-2" placeholder="e.g. name@example.com"
              required style="max-width: 280px; margin: 0 auto;">
       <button type="submit" class="btn btn-primary">Continue</button>

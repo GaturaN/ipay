@@ -477,11 +477,12 @@ def save_customer_contact(request, phone=None, email=None):
             customer_updates["mobile_no"] = norm
             saved.append("phone")
     if email:
-        if not frappe.utils.validate_email_address(email):
+        valid_email = frappe.utils.validate_email_address(email)
+        if not valid_email:
             frappe.throw("Enter a valid email address.")
-        request_updates["customer_email"] = email
+        request_updates["customer_email"] = valid_email
         if not frappe.db.get_value("Customer", customer, "email_id"):
-            customer_updates["email_id"] = email
+            customer_updates["email_id"] = valid_email
             saved.append("email")
 
     if customer_updates:
