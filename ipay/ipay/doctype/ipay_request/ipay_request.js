@@ -40,7 +40,7 @@ frappe.ui.form.on('iPay Request', {
                   });
                },
             });
-         });
+         }, __('iPay Menu'));
       }
 
       // Regenerate the link (new token + expiry) if the old one lapsed or was
@@ -64,7 +64,7 @@ frappe.ui.form.on('iPay Request', {
                   });
                }
             );
-         });
+         }, __('iPay Menu'));
       }
 
       // Split a bundle back into individual requests (only before payment)
@@ -87,7 +87,7 @@ frappe.ui.form.on('iPay Request', {
                   });
                }
             );
-         });
+         }, __('iPay Menu'));
       }
 
       // Add "Prompt iPay" button if submitted and status is not success
