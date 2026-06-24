@@ -8,6 +8,7 @@ const props = defineProps({
   enableRedirect: Boolean,
   selectable: Boolean, // operators only — drives the bundle checkbox
   selected: Boolean,
+  actionsDisabled: Boolean, // true while a bundle is being built — no per-invoice actions
 })
 defineEmits(['prompt', 'toggle-select'])
 
@@ -43,12 +44,21 @@ const payUrl = computed(() => checkoutUrl(props.invoice.name))
     </div>
 
     <div class="mt-3 flex gap-2">
-      <Button variant="solid" theme="green" class="flex-1" @click="$emit('prompt')">
+      <Button
+        variant="solid"
+        theme="green"
+        class="flex-1"
+        :disabled="actionsDisabled"
+        @click="$emit('prompt')"
+      >
         Prompt M-Pesa
       </Button>
-      <a v-if="enableRedirect" :href="payUrl" class="flex-1">
-        <Button variant="subtle" class="w-full">Pay via iPay</Button>
-      </a>
+      <template v-if="enableRedirect">
+        <a v-if="!actionsDisabled" :href="payUrl" class="flex-1">
+          <Button variant="subtle" class="w-full">Pay via iPay</Button>
+        </a>
+        <Button v-else variant="subtle" class="flex-1" disabled>Pay via iPay</Button>
+      </template>
     </div>
   </div>
 </template>

@@ -174,6 +174,7 @@ onMounted(() => {
         :enable-redirect="enableRedirect"
         :selectable="canBundle"
         :selected="isSelected(inv)"
+        :actions-disabled="selected.length > 0"
         @prompt="promptInvoice(inv)"
         @toggle-select="toggleSelect(inv)"
       />
