@@ -10,6 +10,13 @@ no_cache = 1
 
 
 def get_context():
+    # The Collect app is operator/collector-only: never serve the SPA shell to a
+    # guest — send them to log in first. (Row/role scoping is still enforced in
+    # every API the app calls; this just keeps the page itself behind login.)
+    if frappe.session.user == "Guest":
+        frappe.local.flags.redirect_location = "/login?redirect-to=/collect"
+        raise frappe.Redirect
+
     frappe.db.commit()
     context = frappe._dict()
     context.boot = get_boot()
