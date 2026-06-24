@@ -101,10 +101,18 @@ def can_access_invoice(sales_invoice, user=None):
 
 def can_access_request(request_name, user=None):
     """May this user act on the given iPay Request? Always True for full
-    operators; for a collector, only their assigned/driver-mapped requests."""
+    operators; for a collector, only their assigned/driver-mapped requests — and
+    for a bundle, only when EVERY member invoice is their own work (owning one
+    member must not grant prompting the whole bundle across co-invoices)."""
     user = user or frappe.session.user
     if not is_collector_only(user):
         return True
     if not request_name:
         return False
-    return request_name in collector_scope(user)["requests"]
+    scope = collector_scope(user)
+    if request_name not in scope["requests"]:
+        return False
+    members = frappe.get_all(
+        "iPay Request Invoice", filters={"parent": request_name}, pluck="sales_invoice"
+    )
+    return all(inv in scope["invoices"] for inv in members if inv)

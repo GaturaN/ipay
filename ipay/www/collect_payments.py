@@ -9,8 +9,10 @@ ALLOWED_ROLES = {"System Manager", "iPay Manager", "iPay User", "iPay Collector"
 
 
 def _drop_bundled(invoices):
-    """Remove invoices that are members of a submitted bundle (iPay Request
-    Invoice rows under a docstatus=1 request) — they're collected via the bundle."""
+    """Remove invoices that are members of an ACTIVE submitted bundle (a docstatus=1
+    iPay Request, not Abandoned) — they're collected via the bundle. A cancelled
+    (split/discarded) or Abandoned bundle no longer collects them, so its invoices
+    return to the list."""
     if not invoices:
         return invoices
     rows = frappe.get_all(
@@ -22,7 +24,11 @@ def _drop_bundled(invoices):
         return invoices
     submitted = set(frappe.get_all(
         "iPay Request",
-        filters={"name": ["in", list({r.parent for r in rows})], "docstatus": 1},
+        filters={
+            "name": ["in", list({r.parent for r in rows})],
+            "docstatus": 1,
+            "status": ["!=", "Abandoned"],
+        },
         pluck="name",
     ))
     bundled = {r.sales_invoice for r in rows if r.parent in submitted}
@@ -64,25 +70,55 @@ def _collected_totals(today_date, request_names=None):
     return (flt(row[0].total), flt(row[0].today_total)) if row else (0, 0)
 
 
-def get_context(context):
-    context.no_cache = 1
-
-    if frappe.session.user == "Guest":
-        frappe.local.flags.redirect_location = "/login?redirect-to=/collect_payments"
-        raise frappe.Redirect
-
-    if not (ALLOWED_ROLES & set(frappe.get_roles())):
+def _require_collection_access():
+    """Operators and collectors only. Guests are redirected to login by callers."""
+    if frappe.session.user == "Guest" or not (ALLOWED_ROLES & set(frappe.get_roles())):
         frappe.throw("You are not permitted to collect payments.", frappe.PermissionError)
 
-    # A collector sees only their own work (driver-delivered + assigned); full
-    # operators see everything. Scope is computed once and reused for the list
-    # and the stat cards.
-    collector = is_collector_only(frappe.session.user)
-    scope = collector_scope(frappe.session.user) if collector else None
 
+def _annotate_delivery(invoices):
+    """Attach delivery_note and driver(s) to each invoice in place (two batched
+    queries). The driver lives on the Delivery Note, not the Sales Invoice; an
+    invoice may span several delivery notes / drivers, so all are kept."""
+    if not invoices:
+        return
+    names = [inv.name for inv in invoices]
+    links = frappe.get_all(
+        "Sales Invoice Item",
+        filters={"parent": ["in", names], "delivery_note": ["is", "set"]},
+        fields=["parent", "delivery_note"],
+    )
+    dn_map = {}
+    for link in links:
+        dn_map.setdefault(link.parent, set()).add(link.delivery_note)
+
+    dn_names = {n for note_set in dn_map.values() for n in note_set}
+    driver_by_dn = {}
+    if dn_names:
+        for dn in frappe.get_all(
+            "Delivery Note", filters={"name": ["in", list(dn_names)]}, fields=["name", "driver_name"]
+        ):
+            driver_by_dn[dn.name] = dn.driver_name or ""
+
+    for inv in invoices:
+        dns = sorted(dn_map.get(inv.name, []))
+        inv.delivery_note = ", ".join(dns)
+        inv.drivers = sorted({driver_by_dn[n] for n in dns if driver_by_dn.get(n)})
+        inv.driver_name = ", ".join(inv.drivers)
+        inv.driver_filter = "|".join(inv.drivers)  # pipe-joined for the Jinja data-attr
+
+
+def _collection_invoices(user):
+    """The outstanding Sales Invoices `user` may collect: prepaid and
+    already-bundled invoices dropped, each annotated with its delivery note(s)
+    and driver(s). Returns (invoices, drivers) — the list and the sorted distinct
+    driver names present. A collector sees only their own work; full operators
+    see everything. Shared by the Jinja page (get_context) and the SPA API
+    (collection_list)."""
+    collector = is_collector_only(user)
     si_filters = {"docstatus": 1, "is_return": 0, "outstanding_amount": [">", 0]}
     if collector:
-        si_filters["name"] = ["in", list(scope["invoices"]) or ["__none__"]]
+        si_filters["name"] = ["in", list(collector_scope(user)["invoices"]) or ["__none__"]]
 
     invoices = frappe.get_all(
         "Sales Invoice",
@@ -92,65 +128,49 @@ def get_context(context):
         limit_page_length=100,
     )
 
-    # Prepaid invoices settle automatically and must never be collected here, so
-    # drop them from the list (no row, no link, no prompt).
     prepaid = prepaid_invoice_names([inv.name for inv in invoices])
     if prepaid:
         invoices = [inv for inv in invoices if inv.name not in prepaid]
-
-    # Hide invoices already covered by a submitted bundle: they're collected via
-    # the bundle's own /pay link, so they must not be prompted individually (that
-    # would charge the whole bundle for one invoice and settle others).
     invoices = _drop_bundled(invoices)
+    _annotate_delivery(invoices)
+    _annotate_customer_phone(invoices)
 
-    # Attach the delivery note(s) linked to each invoice (one batched query).
-    if invoices:
-        names = [inv.name for inv in invoices]
-        links = frappe.get_all(
-            "Sales Invoice Item",
-            filters={"parent": ["in", names], "delivery_note": ["is", "set"]},
-            fields=["parent", "delivery_note"],
+    drivers = sorted({d for inv in invoices for d in inv.get("drivers", [])})
+    return invoices, drivers
+
+
+def _annotate_customer_phone(invoices):
+    """Attach each customer's on-file mobile number (batched) so the SPA can
+    pre-fill it and let the operator confirm or change the number before every
+    STK prompt — never silently charge a default."""
+    customers = list({inv.customer for inv in invoices if inv.customer})
+    if not customers:
+        return
+    phone_by_customer = {
+        c.name: c.mobile_no or ""
+        for c in frappe.get_all(
+            "Customer", filters={"name": ["in", customers]}, fields=["name", "mobile_no"]
         )
-        dn_map = {}
-        for link in links:
-            dn_map.setdefault(link.parent, set()).add(link.delivery_note)
+    }
+    for inv in invoices:
+        inv.customer_phone = phone_by_customer.get(inv.customer, "")
 
-        # Resolve each delivery note's driver (one batched query) so invoices can
-        # be filtered by driver on the page. The driver lives on the Delivery
-        # Note, not the Sales Invoice.
-        dn_names = {n for names_set in dn_map.values() for n in names_set}
-        driver_by_dn = {}
-        if dn_names:
-            for dn in frappe.get_all(
-                "Delivery Note",
-                filters={"name": ["in", list(dn_names)]},
-                fields=["name", "driver_name"],
-            ):
-                driver_by_dn[dn.name] = dn.driver_name or ""
 
-        for inv in invoices:
-            dns = sorted(dn_map.get(inv.name, []))
-            inv.delivery_note = ", ".join(dns)
-            # An invoice may span delivery notes with different drivers; keep all
-            # of them so the filter and the dropdown don't drop any.
-            inv.drivers = sorted({driver_by_dn[n] for n in dns if driver_by_dn.get(n)})
-            inv.driver_name = ", ".join(inv.drivers)
-            inv.driver_filter = "|".join(inv.drivers)
+def get_context(context):
+    context.no_cache = 1
+    if frappe.session.user == "Guest":
+        frappe.local.flags.redirect_location = "/login?redirect-to=/collect_payments"
+        raise frappe.Redirect
+    _require_collection_access()
 
+    invoices, drivers = _collection_invoices(frappe.session.user)
     context.invoices = invoices
-    context.drivers = sorted({d for inv in invoices for d in getattr(inv, "drivers", [])})
+    context.drivers = drivers
     context.enable_redirect = frappe.db.get_single_value("iPay Settings", "enable_redirect")
 
-    # Collection totals for today: collected via iPay vs still outstanding —
-    # scoped to the collector's own book when applicable.
-    today_date = today()
-    if collector:
-        inv_filter = {"name": ["in", list(scope["invoices"]) or ["__none__"]]}
-        _, context.collected_today = _collected_totals(today_date, list(scope["requests"]))
-        context.outstanding_today = _sum_outstanding({**inv_filter, "posting_date": today_date})
-    else:
-        _, context.collected_today = _collected_totals(today_date)
-        context.outstanding_today = _sum_outstanding({"posting_date": today_date})
+    stats = collection_stats()
+    context.collected_today = stats["collected_today"]
+    context.outstanding_today = stats["outstanding_today"]
 
 
 def _invoices_for_driver_name(driver_name):
@@ -190,8 +210,7 @@ def collection_stats(driver=None):
     driver (by name) — backs the driver filter on the collection page. Operator/
     collector gated; a collector is always restricted to their own book, so the
     driver argument can only narrow within it, never widen it."""
-    if frappe.session.user == "Guest" or not (ALLOWED_ROLES & set(frappe.get_roles())):
-        frappe.throw("You are not permitted to view collection stats.", frappe.PermissionError)
+    _require_collection_access()
 
     today_date = today()
 
@@ -216,3 +235,21 @@ def collection_stats(driver=None):
     outstanding_today = _sum_outstanding(out_filter)
 
     return {"collected_today": collected_today, "outstanding_today": outstanding_today}
+
+
+@frappe.whitelist()
+def collection_list():
+    """Data for the iPay Collect SPA: the outstanding invoices the caller may
+    collect (prepaid/bundled dropped, delivery + driver annotated), the distinct
+    drivers present, and whether hosted checkout is enabled. The Jinja page builds
+    the invoices via the same `_collection_invoices`."""
+    _require_collection_access()
+    invoices, drivers = _collection_invoices(frappe.session.user)
+    return {
+        "invoices": invoices,
+        "drivers": drivers,
+        "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
+        # Bundling is a full-operator action (create_bundle gates on it); collectors
+        # never see the select/bundle UI.
+        "can_bundle": not is_collector_only(frappe.session.user),
+    }

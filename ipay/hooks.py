@@ -18,6 +18,14 @@ app_license = "MIT"
 # app_include_js = "/assets/ipay/js/ipay.js"
 app_include_js = 'sales_invoice.bundle.js'
 
+# Website (SPA)
+# ------------
+# Serve the iPay Collect Vue app (apps/ipay/frontend) under /collect; the
+# catch-all hands every sub-path to the client-side router (collect_app.html).
+website_route_rules = [
+	{"from_route": "/collect/<path:app_path>", "to_route": "collect"},
+]
+
 # include js, css files in header of web template
 # web_include_css = "/assets/ipay/css/ipay.css"
 # web_include_js = "/assets/ipay/js/ipay.js"

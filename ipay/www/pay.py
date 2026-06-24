@@ -16,17 +16,33 @@ def get_context(context):
     req = frappe.db.get_value(
         "iPay Request", request_name, ["sales_invoice", "amount", "status"], as_dict=True
     )
-    outstanding = frappe.db.get_value(
-        "Sales Invoice", req.sales_invoice, "outstanding_amount"
-    )
 
-    # Show what is actually charged: the request's amount (for a bundle this is
-    # the SUM of all its invoices, not just the primary's outstanding). Falling
-    # back to the primary outstanding keeps single-invoice links correct if the
-    # stored amount is ever blank. Matches build_checkout_form's charge amount.
+    # Every invoice the link collects, each with its live outstanding, so the payer
+    # sees the whole bundle broken down — not just the primary. A single request
+    # has no child rows, so fall back to its one invoice.
+    member_names = [
+        inv
+        for inv in frappe.get_all(
+            "iPay Request Invoice", filters={"parent": request_name}, pluck="sales_invoice"
+        )
+        if inv
+    ] or [req.sales_invoice]
     context.token = token
     context.invoice = req.sales_invoice
-    context.amount = frappe.utils.flt(req.amount) or frappe.utils.flt(outstanding)
+    context.invoices = [
+        {
+            "name": name,
+            "amount": frappe.utils.flt(
+                frappe.db.get_value("Sales Invoice", name, "outstanding_amount")
+            ),
+        }
+        for name in member_names
+    ]
+    # The total matches what the STK actually charges (the live sum of the
+    # members' outstanding); fall back to the stored amount if all read zero.
+    context.amount = sum(inv["amount"] for inv in context.invoices) or frappe.utils.flt(
+        req.amount
+    )
     context.paid = req.status == "Success"
     context.enable_redirect = frappe.db.get_single_value(
         "iPay Settings", "enable_redirect"

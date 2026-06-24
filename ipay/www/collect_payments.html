@@ -127,10 +127,10 @@
                   Prompt M-Pesa
                 </button>
                 {% if enable_redirect %}
-                <a class="btn btn-primary btn-sm"
-                   href="/api/method/ipay.ipay.main.utils.ipay_redirect.start_checkout?invoice={{ inv.name }}">
+                <button type="button" class="btn btn-primary btn-sm"
+                        onclick="ipayStartCheckout('{{ inv.name }}')">
                   Pay via iPay
-                </a>
+                </button>
                 {% endif %}
               </td>
             </tr>
@@ -205,6 +205,16 @@ function ipayPoll(request, invoice) {
   }
   check();                     // check immediately, don't wait a full interval
   iv = setInterval(check, 3000);
+}
+
+function ipayStartCheckout(invoice) {
+  // start_checkout is POST (creates a request) — fetch the URL, then navigate.
+  frappe.call({
+    method: "ipay.ipay.main.utils.ipay_redirect.start_checkout",
+    args: { invoice: invoice },
+    freeze: true,
+    callback: function (r) { if (r.message && r.message.url) { window.location = r.message.url; } }
+  });
 }
 
 function ipayPromptMpesa(invoice, phone) {

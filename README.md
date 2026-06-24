@@ -48,6 +48,35 @@ Without an iPay account, this application cannot process mobile money transactio
 
 Ipay is built with security at its core. It uses encryption protocols to protect sensitive data during transactions and ensures compliance with payment processing regulations.
 
+## iPay Collect — mobile app (frontend)
+
+`/collect` is an installable, mobile-first Vue 3 app for delivery teams to prompt
+and track payments (single invoices or per-customer bundles). It lives in
+`frontend/` (Vite + frappe-ui + Pinia), is served by Frappe at `/collect`, and
+reuses the app's existing whitelisted APIs and the logged-in Frappe session.
+
+### Develop
+
+```bash
+cd apps/ipay && yarn install   # installs frontend deps (root postinstall)
+yarn dev                       # Vite dev server; proxies the API to your bench
+```
+
+### Build / deploy
+
+Built assets are not committed — `bench build` builds them automatically (it runs
+the frontend's `yarn build`):
+
+```bash
+bench build --app ipay
+# fresh install:
+bench get-app <repo-url> && bench install-app ipay && bench build
+```
+
+The build outputs to `ipay/public/frontend` and writes the entry to
+`ipay/www/collect.html` (both git-ignored). On a phone, open `/collect` and use
+the browser's **Add to Home Screen** to install it.
+
 ## License
 
 This application is licensed under the MIT License, ensuring open access and flexibility for customization.
