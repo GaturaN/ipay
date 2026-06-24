@@ -8,6 +8,11 @@
   .ipay-pay .card { border: none; border-radius: 16px; box-shadow: 0 10px 34px rgba(17, 24, 39, .10); }
   .ipay-pay .amount { font-size: 2rem; font-weight: 700; color: #1f2937; letter-spacing: -.02em; }
   .ipay-pay .muted { color: #94a3b8; }
+  .ipay-pay .ipay-inv-list { list-style: none; padding: 0; margin: 0 0 .75rem; text-align: left; }
+  .ipay-pay .ipay-inv-list li { display: flex; justify-content: space-between; gap: 12px; font-size: .9rem;
+    color: #4b5563; padding: .4rem 0; border-bottom: 1px solid #f1f5f9; }
+  .ipay-pay .ipay-inv-list li span:last-child { font-weight: 600; color: #1f2937; white-space: nowrap;
+    font-variant-numeric: tabular-nums; }
   .ipay-pay .opt { border: 1px solid #edf2f7; border-radius: 12px; padding: 16px; margin-top: 14px; }
   .ipay-pay .opt h6 { font-weight: 600; margin-bottom: 8px; }
   .ipay-pay input[type=tel] { border-radius: 10px; height: 44px; }
@@ -31,7 +36,12 @@
       {% else %}
         {% if invoices | length > 1 %}
         <p class="muted mb-1">Payment for {{ invoices | length }} invoices</p>
-        <p class="muted small mb-1">{{ invoices | join(", ") | e }}</p>
+        <ul class="ipay-inv-list">
+          {% for inv in invoices %}
+          <li><span>{{ inv.name | e }}</span><span>KES {{ "{:,.2f}".format(inv.amount) }}</span></li>
+          {% endfor %}
+        </ul>
+        <p class="muted small mb-0">Total</p>
         {% else %}
         <p class="muted mb-1">Payment for invoice {{ invoice | e }}</p>
         {% endif %}
