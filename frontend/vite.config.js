@@ -22,6 +22,11 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
+      // During active development the service worker is self-destroying: it
+      // unregisters and clears caches on devices that already installed it, so
+      // every deploy is fetched fresh (no stale app shell). Re-enable full
+      // precaching/offline once the app stabilises.
+      selfDestroying: true,
       manifest: {
         name: 'iPay Collect',
         short_name: 'iPay Collect',
