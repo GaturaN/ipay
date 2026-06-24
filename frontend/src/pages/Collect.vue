@@ -5,13 +5,11 @@ import { createBundle, fetchCollectionList, fetchCollectionStats } from '@/data/
 import { formatKES } from '@/utils/format'
 import StatCards from '@/components/StatCards.vue'
 import InvoiceCard from '@/components/InvoiceCard.vue'
-import BundleCard from '@/components/BundleCard.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
 
 const router = useRouter()
 
 const invoices = ref([])
-const bundles = ref([])
 const drivers = ref([])
 const enableRedirect = ref(false)
 const canBundle = ref(false)
@@ -49,10 +47,6 @@ const filtered = computed(() => {
     return matchesDriver && (!query || haystack.includes(query))
   })
 })
-
-function openRequest(name) {
-  router.push({ name: 'Request', params: { name } })
-}
 
 function promptInvoice(inv) {
   prompting.value = {
@@ -101,7 +95,6 @@ async function loadList() {
   try {
     const data = await fetchCollectionList()
     invoices.value = data.invoices || []
-    bundles.value = data.bundles || []
     drivers.value = data.drivers || []
     enableRedirect.value = Boolean(data.enable_redirect)
     canBundle.value = Boolean(data.can_bundle)
@@ -162,13 +155,6 @@ onMounted(() => {
         <option v-for="d in drivers" :key="d" :value="d">{{ d }}</option>
       </select>
     </div>
-
-    <section v-if="bundles.length">
-      <h2 class="text-sm font-medium text-gray-700">Open bundles</h2>
-      <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-        <BundleCard v-for="b in bundles" :key="b.name" :bundle="b" @open="openRequest(b.name)" />
-      </div>
-    </section>
 
     <p v-if="listLoading" class="py-10 text-center text-sm text-gray-400">Loading…</p>
     <p v-else-if="!filtered.length" class="py-10 text-center text-sm text-gray-400">

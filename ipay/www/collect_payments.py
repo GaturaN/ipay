@@ -9,8 +9,10 @@ ALLOWED_ROLES = {"System Manager", "iPay Manager", "iPay User", "iPay Collector"
 
 
 def _drop_bundled(invoices):
-    """Remove invoices that are members of a submitted bundle (iPay Request
-    Invoice rows under a docstatus=1 request) — they're collected via the bundle."""
+    """Remove invoices that are members of an ACTIVE submitted bundle (a docstatus=1
+    iPay Request, not Abandoned) — they're collected via the bundle. A cancelled
+    (split/discarded) or Abandoned bundle no longer collects them, so its invoices
+    return to the list."""
     if not invoices:
         return invoices
     rows = frappe.get_all(
@@ -22,7 +24,11 @@ def _drop_bundled(invoices):
         return invoices
     submitted = set(frappe.get_all(
         "iPay Request",
-        filters={"name": ["in", list({r.parent for r in rows})], "docstatus": 1},
+        filters={
+            "name": ["in", list({r.parent for r in rows})],
+            "docstatus": 1,
+            "status": ["!=", "Abandoned"],
+        },
         pluck="name",
     ))
     bundled = {r.sales_invoice for r in rows if r.parent in submitted}
@@ -231,59 +237,16 @@ def collection_stats(driver=None):
     return {"collected_today": collected_today, "outstanding_today": outstanding_today}
 
 
-def _open_bundles(user):
-    """Open bundle requests (submitted, not settled, with iPay Request Invoice
-    rows) so the operator can re-open one to prompt / share / split — a bundle's
-    member invoices are hidden from the invoice list, so the bundle itself is the
-    only way back to them. Scoped to a collector's own work."""
-    rows = frappe.get_all(
-        "iPay Request",
-        filters={"docstatus": 1, "status": ["not in", ["Success", "Overpaid", "Abandoned"]]},
-        fields=["name", "customer", "amount", "status"],
-        order_by="creation desc",
-        limit_page_length=200,
-    )
-    if is_collector_only(user):
-        scope = collector_scope(user)["requests"]
-        rows = [r for r in rows if r.name in scope]
-    if not rows:
-        return []
-
-    counts = {}
-    for parent in frappe.get_all(
-        "iPay Request Invoice", filters={"parent": ["in", [r.name for r in rows]]}, pluck="parent"
-    ):
-        counts[parent] = counts.get(parent, 0) + 1
-    bundles = [r for r in rows if counts.get(r.name)]
-    if not bundles:
-        return []
-
-    customer_names = {
-        c.name: c.customer_name
-        for c in frappe.get_all(
-            "Customer", filters={"name": ["in", list({r.customer for r in bundles})]},
-            fields=["name", "customer_name"],
-        )
-    }
-    for r in bundles:
-        r["invoice_count"] = counts.get(r.name, 0)
-        r["customer_name"] = customer_names.get(r.customer, r.customer)
-        r["amount"] = flt(r.amount)
-    return bundles
-
-
 @frappe.whitelist()
 def collection_list():
     """Data for the iPay Collect SPA: the outstanding invoices the caller may
-    collect (prepaid/bundled dropped, delivery + driver annotated), the open
-    bundles they can re-open, the distinct drivers present, and whether hosted
-    checkout is enabled. The Jinja page builds the invoices via the same
-    `_collection_invoices`."""
+    collect (prepaid/bundled dropped, delivery + driver annotated), the distinct
+    drivers present, and whether hosted checkout is enabled. The Jinja page builds
+    the invoices via the same `_collection_invoices`."""
     _require_collection_access()
     invoices, drivers = _collection_invoices(frappe.session.user)
     return {
         "invoices": invoices,
-        "bundles": _open_bundles(frappe.session.user),
         "drivers": drivers,
         "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
         # Bundling is a full-operator action (create_bundle gates on it); collectors

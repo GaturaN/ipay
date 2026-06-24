@@ -4,6 +4,6 @@
   "scripts": {
     "postinstall": "cd frontend && yarn install",
     "dev": "cd frontend && yarn dev",
-    "build": "cd frontend && yarn build"
+    "build": "cd frontend && yarn install --frozen-lockfile && yarn build"
   }
 }

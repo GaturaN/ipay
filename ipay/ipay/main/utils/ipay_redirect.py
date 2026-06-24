@@ -255,15 +255,39 @@ def _payment_state(request_name, include_detail=False):
     return state
 
 
+def _live_request_amount(request_name, sales_invoice):
+    """Sum the live outstanding of a request's invoices (a bundle's child rows, or
+    the single sales invoice) so an STK charges what is actually owed now — not a
+    stored amount that goes stale when a member invoice is paid separately."""
+    invoices = frappe.get_all(
+        "iPay Request Invoice", filters={"parent": request_name}, pluck="sales_invoice"
+    ) or [sales_invoice]
+    total = 0.0
+    for invoice in invoices:
+        if invoice:
+            total += frappe.utils.flt(
+                frappe.db.get_value("Sales Invoice", invoice, "outstanding_amount")
+            )
+    return total
+
+
 def _enqueue_stk(request_name, phone):
     """Enqueue an M-Pesa STK push on the long worker (the verify loop can exceed
     the 30s gunicorn timeout); the reconcile poller backstops finalisation."""
     req = frappe.db.get_value(
         "iPay Request",
         request_name,
-        ["customer", "customer_phone", "customer_email", "amount", "sales_invoice"],
+        ["customer", "customer_phone", "customer_email", "sales_invoice", "status", "docstatus"],
         as_dict=True,
     )
+    # Never charge a cancelled request (mirrors resolve_pay_token) — closes
+    # re-charging a split/discarded bundle from the operator path; and never
+    # re-prompt one that already settled, matching the customer (token) path.
+    if not req or req.docstatus == 2:
+        return {"status": "error", "message": "This request is no longer chargeable."}
+    if req.status in ("Success", "Underpaid", "Overpaid"):
+        return {"status": "error", "message": "This request has already been paid."}
+
     phone = normalize_phone(phone or req.customer_phone)
     if not phone:
         # Structured signal so the caller can prompt for a number and save it
@@ -272,6 +296,12 @@ def _enqueue_stk(request_name, phone):
             "status": "missing_phone",
             "message": "No M-Pesa phone number on file. Enter a number to charge.",
         }
+
+    # Charge the live outstanding (a member invoice may have settled since the
+    # request/bundle was created), not a possibly-stale stored amount.
+    amount = _live_request_amount(request_name, req.sales_invoice)
+    if amount <= 0:
+        return {"status": "error", "message": "Nothing left to collect on this request."}
 
     # Per-request cooldown: a double-click (or a retried call) can't enqueue a
     # second STK prompt for the same request within the window — the operator
@@ -291,7 +321,7 @@ def _enqueue_stk(request_name, phone):
         docid=request_name,
         user_id=req.customer,
         phone=phone,
-        amount=req.amount,
+        amount=amount,
         oid=req.sales_invoice,
         customer_email=req.customer_email,
         payment_request_type="Mpesa Express",
@@ -467,6 +497,27 @@ def split_bundle(request):
 
 
 @frappe.whitelist(methods=["POST"])
+def discard_bundle(request):
+    """Cancel an unpaid bundle so its member invoices return to the collection
+    list — the operator created it but backed out without paying, so it should
+    not linger. Locked and re-checked against a concurrent payment (like
+    split_bundle); a bundle that has been paid is kept. Only bundles (requests
+    with invoice rows) are discarded."""
+    _require_full_operator()
+    locked = frappe.db.get_value(
+        "iPay Request", request, ["status", "payment_entry"], as_dict=True, for_update=True
+    ) or {}
+    if locked.get("status") in ("Success", "Underpaid", "Overpaid") or locked.get("payment_entry"):
+        return {"cancelled": False}
+    bundle = frappe.get_doc("iPay Request", request)
+    if not (bundle.invoices or []):
+        return {"cancelled": False}
+    bundle.flags.ignore_permissions = True
+    bundle.cancel()
+    return {"cancelled": True}
+
+
+@frappe.whitelist(methods=["POST"])
 def prompt_mpesa(invoice, phone=None):
     """Operator action (collection page): send an M-Pesa STK push for an invoice."""
     _require_operator()
@@ -500,16 +551,13 @@ def payment_state(request):
 @frappe.whitelist()
 def request_detail(request):
     """Detail for the SPA's request view (a bundle or single request): status,
-    amount, the invoices it covers, the payer result detail, and whether the
-    caller may split it (a full operator, on an unpaid bundle)."""
-    from ipay.ipay.main.utils.collector import is_collector_only
-
+    amount, the invoices it covers, and the payer result detail."""
     _require_operator()
     _require_request_access(request)
     req = frappe.db.get_value(
         "iPay Request",
         request,
-        ["name", "customer", "status", "amount", "sales_invoice", "result_detail", "payment_entry"],
+        ["name", "customer", "customer_phone", "status", "amount", "sales_invoice", "result_detail", "docstatus"],
         as_dict=True,
     )
     if not req:
@@ -522,25 +570,24 @@ def request_detail(request):
         )
         if name
     ] or [req.sales_invoice]
-    status = req.status or "Pending"
+    cancelled = req.docstatus == 2
+    status = "Cancelled" if cancelled else (req.status or "Pending")
     is_bundle = len(invoices) > 1
     return {
         "name": req.name,
         "customer": req.customer,
         "customer_name": frappe.db.get_value("Customer", req.customer, "customer_name") or req.customer,
-        "customer_phone": frappe.db.get_value("Customer", req.customer, "mobile_no") or "",
+        # The number the STK would actually use: the request's own, else the master.
+        "customer_phone": req.customer_phone
+        or frappe.db.get_value("Customer", req.customer, "mobile_no")
+        or "",
         "status": status,
         "amount": frappe.utils.flt(req.amount),
         "invoices": invoices,
         "is_bundle": is_bundle,
-        "result_detail": req.result_detail or "",
-        "paid": status == "Success",
-        "can_split": (
-            is_bundle
-            and not req.payment_entry
-            and status not in ("Success", "Underpaid", "Overpaid")
-            and not is_collector_only(frappe.session.user)
-        ),
+        # result_detail carries payer PII; don't echo it for a void request.
+        "result_detail": "" if cancelled else (req.result_detail or ""),
+        "paid": req.status == "Success",
     }
 
 

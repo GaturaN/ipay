@@ -1,18 +1,20 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import {
+  discardBundle,
   fetchRequestDetail,
   getPaymentLink,
   paymentState,
   regeneratePaymentLink,
-  splitBundle,
 } from '@/data/collection'
 import { formatKES } from '@/utils/format'
 import PromptDialog from '@/components/PromptDialog.vue'
 
-// The home for a single request or a bundle: live status, the invoices it
-// covers, prompt the full amount, share/regenerate the link, and split a bundle.
+// The transient home for a request or bundle: live status, the invoices it
+// covers, prompt the full amount, and share/regenerate the link. An unpaid bundle
+// the operator backs out of is discarded so its invoices return to the collection
+// list — we don't keep "open bundles" lying around.
 const route = useRoute()
 const router = useRouter()
 const name = route.params.name
@@ -22,15 +24,17 @@ const loading = ref(true)
 const link = ref(null)
 const linkBusy = ref(false)
 const copied = ref(false)
-const splitBusy = ref(false)
 const prompting = ref(null)
 let pollTimer = null
+
+const SETTLED = ['Success', 'Underpaid', 'Overpaid', 'Cancelled']
+const promptable = computed(() => detail.value && !SETTLED.includes(detail.value.status))
 
 const statusTone = computed(() => {
   const s = detail.value?.status
   if (s === 'Success') return 'text-green-700'
   if (s === 'Underpaid' || s === 'Overpaid') return 'text-amber-700'
-  if (s === 'Failed' || s === 'Abandoned') return 'text-red-700'
+  if (s === 'Failed' || s === 'Abandoned' || s === 'Cancelled') return 'text-red-700'
   return 'text-gray-500'
 })
 
@@ -38,19 +42,20 @@ async function load() {
   loading.value = true
   try {
     detail.value = await fetchRequestDetail(name)
-    if (!detail.value.paid) startPolling()
+    if (promptable.value) startPolling()
   } finally {
     loading.value = false
   }
 }
 
 function startPolling() {
+  if (pollTimer) return
   pollTimer = setInterval(async () => {
     try {
       const state = await paymentState(name)
       if (state.status && detail.value) detail.value.status = state.status
       if (state.paid || state.partial || state.failed) {
-        detail.value.paid = state.paid
+        if (detail.value) detail.value.paid = state.paid
         stopPolling()
       }
     } catch {
@@ -67,6 +72,13 @@ function stopPolling() {
 }
 onUnmounted(stopPolling)
 
+// One poller at a time: pause the page poll while the prompt dialog (which polls
+// too) is open.
+watch(prompting, (target) => {
+  if (target) stopPolling()
+  else if (promptable.value) startPolling()
+})
+
 function promptNow() {
   prompting.value = {
     name: detail.value.name,
@@ -77,8 +89,10 @@ function promptNow() {
 }
 
 function onPaid() {
-  detail.value.status = 'Success'
-  detail.value.paid = true
+  if (detail.value) {
+    detail.value.status = 'Success'
+    detail.value.paid = true
+  }
   stopPolling()
 }
 
@@ -111,23 +125,25 @@ async function copyLink() {
   }
 }
 
-async function doSplit() {
-  if (!window.confirm('Split this bundle into individual requests and cancel it?')) return
-  splitBusy.value = true
-  try {
-    await splitBundle(name)
-    router.replace('/') // the individual invoices reappear on the collection list
-  } finally {
-    splitBusy.value = false
+// Leaving an unpaid bundle discards it so its invoices return to the list.
+onBeforeRouteLeave(async () => {
+  if (detail.value && detail.value.is_bundle && !detail.value.paid) {
+    try {
+      await discardBundle(name)
+    } catch {
+      // Best-effort; the server keeps a bundle that has been paid.
+    }
   }
-}
+})
 
 onMounted(load)
 </script>
 
 <template>
   <main class="mx-auto flex min-h-full w-full max-w-md flex-col gap-4 p-4">
-    <button class="self-start text-sm text-gray-500" @click="router.back()">← Back</button>
+    <button class="self-start text-sm text-gray-500" @click="router.push({ name: 'Collect' })">
+      ← Back
+    </button>
 
     <p v-if="loading" class="py-10 text-center text-sm text-gray-400">Loading…</p>
 
@@ -160,30 +176,26 @@ onMounted(load)
         </ul>
       </div>
 
-      <Button v-if="!detail.paid" variant="solid" theme="green" @click="promptNow">
-        Prompt M-Pesa (full amount)
-      </Button>
+      <template v-if="promptable">
+        <Button variant="solid" theme="green" @click="promptNow">
+          Prompt M-Pesa (full amount)
+        </Button>
 
-      <div class="rounded-xl border border-gray-200 bg-white p-4">
-        <div class="flex gap-2">
-          <Button class="flex-1" :loading="linkBusy" @click="showLink">Payment link</Button>
-          <Button v-if="!detail.paid" class="flex-1" :loading="linkBusy" @click="regenerate">
-            Regenerate
-          </Button>
-        </div>
-        <div v-if="link" class="mt-3">
-          <div class="break-all rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs">
-            {{ link }}
+        <div class="rounded-xl border border-gray-200 bg-white p-4">
+          <div class="flex gap-2">
+            <Button class="flex-1" :loading="linkBusy" @click="showLink">Payment link</Button>
+            <Button class="flex-1" :loading="linkBusy" @click="regenerate">Regenerate</Button>
           </div>
-          <Button variant="subtle" class="mt-2 w-full" @click="copyLink">
-            {{ copied ? 'Copied ✓' : 'Copy link' }}
-          </Button>
+          <div v-if="link" class="mt-3">
+            <div class="break-all rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs">
+              {{ link }}
+            </div>
+            <Button variant="subtle" class="mt-2 w-full" @click="copyLink">
+              {{ copied ? 'Copied ✓' : 'Copy link' }}
+            </Button>
+          </div>
         </div>
-      </div>
-
-      <Button v-if="detail.can_split" variant="ghost" :loading="splitBusy" @click="doSplit">
-        Split into individual requests
-      </Button>
+      </template>
 
       <PromptDialog :target="prompting" @close="prompting = null" @paid="onPaid" />
     </template>

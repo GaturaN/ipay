@@ -18,7 +18,7 @@ const API = {
   requestDetail: 'ipay.ipay.main.utils.ipay_redirect.request_detail',
   paymentLink: 'ipay.ipay.main.utils.ipay_redirect.get_payment_link',
   regenerateLink: 'ipay.ipay.main.utils.ipay_redirect.regenerate_payment_link',
-  splitBundle: 'ipay.ipay.main.utils.ipay_redirect.split_bundle',
+  discardBundle: 'ipay.ipay.main.utils.ipay_redirect.discard_bundle',
   startCheckout: 'ipay.ipay.main.utils.ipay_redirect.start_checkout',
 }
 
@@ -48,7 +48,8 @@ export const createBundle = (customer, invoices) =>
 export const fetchRequestDetail = (request) => call(API.requestDetail, { request }, 'GET')
 export const getPaymentLink = (request) => call(API.paymentLink, { request })
 export const regeneratePaymentLink = (request) => call(API.regenerateLink, { request })
-export const splitBundle = (request) => call(API.splitBundle, { request })
+// Cancel an unpaid bundle (the operator backed out) so its invoices return.
+export const discardBundle = (request) => call(API.discardBundle, { request })
 
 // start_checkout is a GET that creates the request and 302-redirects to the
 // hosted checkout, so it is used as a plain link target, not a fetch.
