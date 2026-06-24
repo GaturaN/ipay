@@ -6,7 +6,7 @@ import frappe
 
 from ipay.ipay.main.utils.reconcile_payments import reconcile_request
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
-from ipay.ipay.main.utils.constants import clean_oid
+from ipay.ipay.main.utils.constants import clean_oid, ACTIVE_BUNDLE_WINDOW_MIN
 from ipay.ipay.main.utils.prepaid import is_sales_invoice_prepaid
 
 # Hosted checkout (HTML form POST). NB: this flow uses HMAC-SHA1 over the
@@ -90,10 +90,11 @@ def build_checkout_form(request_name, phone=None, email=None):
 
     # Order id is the iPay Request name (unique per request), not the invoice.
     oid = clean_oid(req.name)
-    outstanding = frappe.db.get_value(
-        "Sales Invoice", req.sales_invoice, "outstanding_amount"
-    )
-    amount = frappe.utils.flt(req.amount) or frappe.utils.flt(outstanding)
+    # Charge the LIVE outstanding of the request's invoices — the same total the STK
+    # and the /pay page use, so all three surfaces agree (a member invoice may have
+    # settled since the bundle was created). Fall back to the stored amount only if
+    # the live read is empty.
+    amount = _live_request_amount(req.name, req.sales_invoice) or frappe.utils.flt(req.amount)
 
     cbk = frappe.utils.get_url(
         "/api/method/ipay.ipay.main.utils.ipay_redirect.ipay_return"
@@ -152,19 +153,56 @@ def ipay_return(**kwargs):
     frappe.local.response["location"] = f"/payment_status?request={request_name or ''}"
 
 
+def _active_bundle_for_invoice(invoice):
+    """The name of an ACTIVE bundle (submitted, still-Pending, created within the
+    window) this invoice is a member of, if any. Used so a bundled invoice is
+    collected THROUGH its bundle rather than via a duplicate single request — which
+    would let the same invoice be charged twice. Mirrors _drop_bundled's window: a
+    stale/abandoned bundle no longer 'owns' the invoice, so None is returned and the
+    invoice is collected individually."""
+    parents = frappe.get_all(
+        "iPay Request Invoice", filters={"sales_invoice": invoice}, pluck="parent"
+    )
+    if not parents:
+        return None
+    cutoff = frappe.utils.add_to_date(
+        frappe.utils.now_datetime(), minutes=-ACTIVE_BUNDLE_WINDOW_MIN
+    )
+    return frappe.db.get_value(
+        "iPay Request",
+        {
+            "name": ["in", list(set(parents))],
+            "docstatus": 1,
+            "status": "Pending",
+            "creation": [">=", cutoff],
+        },
+        "name",
+    )
+
+
 def _ensure_request(invoice):
-    """Return the name of a submitted iPay Request for the invoice, creating one
-    if none exists yet. Serialised per invoice so two concurrent operator actions
-    (e.g. start_checkout + get_payment_link) can't both insert a duplicate."""
+    """Return the name of a submitted iPay Request to collect this invoice, creating
+    a single one if none exists yet. Serialised per invoice so two concurrent
+    operator actions (e.g. start_checkout + get_payment_link) can't both insert a
+    duplicate."""
     # Lock the invoice row for the rest of this transaction; a concurrent
     # _ensure_request for the same invoice blocks here until we commit, then sees
     # the request we created and reuses it instead of inserting a second one.
     frappe.db.get_value("Sales Invoice", invoice, "name", for_update=True)
-    request_name = frappe.db.get_value(
-        "iPay Request", {"sales_invoice": invoice, "docstatus": 1}, "name"
-    )
-    if request_name:
-        return request_name
+    # If this invoice is a member of an active bundle, collect through that bundle —
+    # never spin up a duplicate request for a bundled invoice (it would double-charge
+    # it). A non-primary member's lookup below would otherwise miss the bundle.
+    active_bundle = _active_bundle_for_invoice(invoice)
+    if active_bundle:
+        return active_bundle
+    # Reuse an existing SINGLE request for this invoice. Skip bundles (which carry
+    # iPay Request Invoice child rows) so collecting a released invoice individually
+    # charges only that invoice, not the whole old bundle.
+    for name in frappe.get_all(
+        "iPay Request", filters={"sales_invoice": invoice, "docstatus": 1}, pluck="name"
+    ):
+        if not frappe.db.exists("iPay Request Invoice", {"parent": name}):
+            return name
 
     invoice_doc = frappe.get_doc("Sales Invoice", invoice)
     request = frappe.get_doc(

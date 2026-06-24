@@ -90,17 +90,22 @@
       </select>
       {% endif %}
 
-      <button type="button" id="ipay-bundle-btn" class="btn btn-outline-primary btn-sm mb-2"
+      {% if can_bundle %}
+      <button type="button" id="ipay-bundle-btn" class="btn btn-primary btn-sm mb-2"
               onclick="ipayBundleSelected()" style="display: none;">
         Pay selected together
       </button>
+      <p id="ipay-bundle-warning" class="text-danger small mb-2" style="display: none;">
+        Selected invoices belong to different customers — bundle one customer at a time.
+      </p>
+      {% endif %}
 
       {% if invoices %}
       <div class="table-responsive">
         <table class="table ipay-table" id="ipay-invoice-table">
           <thead>
             <tr>
-              <th style="width: 32px;"></th>
+              {% if can_bundle %}<th style="width: 32px;"></th>{% endif %}
               <th>Invoice</th>
               <th>Customer</th>
               <th>Delivery Note</th>
@@ -112,10 +117,12 @@
           <tbody>
             {% for inv in invoices %}
             <tr data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}" data-driver="{{ inv.driver_filter or '' }}">
+              {% if can_bundle %}
               <td>
                 <input type="checkbox" class="ipay-select"
                        data-invoice="{{ inv.name }}" data-customer="{{ inv.customer }}">
               </td>
+              {% endif %}
               <td class="ipay-inv">{{ inv.name }}</td>
               <td>{{ inv.customer_name }}</td>
               <td class="ipay-dn">{{ inv.delivery_note or "—" }}</td>
@@ -198,7 +205,7 @@ function ipayPoll(request, invoice) {
           ipayNotify("<strong>Payment failed</strong> (" + ipayEsc(invoice) + ") &mdash; " + (s.detail ? ipayEsc(s.detail) : "no reason given"), "danger");
         } else if (tries >= max) {
           clearInterval(iv);
-          ipayNotify("Still awaiting payment for " + invoice + ". It will confirm automatically if the customer pays.", "warning");
+          ipayNotify("Still awaiting payment for " + ipayEsc(invoice) + ". It will confirm automatically if the customer pays.", "warning");
         }
       }
     });
@@ -270,22 +277,49 @@ function ipayBundleSelected() {
     freeze: true,
     callback: function (r) {
       var res = r.message || {};
+      // Take the operator to the bundle's payment page — it lists the invoices and
+      // total, a copyable link, Prompt M-Pesa, and Pay via iPay.
       if (res.url) { window.location = res.url; }
       else { ipayNotify("Could not create the bundle.", "danger"); }
     }
   });
 }
 
-(function () {
-  function refreshBundleBtn() {
-    var checked = document.querySelectorAll(".ipay-select:checked");
-    var btn = document.getElementById("ipay-bundle-btn");
-    if (!btn) { return; }
-    btn.style.display = checked.length ? "" : "none";
-    btn.textContent = "Pay " + checked.length + " selected together";
+// While building a bundle: disable per-invoice actions, hide the bundle button
+// for a mixed-customer selection (with a warning), and show the count + total.
+function ipayRefreshBundleSelection() {
+  var checked = Array.prototype.slice.call(document.querySelectorAll(".ipay-select:checked"));
+  var btn = document.getElementById("ipay-bundle-btn");
+  var warn = document.getElementById("ipay-bundle-warning");
+  var selecting = checked.length > 0;
+  // You either act on one invoice or bundle several — never both at once.
+  document.querySelectorAll(".ipay-actions button").forEach(function (b) { b.disabled = selecting; });
+  if (!btn) { return; }
+  if (!selecting) {
+    btn.style.display = "none";
+    if (warn) { warn.style.display = "none"; }
+    return;
   }
+  var customers = {}, total = 0;
+  checked.forEach(function (cb) {
+    customers[cb.dataset.customer] = 1;
+    var amt = cb.closest("tr").querySelector(".ipay-amount");
+    if (amt) { total += parseFloat(amt.textContent.replace(/,/g, "")) || 0; }
+  });
+  if (Object.keys(customers).length > 1) {
+    // A bundle is one customer's invoices — a mixed selection can't be prompted.
+    btn.style.display = "none";
+    if (warn) { warn.style.display = ""; }
+  } else {
+    btn.style.display = "";
+    btn.textContent = "Pay " + checked.length + " together · " + ipayFmtKES(total);
+    if (warn) { warn.style.display = "none"; }
+  }
+}
+
+(function () {
   document.querySelectorAll(".ipay-select").forEach(function (cb) {
-    cb.addEventListener("change", refreshBundleBtn);
+    cb.addEventListener("change", ipayRefreshBundleSelection);
   });
 })();
 
