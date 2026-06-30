@@ -36,12 +36,14 @@
       {% else %}
         {% if is_operator %}
         <div class="ipay-op-bar text-left mb-3">
+          {% if enable_redirect %}
           <div class="input-group input-group-sm mb-2">
             <input type="text" id="ipay-pay-link" class="form-control" readonly value="{{ pay_link | e }}">
             <div class="input-group-append">
               <button class="btn btn-outline-secondary" type="button" onclick="ipayCopyPayLink()">Copy link</button>
             </div>
           </div>
+          {% endif %}
           <button type="button" class="btn btn-link btn-sm p-0" onclick="ipayBackToCollection()">
             &larr; Back to collection
           </button>

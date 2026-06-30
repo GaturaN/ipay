@@ -277,10 +277,59 @@ function ipayBundleSelected() {
     freeze: true,
     callback: function (r) {
       var res = r.message || {};
-      // Take the operator to the bundle's payment page — it lists the invoices and
-      // total, a copyable link, Prompt M-Pesa, and Pay via iPay.
-      if (res.url) { window.location = res.url; }
-      else { ipayNotify("Could not create the bundle.", "danger"); }
+      if (!res.request) { ipayNotify("Could not create the bundle.", "danger"); return; }
+      if (res.url) {
+        // Hosted checkout on: the bundle's pay page (invoices, total, copyable link,
+        // Prompt M-Pesa, Pay via iPay).
+        window.location = res.url;
+      } else {
+        // Hosted checkout off: no shareable link is minted — prompt the full amount
+        // via M-Pesa directly (operator-authenticated).
+        ipayPromptBundle(res.request, invoices);
+      }
+    }
+  });
+}
+
+// Off-redirect bundle collection: prompt the full bundle amount via M-Pesa with no
+// shareable link. Mirrors ipayPromptMpesa, charging the whole bundle at once.
+function ipayPromptBundle(request, invoices, phone) {
+  if (phone === undefined) {
+    phone = prompt("Customer phone for the M-Pesa prompt (leave blank to use the number on file):", "");
+    if (phone === null) {
+      // Backed out before charging — discard the bundle so its invoices return.
+      frappe.call({
+        method: "ipay.ipay.main.utils.ipay_redirect.discard_bundle",
+        args: { request: request },
+        callback: function () { location.reload(); }
+      });
+      return;
+    }
+  }
+  frappe.call({
+    method: "ipay.ipay.main.utils.ipay_redirect.prompt_request_mpesa",
+    args: { request: request, phone: phone },
+    freeze: true,
+    callback: function (r) {
+      var res = r.message || {};
+      if (res.status === "missing_phone") {
+        var entered = prompt("No phone on file. Enter an M-Pesa number to charge (saved for next time):", "");
+        if (!entered) { ipayNotify("A phone number is required to prompt the bundle.", "warning"); return; }
+        frappe.call({
+          method: "ipay.ipay.main.utils.ipay_redirect.save_customer_contact",
+          args: { request: request, phone: entered },
+          callback: function () { ipayPromptBundle(request, invoices, entered); }
+        });
+        return;
+      }
+      if (res.status === "error") {
+        ipayNotify("Cannot prompt the bundle: " + (res.message || "unknown error"), "danger");
+        return;
+      }
+      var label = invoices.length + " invoices";
+      ipayNotify("M-Pesa prompt sent for " + label + ". Waiting for the customer to pay&hellip;", "info");
+      invoices.forEach(ipayRemoveRow);
+      ipayPoll(request, label);
     }
   });
 }

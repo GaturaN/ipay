@@ -203,7 +203,7 @@ onMounted(load)
           Prompt M-Pesa (full amount)
         </Button>
 
-        <div class="rounded-xl border border-gray-200 bg-white p-4">
+        <div v-if="detail.enable_redirect" class="rounded-xl border border-gray-200 bg-white p-4">
           <div class="flex gap-2">
             <Button class="flex-1" :loading="linkBusy" @click="showLink">Payment link</Button>
             <Button class="flex-1" :loading="linkBusy" @click="regenerate">Regenerate</Button>
