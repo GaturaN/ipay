@@ -38,6 +38,23 @@ def _require_operator():
         frappe.throw("Not permitted.", frappe.PermissionError)
 
 
+def _redirect_enabled():
+    """True when "Use Hosted Checkout Redirect" is on in iPay Settings."""
+    return bool(frappe.db.get_single_value("iPay Settings", "enable_redirect"))
+
+
+def _require_redirect_enabled():
+    """Hard gate for the payment-link / hosted-checkout endpoints: they exist only
+    when "Use Hosted Checkout Redirect" is on. With it off the org collects by
+    direct M-Pesa prompt only, so these endpoints refuse — and every UI hides their
+    buttons (the single source of truth for both)."""
+    if not _redirect_enabled():
+        frappe.throw(
+            'Payment links and hosted checkout are turned off '
+            '(enable "Use Hosted Checkout Redirect" in iPay Settings).'
+        )
+
+
 def _require_invoice_access(invoice):
     """A collector may only act on invoices that are their own work."""
     from ipay.ipay.main.utils.collector import can_access_invoice
@@ -374,6 +391,7 @@ def start_checkout(invoice):
     navigate to. POST (not a GET redirect) so it can't be triggered cross-site —
     it creates and commits a request."""
     _require_operator()
+    _require_redirect_enabled()
     _require_invoice_access(invoice)
     request_name = _ensure_request(invoice)
     token = _ensure_pay_token(request_name)
@@ -384,6 +402,7 @@ def start_checkout(invoice):
 def get_payment_link(invoice=None, request=None):
     """Return a shareable, tokenised payment link for an invoice or request."""
     _require_operator()
+    _require_redirect_enabled()
     if request:
         _require_request_access(request)
     elif invoice:
@@ -407,6 +426,7 @@ def regenerate_payment_link(request):
     e.g. when the previous link expired or was never used. Refused once there is
     nothing left to collect."""
     _require_operator()
+    _require_redirect_enabled()
     _require_request_access(request)
     status = frappe.db.get_value("iPay Request", request, "status")
     if status in ("Success", "Overpaid"):
@@ -627,6 +647,8 @@ def request_detail(request):
         # result_detail carries payer PII; don't echo it for a void request.
         "result_detail": "" if cancelled else (req.result_detail or ""),
         "paid": req.status == "Success",
+        # Drives whether the detail page shows the payment-link actions.
+        "enable_redirect": _redirect_enabled(),
     }
 
 
