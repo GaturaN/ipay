@@ -494,13 +494,18 @@ def create_bundle(customer, invoices):
     # `amount` has fetch_from the primary invoice's outstanding, which overrides
     # the bundle sum on insert; write the true total back directly.
     frappe.db.set_value("iPay Request", request.name, "amount", f"{total:.2f}")
-    token = _ensure_pay_token(request.name)
-    return {
+    result = {
         "request": request.name,
         "amount": f"{total:.2f}",
         "count": len(rows),
-        "url": frappe.utils.get_url("/pay?token=" + token),
     }
+    # Only mint a shareable /pay link when hosted checkout / links are enabled. With
+    # "Use Hosted Checkout Redirect" off the bundle is collected by direct M-Pesa
+    # prompt (operator-authenticated), so no guest-payable token is created — the
+    # same hard gate as the other link endpoints.
+    if _redirect_enabled():
+        result["url"] = frappe.utils.get_url("/pay?token=" + _ensure_pay_token(request.name))
+    return result
 
 
 @frappe.whitelist(methods=["POST"])
