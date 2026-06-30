@@ -1,18 +1,21 @@
 import frappe
-from frappe.utils import flt, today
+from frappe.utils import add_to_date, flt, now_datetime, today
 
 from ipay.ipay.main.utils.prepaid import prepaid_invoice_names
 from ipay.ipay.main.utils.collector import is_collector_only, collector_scope
+from ipay.ipay.main.utils.constants import ACTIVE_BUNDLE_WINDOW_MIN
 
 # Roles allowed to use the collection page.
 ALLOWED_ROLES = {"System Manager", "iPay Manager", "iPay User", "iPay Collector"}
 
 
 def _drop_bundled(invoices):
-    """Remove invoices that are members of an ACTIVE submitted bundle (a docstatus=1
-    iPay Request, not Abandoned) — they're collected via the bundle. A cancelled
-    (split/discarded) or Abandoned bundle no longer collects them, so its invoices
-    return to the list."""
+    """Hide an invoice from the collection list ONLY while it is actively being
+    collected via a bundle — a submitted (docstatus=1), still-Pending iPay Request
+    created within the last ACTIVE_BUNDLE_WINDOW_MIN minutes. The instant a bundle is
+    cancelled (docstatus 2 — split/discarded), abandoned, settles short
+    (Underpaid/Overpaid/Failed), or just goes stale unpaid, its member invoices
+    return to the list, so a bundle can never strand them."""
     if not invoices:
         return invoices
     rows = frappe.get_all(
@@ -22,16 +25,18 @@ def _drop_bundled(invoices):
     )
     if not rows:
         return invoices
-    submitted = set(frappe.get_all(
+    cutoff = add_to_date(now_datetime(), minutes=-ACTIVE_BUNDLE_WINDOW_MIN)
+    active = set(frappe.get_all(
         "iPay Request",
         filters={
             "name": ["in", list({r.parent for r in rows})],
             "docstatus": 1,
-            "status": ["!=", "Abandoned"],
+            "status": "Pending",
+            "creation": [">=", cutoff],
         },
         pluck="name",
     ))
-    bundled = {r.sales_invoice for r in rows if r.parent in submitted}
+    bundled = {r.sales_invoice for r in rows if r.parent in active}
     return [inv for inv in invoices if inv.name not in bundled]
 
 
@@ -167,6 +172,9 @@ def get_context(context):
     context.invoices = invoices
     context.drivers = drivers
     context.enable_redirect = frappe.db.get_single_value("iPay Settings", "enable_redirect")
+    # Collectors can't bundle (create_bundle rejects them) — hide the bundle UI so
+    # it isn't a dead end, matching the SPA.
+    context.can_bundle = not is_collector_only(frappe.session.user)
 
     stats = collection_stats()
     context.collected_today = stats["collected_today"]

@@ -22,6 +22,14 @@ def get_context():
         frappe.local.flags.redirect_location = f"/login?redirect-to={quote(target)}"
         raise frappe.Redirect
 
+    # Operator/collector-only: a logged-in user without a collection role gets a
+    # clear 403 instead of the empty SPA shell (the APIs already scope; this gates
+    # the page itself, matching /collect_payments).
+    from ipay.www.collect_payments import ALLOWED_ROLES
+
+    if not set(frappe.get_roles()) & ALLOWED_ROLES:
+        raise frappe.PermissionError("You do not have access to iPay Collect.")
+
     frappe.db.commit()
     context = frappe._dict()
     context.boot = get_boot()

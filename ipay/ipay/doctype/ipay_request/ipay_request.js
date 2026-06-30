@@ -12,58 +12,72 @@ frappe.ui.form.on('iPay Request', {
          frm.set_df_property('status', 'read_only', 1);
       }
 
-      // Render a persistent, clickable payment link on the form.
+      // Payment links + hosted checkout exist only when "Use Hosted Checkout
+      // Redirect" is on. With it off the org collects by direct M-Pesa prompt, so
+      // the link field and the Copy/Regenerate buttons are hidden (the server
+      // refuses these endpoints too — same single source of truth).
       if (submitted) {
-         render_payment_link(frm);
-      }
+         frappe.db.get_single_value('iPay Settings', 'enable_redirect').then((redirect) => {
+            if (!redirect) {
+               const field = frm.get_field('payment_link');
+               if (field) {
+                  field.$wrapper.html(
+                     '<span class="text-muted">Payment links are off &mdash; "Use Hosted Checkout Redirect" is disabled in iPay Settings.</span>'
+                  );
+               }
+               return;
+            }
 
-      // Copy a shareable payment link to send to the customer
-      if (submitted && status !== 'Success') {
-         frm.add_custom_button(__('Copy Payment Link'), () => {
-            frappe.call({
-               method: 'ipay.ipay.main.utils.ipay_redirect.get_payment_link',
-               args: { request: frm.doc.name },
-               freeze: true,
-               callback: function (r) {
-                  const res = r.message || {};
-                  if (!res.url) { frappe.msgprint(__('Could not generate a payment link.')); return; }
-                  if (navigator.clipboard) { navigator.clipboard.writeText(res.url); }
-                  // Populate the persistent field immediately (frm.doc.pay_token
-                  // is still stale on the client until the next reload).
-                  set_payment_link_html(frm, res.url);
-                  const warn = res.redirect_enabled ? '' :
-                     '<br><span style="color:#b7791f">Enable "Use Hosted Checkout Redirect" in iPay Settings so the card/iPay option works.</span>';
-                  frappe.msgprint({
-                     title: __('Payment Link (copied to clipboard)'),
-                     message: `<div style="word-break:break-all"><a href="${res.url}" target="_blank">${res.url}</a></div>${warn}`,
-                     indicator: 'blue',
-                  });
-               },
-            });
-         });
-      }
+            // Render a persistent, clickable payment link on the form.
+            render_payment_link(frm);
 
-      // Regenerate the link (new token + expiry) if the old one lapsed or was
-      // never used. Only while there is still a balance to collect.
-      if (submitted && status !== 'Success' && status !== 'Overpaid') {
-         frm.add_custom_button(__('Regenerate Payment Link'), () => {
-            frappe.confirm(
-               __('Issue a new payment link? The previous link will stop working.'),
-               () => {
+            // Copy a shareable payment link to send to the customer.
+            if (status !== 'Success') {
+               frm.add_custom_button(__('Copy Payment Link'), () => {
                   frappe.call({
-                     method: 'ipay.ipay.main.utils.ipay_redirect.regenerate_payment_link',
+                     method: 'ipay.ipay.main.utils.ipay_redirect.get_payment_link',
                      args: { request: frm.doc.name },
                      freeze: true,
                      callback: function (r) {
                         const res = r.message || {};
-                        if (!res.url) { frappe.msgprint(__('Could not regenerate the link.')); return; }
+                        if (!res.url) { frappe.msgprint(__('Could not generate a payment link.')); return; }
                         if (navigator.clipboard) { navigator.clipboard.writeText(res.url); }
-                        frappe.show_alert({ message: __('New link generated and copied.'), indicator: 'green' });
-                        frm.reload_doc();
+                        // Populate the persistent field immediately (frm.doc.pay_token
+                        // is still stale on the client until the next reload).
+                        set_payment_link_html(frm, res.url);
+                        frappe.msgprint({
+                           title: __('Payment Link (copied to clipboard)'),
+                           message: `<div style="word-break:break-all"><a href="${res.url}" target="_blank">${res.url}</a></div>`,
+                           indicator: 'blue',
+                        });
                      },
                   });
-               }
-            );
+               }, __('iPay Menu'));
+            }
+
+            // Regenerate the link (new token + expiry) if the old one lapsed or
+            // was never used. Only while there is still a balance to collect.
+            if (status !== 'Success' && status !== 'Overpaid') {
+               frm.add_custom_button(__('Regenerate Payment Link'), () => {
+                  frappe.confirm(
+                     __('Issue a new payment link? The previous link will stop working.'),
+                     () => {
+                        frappe.call({
+                           method: 'ipay.ipay.main.utils.ipay_redirect.regenerate_payment_link',
+                           args: { request: frm.doc.name },
+                           freeze: true,
+                           callback: function (r) {
+                              const res = r.message || {};
+                              if (!res.url) { frappe.msgprint(__('Could not regenerate the link.')); return; }
+                              if (navigator.clipboard) { navigator.clipboard.writeText(res.url); }
+                              frappe.show_alert({ message: __('New link generated and copied.'), indicator: 'green' });
+                              frm.reload_doc();
+                           },
+                        });
+                     }
+                  );
+               }, __('iPay Menu'));
+            }
          });
       }
 
@@ -87,7 +101,7 @@ frappe.ui.form.on('iPay Request', {
                   });
                }
             );
-         });
+         }, __('iPay Menu'));
       }
 
       // Add "Prompt iPay" button if submitted and status is not success

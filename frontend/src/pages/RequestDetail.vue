@@ -135,13 +135,18 @@ async function copyLink() {
 // so we call it on every leave (and don't depend on `detail` having loaded yet).
 // Guarded so the explicit Back and the route-leave guard don't both run it.
 let discarded = false
+let discarding = false
 async function discardIfNeeded() {
-  if (discarded) return
-  discarded = true
+  if (discarded || discarding) return
+  discarding = true
   try {
     await discardBundle(name)
+    discarded = true // latch only on success, so a failed call can retry on the next leave
   } catch {
-    // Best-effort; the server keeps a bundle that has been paid.
+    // Best-effort; a paid bundle is kept by the server, and the 30-min stale
+    // window returns the invoices even if every discard attempt fails.
+  } finally {
+    discarding = false
   }
 }
 
@@ -198,7 +203,7 @@ onMounted(load)
           Prompt M-Pesa (full amount)
         </Button>
 
-        <div class="rounded-xl border border-gray-200 bg-white p-4">
+        <div v-if="detail.enable_redirect" class="rounded-xl border border-gray-200 bg-white p-4">
           <div class="flex gap-2">
             <Button class="flex-1" :loading="linkBusy" @click="showLink">Payment link</Button>
             <Button class="flex-1" :loading="linkBusy" @click="regenerate">Regenerate</Button>

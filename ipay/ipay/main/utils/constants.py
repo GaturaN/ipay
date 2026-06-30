@@ -15,6 +15,14 @@ import hashlib
 # /transaction/search lookup will not match what /transact was sent.
 UNWANTED_OID_CHARACTERS = r"[-/;:~`!%^*<&_]"
 
+# How long a freshly-created, unpaid bundle is treated as "actively collecting":
+# its member invoices are hidden from the collection list and a member can't spin
+# up a duplicate single request. After this, the bundle is treated as abandoned —
+# its invoices return to the list and can be collected individually (the bundle's
+# own link still works; live-amount charging keeps that safe). Shared by
+# collect_payments._drop_bundled and ipay_redirect._active_bundle_for_invoice.
+ACTIVE_BUNDLE_WINDOW_MIN = 30
+
 
 def clean_oid(name):
     """Derive an iPay-safe order id (or `inv`) from a document name."""

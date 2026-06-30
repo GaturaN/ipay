@@ -30,6 +30,21 @@ def lipana_mpesa(
         f"OID: {oid}, Payment Request Type: {payment_request_type}"
     )
 
+    # Re-validate at execution time: the request may have been cancelled
+    # (split/discarded — docstatus 2) or already settled between enqueue and
+    # pickup. Never push an STK in that case. The token paths already refuse a
+    # cancelled request; this closes the operator/worker path too.
+    state = frappe.db.get_value(
+        "iPay Request", docid, ["docstatus", "status"], as_dict=True
+    ) or {}
+    if state.get("docstatus") == 2 or state.get("status") in ("Success", "Underpaid", "Overpaid"):
+        create_log_entry(
+            "INF",
+            f"Skipping STK for {docid}: no longer chargeable "
+            f"(docstatus={state.get('docstatus')}, status={state.get('status')})",
+        )
+        return {"status": "skipped", "message": "This request is no longer chargeable."}
+
     # set payment request type
     frappe.db.set_value(
         "iPay Request", docid, "payment_request_type", payment_request_type
