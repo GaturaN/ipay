@@ -37,22 +37,26 @@ async function payViaIpay() {
       <button
         v-if="selectable"
         type="button"
-        class="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-md border-2 transition-colors"
-        :class="selected ? 'border-mpesa bg-mpesa text-white' : 'border-hairline'"
+        class="-ml-2 grid h-10 w-10 shrink-0 place-items-center"
         :aria-pressed="selected"
         aria-label="Select for bundle"
         @click="$emit('toggle-select')"
       >
-        <svg v-if="selected" viewBox="0 0 20 20" class="h-4 w-4" fill="currentColor">
-          <path d="M8 13.5 4.5 10l-1.2 1.2L8 15.9l9-9L15.8 5.7z" />
-        </svg>
+        <span
+          class="grid h-6 w-6 place-items-center rounded-md border-2 transition-colors"
+          :class="selected ? 'border-mpesa bg-mpesa text-white' : 'border-hairline'"
+        >
+          <svg v-if="selected" viewBox="0 0 20 20" class="h-4 w-4" fill="currentColor">
+            <path d="M8 13.5 4.5 10l-1.2 1.2L8 15.9l9-9L15.8 5.7z" />
+          </svg>
+        </span>
       </button>
 
       <div class="min-w-0 flex-1">
         <p class="truncate font-display text-base font-semibold text-ink">
           {{ invoice.customer_name }}
         </p>
-        <p class="truncate text-xs text-ink/50">{{ meta }}</p>
+        <p class="truncate text-xs text-ink/70">{{ meta }}</p>
       </div>
 
       <p class="shrink-0 font-mono text-xl font-semibold tabular-nums text-owed">

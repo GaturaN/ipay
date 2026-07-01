@@ -34,7 +34,7 @@ export default defineConfig({
         display: 'standalone',
         scope: '/collect',
         start_url: '/collect',
-        theme_color: '#009a44',
+        theme_color: '#007a36',
         background_color: '#f2f5f1',
         icons: [
           { src: '/assets/ipay/manifest/manifest-icon-192.maskable.png', sizes: '192x192', type: 'image/png', purpose: 'any' },

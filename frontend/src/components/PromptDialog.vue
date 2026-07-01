@@ -24,9 +24,11 @@ const toneBox = {
   info: 'bg-ink/5 text-ink/70',
   success: 'bg-landed/10 text-landed',
   warn: 'bg-owed/10 text-owed',
-  error: 'bg-red-500/10 text-red-600',
+  error: 'bg-danger/10 text-danger',
 }
 const waiting = computed(() => busy.value && message.value?.tone === 'info')
+
+const onKeydown = (e) => e.key === 'Escape' && emit('close')
 
 watch(
   () => props.target,
@@ -35,6 +37,7 @@ watch(
     busy.value = false
     message.value = null
     stopPolling()
+    window[target ? 'addEventListener' : 'removeEventListener']('keydown', onKeydown)
   },
 )
 
@@ -110,7 +113,10 @@ function stopPolling() {
   }
 }
 
-onUnmounted(stopPolling)
+onUnmounted(() => {
+  stopPolling()
+  window.removeEventListener('keydown', onKeydown)
+})
 </script>
 
 <template>
@@ -119,11 +125,16 @@ onUnmounted(stopPolling)
     class="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 p-4 sm:items-center"
     @click.self="$emit('close')"
   >
-    <div class="w-full max-w-md rounded-3xl bg-paper p-6">
-      <p class="font-display text-xs font-semibold uppercase tracking-widest text-ink/50">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="prompt-title"
+      class="w-full max-w-md rounded-3xl bg-paper p-6"
+    >
+      <p class="font-display text-xs font-semibold uppercase tracking-widest text-ink/60">
         Prompt M-Pesa
       </p>
-      <p class="mt-1 truncate text-lg font-semibold text-ink">{{ target.label }}</p>
+      <p id="prompt-title" class="mt-1 truncate text-lg font-semibold text-ink">{{ target.label }}</p>
 
       <FormControl
         v-model="phone"
@@ -132,7 +143,7 @@ onUnmounted(stopPolling)
         label="M-Pesa number to charge"
         placeholder="e.g. 0712345678"
       />
-      <p class="mt-1 text-xs text-ink/40">Confirm or change the number before sending.</p>
+      <p class="mt-1 text-xs text-ink/70">Confirm or change the number before sending.</p>
 
       <div
         v-if="message"

@@ -130,13 +130,15 @@ onMounted(() => {
       <input
         v-model="search"
         type="search"
+        aria-label="Search collections"
         placeholder="Search customer, invoice or note…"
-        class="h-11 w-full rounded-xl border border-hairline bg-white px-4 text-sm text-ink placeholder:text-ink/40 focus:border-mpesa focus:outline-none"
+        class="h-11 w-full rounded-xl border border-hairline bg-white px-4 text-sm text-ink placeholder:text-ink/50 focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40"
       />
       <select
         v-if="drivers.length"
         v-model="driver"
-        class="h-11 w-full rounded-xl border border-hairline bg-white px-3 text-sm text-ink focus:border-mpesa focus:outline-none sm:w-48"
+        aria-label="Filter by driver"
+        class="h-11 w-full rounded-xl border border-hairline bg-white px-3 text-sm text-ink focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40 sm:w-48"
         @change="loadStats"
       >
         <option value="">All drivers</option>
@@ -147,7 +149,7 @@ onMounted(() => {
     <div v-if="listLoading" class="space-y-3 pt-1">
       <div v-for="n in 4" :key="n" class="h-24 animate-pulse rounded-xl bg-ink/5" />
     </div>
-    <p v-else-if="!filtered.length" class="py-16 text-center font-display text-ink/50">
+    <p v-else-if="!filtered.length" class="py-16 text-center font-display text-ink/70">
       All collected — nothing outstanding for you.
     </p>
     <div v-else class="divide-y divide-hairline rounded-2xl bg-white px-4">
@@ -172,7 +174,7 @@ onMounted(() => {
         <div class="min-w-0 flex-1 text-sm">
           <template v-if="sameCustomer">
             <span class="font-semibold text-ink">{{ selected.length }} selected</span>
-            <span class="font-mono tabular-nums text-ink/60"> · {{ formatKES(bundleTotal) }}</span>
+            <span class="font-mono tabular-nums text-ink/70"> · {{ formatKES(bundleTotal) }}</span>
           </template>
           <span v-else class="font-medium text-owed">
             Bundling is per customer — select one customer at a time.
