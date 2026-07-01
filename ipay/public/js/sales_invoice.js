@@ -77,7 +77,8 @@ frappe.ui.form.on('Sales Invoice', {
          // Payment links exist only when "Use Hosted Checkout Redirect" is on; with
          // it off the org collects by direct M-Pesa prompt, so this button is hidden.
          frappe.db.get_single_value('iPay Settings', 'enable_redirect').then((redirect) => {
-            if (!redirect) { return; }
+            // Singles come back as strings, so "0" is truthy — coerce to int.
+            if (!cint(redirect)) { return; }
             frm.add_custom_button(__('Copy Payment Link'), () => {
                frappe.call({
                   method: 'ipay.ipay.main.utils.ipay_redirect.get_payment_link',
