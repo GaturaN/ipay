@@ -12,6 +12,7 @@
   "callback_secret",
   "is_live",
   "request_for_cod",
+  "collect_payment_terms",
   "enable_redirect",
   "payment_link_ttl_days",
   "cash_account"
@@ -53,6 +54,13 @@
    "fieldname": "request_for_cod",
    "fieldtype": "Check",
    "label": "Automatically Create iPay Request for COD Customers Enabled"
+  },
+  {
+   "fieldname": "collect_payment_terms",
+   "fieldtype": "Table MultiSelect",
+   "label": "Collect Payment Terms",
+   "options": "iPay Collection Payment Term",
+   "description": "Only invoices on these payment terms appear in the Collect app (e.g. Cash on Delivery, End of Day) — the terms drivers settle on delivery. Leave empty to include every outstanding invoice."
   },
   {
    "default": "0",

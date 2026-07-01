@@ -113,18 +113,51 @@ def _annotate_delivery(invoices):
         inv.driver_filter = "|".join(inv.drivers)  # pipe-joined for the Jinja data-attr
 
 
-def _collection_invoices(user):
-    """The outstanding Sales Invoices `user` may collect: prepaid and
-    already-bundled invoices dropped, each annotated with its delivery note(s)
-    and driver(s). Returns (invoices, drivers) — the list and the sorted distinct
-    driver names present. A collector sees only their own work; full operators
-    see everything. Shared by the Jinja page (get_context) and the SPA API
-    (collection_list)."""
-    collector = is_collector_only(user)
-    si_filters = {"docstatus": 1, "is_return": 0, "outstanding_amount": [">", 0]}
-    if collector:
-        si_filters["name"] = ["in", list(collector_scope(user)["invoices"]) or ["__none__"]]
+def _collectable_terms():
+    """Payment Terms Templates the Collect app is scoped to (iPay Settings → Collect
+    Payment Terms) — the terms drivers settle on delivery. Empty means no term filter,
+    so every outstanding invoice is collectable (behaviour before the setting existed)."""
+    settings = frappe.get_cached_doc("iPay Settings")
+    return [row.payment_terms_template for row in (settings.get("collect_payment_terms") or [])]
 
+
+def _outstanding_si_filters(user):
+    """Base filters for the Sales Invoices `user` may collect — restricted to the
+    configured collect-on-delivery payment terms, their own book if a collector, and a
+    positive balance."""
+    si_filters = {"docstatus": 1, "is_return": 0, "outstanding_amount": [">", 0]}
+    terms = _collectable_terms()
+    if terms:
+        si_filters["payment_terms_template"] = ["in", terms]
+    if is_collector_only(user):
+        si_filters["name"] = ["in", list(collector_scope(user)["invoices"]) or ["__none__"]]
+    return si_filters
+
+
+def _outstanding_invoices(user, customer=None):
+    """Cleaned outstanding Sales Invoice rows — prepaid and actively-bundled dropped,
+    oldest first, uncapped, optionally for one customer. Minimal fields; callers
+    annotate delivery/phone as needed."""
+    si_filters = _outstanding_si_filters(user)
+    if customer:
+        si_filters["customer"] = customer
+    invoices = frappe.get_all(
+        "Sales Invoice",
+        filters=si_filters,
+        fields=["name", "customer", "customer_name", "outstanding_amount", "posting_date"],
+        order_by="posting_date asc",
+        limit_page_length=0,
+    )
+    prepaid = prepaid_invoice_names([inv.name for inv in invoices])
+    if prepaid:
+        invoices = [inv for inv in invoices if inv.name not in prepaid]
+    return _drop_bundled(invoices)
+
+
+def _collection_invoices(user):
+    """Capped, annotated outstanding list for the legacy Jinja page (get_context).
+    The SPA uses the customer-grouped endpoints instead. Returns (invoices, drivers)."""
+    si_filters = _outstanding_si_filters(user)
     invoices = frappe.get_all(
         "Sales Invoice",
         filters=si_filters,
@@ -132,7 +165,6 @@ def _collection_invoices(user):
         order_by="posting_date desc",
         limit_page_length=100,
     )
-
     prepaid = prepaid_invoice_names([inv.name for inv in invoices])
     if prepaid:
         invoices = [inv for inv in invoices if inv.name not in prepaid]
@@ -142,6 +174,35 @@ def _collection_invoices(user):
 
     drivers = sorted({d for inv in invoices for d in inv.get("drivers", [])})
     return invoices, drivers
+
+
+def _group_customers(invoices):
+    """Group outstanding invoices by customer — total owed, invoice count — most-owed
+    first."""
+    by_customer = {}
+    for inv in invoices:
+        row = by_customer.get(inv.customer)
+        if row is None:
+            row = by_customer[inv.customer] = {
+                "customer": inv.customer,
+                "customer_name": inv.customer_name or inv.customer,
+                "total_outstanding": 0.0,
+                "invoice_count": 0,
+            }
+        row["total_outstanding"] += flt(inv.outstanding_amount)
+        row["invoice_count"] += 1
+    return sorted(by_customer.values(), key=lambda r: r["total_outstanding"], reverse=True)
+
+
+def _customer_invoices(user, customer, driver=None):
+    """One customer's outstanding invoices, annotated for prompting (delivery, driver,
+    on-file phone). Optionally scoped to a single driver's deliveries."""
+    invoices = _outstanding_invoices(user, customer)
+    _annotate_delivery(invoices)
+    if driver:
+        invoices = [inv for inv in invoices if driver in (inv.get("drivers") or [])]
+    _annotate_customer_phone(invoices)
+    return invoices
 
 
 def _annotate_customer_phone(invoices):
@@ -238,6 +299,11 @@ def collection_stats(driver=None):
 
     _, collected_today = _collected_totals(today_date, requests)
     out_filter = {"posting_date": today_date}
+    # Scope "to go" to the same collect-on-delivery terms as the customer list, so the
+    # header total never counts credit invoices that never appear on the page.
+    terms = _collectable_terms()
+    if terms:
+        out_filter["payment_terms_template"] = ["in", terms]
     if invoices is not None:
         out_filter["name"] = ["in", list(invoices) or ["__none__"]]
     outstanding_today = _sum_outstanding(out_filter)
@@ -246,18 +312,37 @@ def collection_stats(driver=None):
 
 
 @frappe.whitelist()
-def collection_list():
-    """Data for the iPay Collect SPA: the outstanding invoices the caller may
-    collect (prepaid/bundled dropped, delivery + driver annotated), the distinct
-    drivers present, and whether hosted checkout is enabled. The Jinja page builds
-    the invoices via the same `_collection_invoices`."""
+def collection_customers(driver=None):
+    """SPA top level: customers with an outstanding collect-on-delivery balance the
+    caller may collect — each with total owed and invoice count, most-owed first — plus
+    the driver options for the filter and the bundle/redirect flags. When `driver` is
+    given, the customers and their totals are scoped to that driver's deliveries; the
+    driver options stay the full list so the filter can still be changed."""
     _require_collection_access()
-    invoices, drivers = _collection_invoices(frappe.session.user)
+    invoices = _outstanding_invoices(frappe.session.user)
+    _annotate_delivery(invoices)
+    drivers = sorted({d for inv in invoices for d in (inv.get("drivers") or [])})
+    if driver:
+        invoices = [inv for inv in invoices if driver in (inv.get("drivers") or [])]
     return {
-        "invoices": invoices,
+        "customers": _group_customers(invoices),
         "drivers": drivers,
         "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
-        # Bundling is a full-operator action (create_bundle gates on it); collectors
-        # never see the select/bundle UI.
+        "can_bundle": not is_collector_only(frappe.session.user),
+    }
+
+
+@frappe.whitelist()
+def customer_collection(customer, driver=None):
+    """One customer's outstanding invoices for the SPA drill-down, optionally scoped to
+    a single driver's deliveries. Scope is enforced in _outstanding_invoices, so a
+    collector only ever sees their own book here even if another customer's id is passed."""
+    _require_collection_access()
+    invoices = _customer_invoices(frappe.session.user, customer, driver=driver)
+    return {
+        "customer": customer,
+        "customer_name": invoices[0].customer_name if invoices else customer,
+        "invoices": invoices,
+        "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
         "can_bundle": not is_collector_only(frappe.session.user),
     }

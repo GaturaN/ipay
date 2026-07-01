@@ -8,7 +8,8 @@ function call(method, params, httpMethod = 'POST') {
 }
 
 const API = {
-  collectionList: 'ipay.www.collect_payments.collection_list',
+  collectionCustomers: 'ipay.www.collect_payments.collection_customers',
+  customerCollection: 'ipay.www.collect_payments.customer_collection',
   collectionStats: 'ipay.www.collect_payments.collection_stats',
   promptMpesa: 'ipay.ipay.main.utils.ipay_redirect.prompt_mpesa',
   promptRequest: 'ipay.ipay.main.utils.ipay_redirect.prompt_request_mpesa',
@@ -22,7 +23,14 @@ const API = {
   startCheckout: 'ipay.ipay.main.utils.ipay_redirect.start_checkout',
 }
 
-export const fetchCollectionList = () => call(API.collectionList, {}, 'GET')
+// Top-level list: customers with an outstanding collect-on-delivery balance,
+// optionally scoped to one driver's deliveries.
+export const fetchCollectionCustomers = (driver) =>
+  call(API.collectionCustomers, { driver: driver || '' }, 'GET')
+
+// Drill-down: one customer's outstanding invoices, optionally driver-scoped.
+export const fetchCustomerCollection = (customer, driver) =>
+  call(API.customerCollection, { customer, driver: driver || '' }, 'GET')
 
 export const fetchCollectionStats = (driver) =>
   call(API.collectionStats, { driver: driver || '' }, 'GET')

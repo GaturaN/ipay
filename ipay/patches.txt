@@ -6,3 +6,4 @@ ipay.patches.v1_0.migrate_request_status
 ipay.patches.v1_0.backfill_pay_token_expiry
 ipay.patches.v1_0.seed_cod_payment_terms
 ipay.patches.v1_0.seed_mpesa_mode_of_payment
+ipay.patches.v1_0.seed_collection_payment_terms
