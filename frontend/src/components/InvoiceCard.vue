@@ -32,7 +32,10 @@ async function payViaIpay() {
 </script>
 
 <template>
-  <article class="py-4 transition-colors" :class="selected && 'bg-mpesa/5'">
+  <article
+    class="rounded-xl border bg-white p-4 transition-colors"
+    :class="selected ? 'border-mpesa bg-mpesa/5' : 'border-hairline'"
+  >
     <div class="flex items-start gap-3">
       <button
         v-if="selectable"

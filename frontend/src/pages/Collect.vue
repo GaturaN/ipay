@@ -116,7 +116,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="mx-auto flex min-h-full w-full max-w-xl flex-col gap-4 p-4 pb-28">
+  <main class="mx-auto flex min-h-full w-full max-w-xl flex-col gap-4 p-4 pb-28 md:max-w-4xl">
     <h1 class="pt-1 font-display text-2xl font-bold tracking-tight text-ink">Collect</h1>
 
     <RoundHeader
@@ -146,13 +146,13 @@ onMounted(() => {
       </select>
     </div>
 
-    <div v-if="listLoading" class="space-y-3 pt-1">
+    <div v-if="listLoading" class="grid grid-cols-1 gap-3 pt-1 md:grid-cols-2">
       <div v-for="n in 4" :key="n" class="h-24 animate-pulse rounded-xl bg-ink/5" />
     </div>
     <p v-else-if="!filtered.length" class="py-16 text-center font-display text-ink/70">
       All collected — nothing outstanding for you.
     </p>
-    <div v-else class="divide-y divide-hairline rounded-2xl bg-white px-4">
+    <div v-else class="grid grid-cols-1 gap-3 md:grid-cols-2">
       <InvoiceCard
         v-for="inv in filtered"
         :key="inv.name"
@@ -170,7 +170,7 @@ onMounted(() => {
       v-if="selected.length"
       class="fixed inset-x-0 bottom-0 z-40 border-t border-hairline bg-paper/95 p-3 backdrop-blur"
     >
-      <div class="mx-auto flex max-w-xl items-center gap-3">
+      <div class="mx-auto flex max-w-xl items-center gap-3 md:max-w-4xl">
         <div class="min-w-0 flex-1 text-sm">
           <template v-if="sameCustomer">
             <span class="font-semibold text-ink">{{ selected.length }} selected</span>
