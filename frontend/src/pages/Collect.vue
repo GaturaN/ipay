@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { createBundle, fetchCollectionList, fetchCollectionStats } from '@/data/collection'
 import { formatKES } from '@/utils/format'
-import StatCards from '@/components/StatCards.vue'
+import RoundHeader from '@/components/RoundHeader.vue'
 import InvoiceCard from '@/components/InvoiceCard.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
 
@@ -19,15 +19,10 @@ const stats = ref({ collected_today: 0, outstanding_today: 0 })
 const statsLoading = ref(false)
 
 const search = ref('')
-const driver = ref('') // '' = all drivers
+const driver = ref('')
 
-// The M-Pesa prompt target for a single invoice (bundles open their detail page).
 const prompting = ref(null)
 
-// Bundling (operators only): a bundle must be ONE customer. The operator may
-// select freely, but "Pay together" only appears when every selected invoice
-// shares a customer — a mixed selection can never be prompted (the server
-// enforces this too).
 const selected = ref([])
 const creatingBundle = ref(false)
 
@@ -37,8 +32,6 @@ const bundleTotal = computed(() =>
   selected.value.reduce((sum, inv) => sum + Number(inv.outstanding_amount || 0), 0),
 )
 
-// Search + driver filter run client-side over the loaded list; the stat cards
-// re-fetch per driver because "collected today" is computed server-side.
 const filtered = computed(() => {
   const query = search.value.trim().toLowerCase()
   return invoices.value.filter((inv) => {
@@ -57,9 +50,7 @@ function promptInvoice(inv) {
   }
 }
 
-function isSelected(inv) {
-  return selected.value.some((i) => i.name === inv.name)
-}
+const isSelected = (inv) => selected.value.some((i) => i.name === inv.name)
 
 function toggleSelect(inv) {
   selected.value = isSelected(inv)
@@ -67,9 +58,7 @@ function toggleSelect(inv) {
     : [...selected.value, inv]
 }
 
-function clearSelection() {
-  selected.value = []
-}
+const clearSelection = () => (selected.value = [])
 
 async function createBundleNow() {
   if (!selected.value.length || !sameCustomer.value) return
@@ -81,8 +70,6 @@ async function createBundleNow() {
       const bundled = new Set(names)
       invoices.value = invoices.value.filter((inv) => !bundled.has(inv.name))
       clearSelection()
-      // Land on the bundle's detail page to prompt the full amount, share the
-      // link, or split it.
       router.push({ name: 'Request', params: { name: res.request } })
     }
   } finally {
@@ -113,13 +100,10 @@ async function loadStats() {
 }
 
 function onPaid(name) {
-  // For an invoice, drop it from the list; for a bundle the invoices were already
-  // removed at creation, so this is a no-op besides refreshing the stats.
   invoices.value = invoices.value.filter((inv) => inv.name !== name)
   loadStats()
 }
 
-// A partial/failed payment moved an invoice's outstanding — re-pull the list.
 function resync() {
   loadList()
   loadStats()
@@ -132,15 +116,13 @@ onMounted(() => {
 </script>
 
 <template>
-  <main class="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-4 p-4 pb-24">
-    <header>
-      <h1 class="text-xl font-semibold text-gray-900">Collect Payment</h1>
-      <p class="text-sm text-gray-500">Prompt a customer for payment.</p>
-    </header>
+  <main class="mx-auto flex min-h-full w-full max-w-xl flex-col gap-4 p-4 pb-28">
+    <h1 class="pt-1 font-display text-2xl font-bold tracking-tight text-ink">Collect</h1>
 
-    <StatCards
+    <RoundHeader
       :collected-today="stats.collected_today"
       :outstanding-today="stats.outstanding_today"
+      :remaining="filtered.length"
       :loading="statsLoading"
     />
 
@@ -148,13 +130,13 @@ onMounted(() => {
       <input
         v-model="search"
         type="search"
-        placeholder="Search invoice, customer or delivery note…"
-        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        placeholder="Search customer, invoice or note…"
+        class="h-11 w-full rounded-xl border border-hairline bg-white px-4 text-sm text-ink placeholder:text-ink/40 focus:border-mpesa focus:outline-none"
       />
       <select
         v-if="drivers.length"
         v-model="driver"
-        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm sm:w-64"
+        class="h-11 w-full rounded-xl border border-hairline bg-white px-3 text-sm text-ink focus:border-mpesa focus:outline-none sm:w-48"
         @change="loadStats"
       >
         <option value="">All drivers</option>
@@ -162,11 +144,13 @@ onMounted(() => {
       </select>
     </div>
 
-    <p v-if="listLoading" class="py-10 text-center text-sm text-gray-400">Loading…</p>
-    <p v-else-if="!filtered.length" class="py-10 text-center text-sm text-gray-400">
-      No invoices to collect.
+    <div v-if="listLoading" class="space-y-3 pt-1">
+      <div v-for="n in 4" :key="n" class="h-24 animate-pulse rounded-xl bg-ink/5" />
+    </div>
+    <p v-else-if="!filtered.length" class="py-16 text-center font-display text-ink/50">
+      All collected — nothing outstanding for you.
     </p>
-    <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div v-else class="divide-y divide-hairline rounded-2xl bg-white px-4">
       <InvoiceCard
         v-for="inv in filtered"
         :key="inv.name"
@@ -180,42 +164,35 @@ onMounted(() => {
       />
     </div>
 
-    <!-- Bundle bar: pinned to the bottom (always visible) while invoices are
-         selected. A mixed-customer selection turns it into a warning with no
-         "Pay together" button — bundling is per customer. -->
     <div
       v-if="selected.length"
-      class="fixed inset-x-0 bottom-0 z-40 border-t p-3 backdrop-blur"
-      :class="sameCustomer ? 'border-gray-200 bg-white/95' : 'border-amber-200 bg-amber-50'"
+      class="fixed inset-x-0 bottom-0 z-40 border-t border-hairline bg-paper/95 p-3 backdrop-blur"
     >
-      <div class="mx-auto flex max-w-5xl items-center gap-3">
+      <div class="mx-auto flex max-w-xl items-center gap-3">
         <div class="min-w-0 flex-1 text-sm">
           <template v-if="sameCustomer">
-            <span class="font-medium">{{ selected.length }} selected</span>
-            <span class="text-gray-500"> · {{ formatKES(bundleTotal) }}</span>
+            <span class="font-semibold text-ink">{{ selected.length }} selected</span>
+            <span class="font-mono tabular-nums text-ink/60"> · {{ formatKES(bundleTotal) }}</span>
           </template>
-          <span v-else class="font-medium text-amber-800">
-            {{ selected.length }} selected across different customers — bundling is per customer.
+          <span v-else class="font-medium text-owed">
+            Bundling is per customer — select one customer at a time.
           </span>
         </div>
-        <Button @click="clearSelection">Clear</Button>
-        <Button
+        <button type="button" class="h-11 rounded-xl px-4 font-medium text-ink/70" @click="clearSelection">
+          Clear
+        </button>
+        <button
           v-if="sameCustomer"
-          variant="solid"
-          theme="green"
-          :loading="creatingBundle"
+          type="button"
+          class="h-11 rounded-xl bg-mpesa px-5 font-semibold text-white disabled:opacity-50"
+          :disabled="creatingBundle"
           @click="createBundleNow"
         >
-          Pay together
-        </Button>
+          {{ creatingBundle ? '…' : 'Pay together' }}
+        </button>
       </div>
     </div>
 
-    <PromptDialog
-      :target="prompting"
-      @close="prompting = null"
-      @paid="onPaid"
-      @changed="resync"
-    />
+    <PromptDialog :target="prompting" @close="prompting = null" @paid="onPaid" @changed="resync" />
   </main>
 </template>

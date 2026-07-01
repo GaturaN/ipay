@@ -1,5 +1,5 @@
 <script setup>
-import { onUnmounted, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import {
   paymentState,
   promptMpesa,
@@ -7,10 +7,8 @@ import {
   saveCustomerContact,
 } from '@/data/collection'
 
-// Drives one M-Pesa STK prompt for a target — either a single invoice or an
-// existing request (a bundle, charged for its full amount). The number is ALWAYS
-// shown (pre-filled) so the operator confirms or changes it before any charge.
-// After sending, the request is polled until paid / partial / failed / timeout.
+// One M-Pesa STK prompt for a target (a single invoice or a bundle request). The
+// number is always shown pre-filled so the operator confirms it before charging.
 const props = defineProps({
   // null = hidden. { name, label, phone, kind: 'invoice' | 'request' }
   target: { type: Object, default: null },
@@ -22,12 +20,13 @@ const busy = ref(false)
 const message = ref(null) // { tone, text }
 let pollTimer = null
 
-const toneClass = {
-  info: 'text-blue-700',
-  success: 'text-green-700',
-  warn: 'text-amber-700',
-  error: 'text-red-700',
+const toneBox = {
+  info: 'bg-ink/5 text-ink/70',
+  success: 'bg-landed/10 text-landed',
+  warn: 'bg-owed/10 text-owed',
+  error: 'bg-red-500/10 text-red-600',
 }
+const waiting = computed(() => busy.value && message.value?.tone === 'info')
 
 watch(
   () => props.target,
@@ -66,7 +65,7 @@ async function send() {
       return
     }
     if (res.request) saveCustomerContact(res.request, phone.value).catch(() => {})
-    message.value = { tone: 'info', text: 'Prompt sent — waiting for payment…' }
+    message.value = { tone: 'info', text: 'Waiting for the customer to enter their PIN…' }
     startPolling(res.request)
   } catch (error) {
     busy.value = false
@@ -85,7 +84,7 @@ function startPolling(request) {
         emit('paid', props.target.name)
       } else if (state.partial) {
         settle('warn', 'Paid, but the amount differs — the team will reconcile it.')
-        emit('changed') // outstanding moved — let the list/stats resync
+        emit('changed')
       } else if (state.failed) {
         settle('error', 'Payment failed. Please try again.')
         emit('changed')
@@ -117,31 +116,49 @@ onUnmounted(stopPolling)
 <template>
   <div
     v-if="target"
-    class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-4 sm:items-center"
+    class="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 p-4 sm:items-center"
     @click.self="$emit('close')"
   >
-    <div class="w-full max-w-md rounded-2xl bg-white p-5">
-      <h2 class="text-lg font-semibold text-gray-900">Prompt M-Pesa</h2>
-      <p class="mt-0.5 truncate text-sm text-gray-500">{{ target.label }}</p>
+    <div class="w-full max-w-md rounded-3xl bg-paper p-6">
+      <p class="font-display text-xs font-semibold uppercase tracking-widest text-ink/50">
+        Prompt M-Pesa
+      </p>
+      <p class="mt-1 truncate text-lg font-semibold text-ink">{{ target.label }}</p>
 
       <FormControl
         v-model="phone"
-        class="mt-4"
+        class="mt-5"
         type="tel"
         label="M-Pesa number to charge"
         placeholder="e.g. 0712345678"
       />
-      <p class="mt-1 text-xs text-gray-400">Confirm or change the number before sending.</p>
+      <p class="mt-1 text-xs text-ink/40">Confirm or change the number before sending.</p>
 
-      <p v-if="message" class="mt-3 text-sm" :class="toneClass[message.tone]">
-        {{ message.text }}
-      </p>
+      <div
+        v-if="message"
+        class="mt-4 flex items-center gap-2 rounded-xl px-3 py-2 text-sm"
+        :class="toneBox[message.tone]"
+      >
+        <span v-if="waiting" class="h-2 w-2 shrink-0 animate-ping rounded-full bg-current" />
+        <span>{{ message.text }}</span>
+      </div>
 
-      <div class="mt-5 flex gap-2">
-        <Button class="flex-1" @click="$emit('close')">Close</Button>
-        <Button variant="solid" theme="green" class="flex-1" :loading="busy" @click="send">
-          Send prompt
-        </Button>
+      <div class="mt-6 flex gap-2">
+        <button
+          type="button"
+          class="h-12 flex-1 rounded-xl border border-hairline font-medium text-ink"
+          @click="$emit('close')"
+        >
+          Close
+        </button>
+        <button
+          type="button"
+          class="h-12 flex-1 rounded-xl bg-mpesa font-semibold text-white transition active:scale-[.98] disabled:opacity-40"
+          :disabled="busy"
+          @click="send"
+        >
+          {{ busy ? 'Waiting…' : 'Send prompt' }}
+        </button>
       </div>
     </div>
   </div>
