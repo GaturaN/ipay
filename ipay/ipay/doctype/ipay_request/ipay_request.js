@@ -18,7 +18,8 @@ frappe.ui.form.on('iPay Request', {
       // refuses these endpoints too — same single source of truth).
       if (submitted) {
          frappe.db.get_single_value('iPay Settings', 'enable_redirect').then((redirect) => {
-            if (!redirect) {
+            // Singles come back as strings, so "0" is truthy — coerce to int.
+            if (!cint(redirect)) {
                const field = frm.get_field('payment_link');
                if (field) {
                   field.$wrapper.html(
