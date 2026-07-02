@@ -627,13 +627,20 @@ def request_detail(request):
     if not req:
         frappe.throw("Unknown request.")
 
+    rows = frappe.get_all(
+        "iPay Request Invoice",
+        filters={"parent": request},
+        fields=["sales_invoice", "outstanding_amount"],
+    )
     invoices = [
-        name
-        for name in frappe.get_all(
-            "iPay Request Invoice", filters={"parent": request}, pluck="sales_invoice"
-        )
-        if name
-    ] or [req.sales_invoice]
+        {"name": r.sales_invoice, "amount": frappe.utils.flt(r.outstanding_amount)}
+        for r in rows
+        if r.sales_invoice
+    ]
+    if not invoices and req.sales_invoice:
+        # A single (non-bundle) request has no child rows; its one invoice carries the
+        # whole request amount.
+        invoices = [{"name": req.sales_invoice, "amount": frappe.utils.flt(req.amount)}]
     cancelled = req.docstatus == 2
     status = "Cancelled" if cancelled else (req.status or "Pending")
     is_bundle = len(invoices) > 1

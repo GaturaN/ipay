@@ -31,12 +31,12 @@ let pollTimer = null
 const SETTLED = ['Success', 'Underpaid', 'Overpaid', 'Cancelled']
 const promptable = computed(() => detail.value && !SETTLED.includes(detail.value.status))
 
-const statusTone = computed(() => {
+const statusPill = computed(() => {
   const s = detail.value?.status
-  if (s === 'Success') return 'text-green-700'
-  if (s === 'Underpaid' || s === 'Overpaid') return 'text-amber-700'
-  if (s === 'Failed' || s === 'Abandoned' || s === 'Cancelled') return 'text-red-700'
-  return 'text-gray-500'
+  if (s === 'Success') return 'bg-landed text-white'
+  if (s === 'Underpaid' || s === 'Overpaid') return 'bg-owed text-white'
+  if (s === 'Failed' || s === 'Abandoned' || s === 'Cancelled') return 'bg-danger text-white'
+  return 'bg-paper/20 text-paper'
 })
 
 async function load() {
@@ -165,56 +165,85 @@ onMounted(load)
 
 <template>
   <main class="mx-auto flex min-h-full w-full max-w-md flex-col gap-4 p-4">
-    <button class="self-start text-sm text-gray-500" @click="backToList">← Back</button>
+    <button class="self-start text-sm font-medium text-ink/70" @click="backToList">‹ Back</button>
 
-    <p v-if="loading" class="py-10 text-center text-sm text-gray-400">Loading…</p>
+    <p v-if="loading" class="py-10 text-center text-sm text-ink/50">Loading…</p>
 
     <template v-else-if="detail">
-      <header>
-        <h1 class="text-xl font-semibold text-gray-900">{{ detail.customer_name }}</h1>
-        <p class="text-sm text-gray-500">
-          {{ detail.name }} · {{ detail.is_bundle ? 'Bundle' : 'Single' }}
-        </p>
-      </header>
-
-      <div class="rounded-xl border border-gray-200 bg-white p-4">
-        <div class="flex items-baseline justify-between">
-          <span class="text-sm text-gray-500">Amount</span>
-          <span class="text-lg font-semibold tabular-nums">{{ formatKES(detail.amount) }}</span>
+      <section class="rounded-2xl bg-ink px-5 py-4 text-paper">
+        <p class="truncate font-display text-lg font-bold">{{ detail.customer_name }}</p>
+        <p class="mt-1 font-mono text-3xl font-semibold tabular-nums">{{ formatKES(detail.amount) }}</p>
+        <div class="mt-2 flex flex-wrap items-center gap-2">
+          <span class="rounded-full px-2.5 py-0.5 text-xs font-semibold" :class="statusPill">
+            {{ detail.status }}
+          </span>
+          <span class="font-mono text-xs text-paper/50">
+            {{ detail.name }} · {{ detail.is_bundle ? 'Bundle' : 'Single' }}
+          </span>
         </div>
-        <div class="mt-1 flex items-baseline justify-between">
-          <span class="text-sm text-gray-500">Status</span>
-          <span class="font-medium" :class="statusTone">{{ detail.status }}</span>
-        </div>
-        <p v-if="detail.result_detail" class="mt-2 text-xs text-gray-500">
-          {{ detail.result_detail }}
-        </p>
-      </div>
+      </section>
 
-      <div class="rounded-xl border border-gray-200 bg-white p-4">
-        <p class="text-sm font-medium text-gray-700">Invoices ({{ detail.invoices.length }})</p>
-        <ul class="mt-2 space-y-1 text-sm text-gray-600">
-          <li v-for="inv in detail.invoices" :key="inv" class="truncate">{{ inv }}</li>
+      <p v-if="detail.result_detail" class="rounded-xl bg-paper px-3 py-2 text-xs text-ink/70">
+        {{ detail.result_detail }}
+      </p>
+
+      <div class="rounded-2xl border border-hairline bg-white p-4">
+        <p class="font-display text-sm font-semibold text-ink">
+          {{ detail.is_bundle ? `Invoices (${detail.invoices.length})` : 'Invoice' }}
+        </p>
+        <ul class="mt-1 divide-y divide-hairline">
+          <li
+            v-for="inv in detail.invoices"
+            :key="inv.name"
+            class="flex items-center justify-between gap-3 py-2"
+          >
+            <span class="truncate font-mono text-sm text-ink/80">{{ inv.name }}</span>
+            <span class="shrink-0 font-mono text-sm font-semibold tabular-nums text-ink">
+              {{ formatKES(inv.amount) }}
+            </span>
+          </li>
         </ul>
       </div>
 
       <template v-if="promptable">
-        <Button variant="solid" theme="green" @click="promptNow">
-          Prompt M-Pesa (full amount)
-        </Button>
+        <button
+          type="button"
+          class="h-14 rounded-xl bg-mpesa text-lg font-semibold text-white transition active:scale-[.98]"
+          @click="promptNow"
+        >
+          Prompt M-Pesa — {{ formatKES(detail.amount) }}
+        </button>
 
-        <div v-if="detail.enable_redirect" class="rounded-xl border border-gray-200 bg-white p-4">
+        <div v-if="detail.enable_redirect" class="rounded-2xl border border-hairline bg-white p-4">
           <div class="flex gap-2">
-            <Button class="flex-1" :loading="linkBusy" @click="showLink">Payment link</Button>
-            <Button class="flex-1" :loading="linkBusy" @click="regenerate">Regenerate</Button>
+            <button
+              type="button"
+              class="h-11 flex-1 rounded-xl border border-hairline font-medium text-ink disabled:opacity-50"
+              :disabled="linkBusy"
+              @click="showLink"
+            >
+              {{ linkBusy ? '…' : 'Payment link' }}
+            </button>
+            <button
+              type="button"
+              class="h-11 flex-1 rounded-xl border border-hairline font-medium text-ink disabled:opacity-50"
+              :disabled="linkBusy"
+              @click="regenerate"
+            >
+              Regenerate
+            </button>
           </div>
           <div v-if="link" class="mt-3">
-            <div class="break-all rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs">
+            <div class="break-all rounded-lg border border-hairline bg-paper p-2 text-xs text-ink/80">
               {{ link }}
             </div>
-            <Button variant="subtle" class="mt-2 w-full" @click="copyLink">
+            <button
+              type="button"
+              class="mt-2 h-11 w-full rounded-xl bg-ink font-medium text-paper"
+              @click="copyLink"
+            >
               {{ copied ? 'Copied ✓' : 'Copy link' }}
-            </Button>
+            </button>
           </div>
         </div>
       </template>
