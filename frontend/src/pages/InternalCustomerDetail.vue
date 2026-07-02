@@ -89,12 +89,12 @@ function promptInvoice(inv) {
   }
 }
 
-async function collectSelected() {
-  if (!selected.value.length) return
+async function collect(names) {
+  if (!names.length) return
   creatingBundle.value = true
   collectError.value = false
   try {
-    const res = await createBundle(customer, selected.value.map((inv) => inv.name))
+    const res = await createBundle(customer, names)
     if (res?.request) router.push({ name: 'Request', params: { name: res.request } })
     else collectError.value = true
   } catch {
@@ -103,6 +103,12 @@ async function collectSelected() {
     creatingBundle.value = false
   }
 }
+const collectSelected = () => collect(selected.value.map((inv) => inv.name))
+const collectAll = () => collect(invoices.value.map((inv) => inv.name))
+
+// "Collect all" only when the whole balance is on screen — a big account paginates, so
+// there'd be more than the loaded rows to collect.
+const canCollectAll = computed(() => !hasMore.value && invoices.value.length > 1)
 
 function onPaid(name) {
   const paid = invoices.value.find((inv) => inv.name === name)
@@ -158,16 +164,23 @@ onMounted(() => load(true))
           class="h-11 w-full rounded-xl border border-hairline bg-white px-4 text-sm text-ink placeholder:text-ink/50 focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40 sm:max-w-sm"
           @input="onSearch"
         />
-        <div v-if="selected.length" class="flex gap-2 sm:ml-auto">
+        <div v-if="selected.length || canCollectAll" class="flex gap-2 sm:ml-auto">
           <button
             type="button"
             class="h-11 rounded-xl bg-mpesa px-5 font-semibold text-white disabled:opacity-50"
             :disabled="creatingBundle"
-            @click="collectSelected"
+            @click="selected.length ? collectSelected() : collectAll()"
           >
-            {{ creatingBundle ? '…' : `Collect ${selected.length} — ${formatKES(selectedTotal)}` }}
+            {{
+              creatingBundle
+                ? '…'
+                : selected.length
+                  ? `Collect ${selected.length} — ${formatKES(selectedTotal)}`
+                  : `Collect all — ${formatKES(total)}`
+            }}
           </button>
           <button
+            v-if="selected.length"
             type="button"
             class="h-11 rounded-xl border border-hairline px-4 font-medium text-ink/70"
             @click="clearSelection"

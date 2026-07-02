@@ -344,11 +344,33 @@ def _require_internal():
         frappe.throw("You are not permitted to use internal collection.", frappe.PermissionError)
 
 
+def _internal_outstanding(customer=None):
+    """All-terms outstanding invoices the internal tool may collect — prepaid and
+    actively-bundled invoices dropped (they must never be re-collected, and create_bundle
+    rejects them), newest first, optionally for one customer."""
+    filters = {"docstatus": 1, "is_return": 0, "outstanding_amount": [">", 0]}
+    if customer:
+        filters["customer"] = customer
+    invoices = frappe.get_all(
+        "Sales Invoice",
+        filters=filters,
+        fields=["name", "customer", "customer_name", "outstanding_amount", "posting_date", "due_date"],
+        order_by="posting_date desc",
+        limit_page_length=0,
+    )
+    prepaid = prepaid_invoice_names([inv.name for inv in invoices])
+    if prepaid:
+        invoices = [inv for inv in invoices if inv.name not in prepaid]
+    return _drop_bundled(invoices)
+
+
 @frappe.whitelist()
 def internal_customers():
     """Internal top level: every customer with an outstanding balance (ALL terms),
-    newest-invoice customer first. One aggregate query — the invoices themselves are
-    fetched lazily per customer, so nothing heavy loads upfront."""
+    newest-invoice customer first — one aggregate query, invoices fetched lazily per
+    customer. Grouped by customer id (max customer_name) so a diverged stored name still
+    collapses to one row. The few prepaid/bundled invoices are dropped in the drill-down,
+    not here (the whole-list prepaid scan costs ~1.5s to remove ~5 invoices)."""
     _require_internal()
     customers = frappe.get_all(
         "Sales Invoice",
@@ -368,40 +390,28 @@ def internal_customers():
 
 @frappe.whitelist()
 def internal_customer_invoices(customer, start=0, page_length=50, search=None):
-    """One customer's outstanding invoices for the internal drill-down: ALL terms,
-    newest first, paginated (big accounts hold thousands). `search` narrows by invoice
-    number within the customer; the header totals still cover the whole balance."""
+    """One customer's collectable invoices for the internal drill-down: ALL terms
+    (prepaid/bundled excluded), newest first, paginated (big accounts hold thousands).
+    `search` narrows by invoice number; the header totals cover the whole balance."""
     _require_internal()
     start, page_length = cint(start), cint(page_length) or 50
 
-    base = {"docstatus": 1, "is_return": 0, "outstanding_amount": [">", 0], "customer": customer}
-    totals = frappe.get_all(
-        "Sales Invoice",
-        filters=base,
-        fields=["sum(outstanding_amount) as total", "count(name) as cnt"],
-    )[0]
-
-    page_filters = dict(base)
+    invoices = _internal_outstanding(customer)
+    total = sum(flt(inv.outstanding_amount) for inv in invoices)
+    count = len(invoices)
     if search:
-        page_filters["name"] = ["like", f"%{search}%"]
-    # No search means page_filters == base, so reuse the count already taken above.
-    matched = frappe.db.count("Sales Invoice", page_filters) if search else cint(totals.cnt)
-    invoices = frappe.get_all(
-        "Sales Invoice",
-        filters=page_filters,
-        fields=["name", "customer", "customer_name", "outstanding_amount", "posting_date", "due_date"],
-        order_by="posting_date desc",
-        limit_start=start,
-        limit_page_length=page_length,
-    )
-    _annotate_delivery(invoices)
-    _annotate_customer_phone(invoices)
+        needle = search.strip().lower()
+        invoices = [inv for inv in invoices if needle in inv.name.lower()]
+
+    page = invoices[start : start + page_length]
+    _annotate_delivery(page)
+    _annotate_customer_phone(page)
     return {
         "customer": customer,
         "customer_name": frappe.db.get_value("Customer", customer, "customer_name") or customer,
-        "invoices": invoices,
-        "invoice_count": cint(totals.cnt),
-        "total_outstanding": flt(totals.total),
-        "has_more": start + page_length < matched,
+        "invoices": page,
+        "invoice_count": count,
+        "total_outstanding": total,
+        "has_more": start + page_length < len(invoices),
         "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
     }

@@ -1,5 +1,5 @@
 <script setup>
-import { formatKES } from '@/utils/format'
+import { formatKES, formatDate } from '@/utils/format'
 
 defineProps({
   customer: { type: Object, required: true },
@@ -19,7 +19,7 @@ defineProps({
       </p>
       <p class="text-xs text-ink/70">
         {{ customer.invoice_count }} invoice{{ customer.invoice_count === 1 ? '' : 's' }}
-        <span v-if="customer.latest_date"> · latest {{ customer.latest_date }}</span>
+        <span v-if="customer.latest_date"> · latest {{ formatDate(customer.latest_date) }}</span>
       </p>
     </div>
     <p class="shrink-0 font-mono text-xl font-semibold tabular-nums text-owed">
