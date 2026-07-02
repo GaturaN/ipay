@@ -7,6 +7,7 @@ import {
   getPaymentLink,
   paymentState,
   regeneratePaymentLink,
+  startRequestCheckout,
 } from '@/data/collection'
 import { formatKES } from '@/utils/format'
 import PromptDialog from '@/components/PromptDialog.vue'
@@ -23,6 +24,7 @@ const detail = ref(null)
 const loading = ref(true)
 const link = ref(null)
 const linkBusy = ref(false)
+const checkoutBusy = ref(false)
 const copied = ref(false)
 const linkExpiry = ref(null)
 const prompting = ref(null)
@@ -100,6 +102,16 @@ function onPaid() {
     detail.value.paid = true
   }
   stopPolling()
+}
+
+async function payViaIpay() {
+  checkoutBusy.value = true
+  try {
+    const res = await startRequestCheckout(name)
+    if (res?.url) window.location = res.url
+  } finally {
+    checkoutBusy.value = false
+  }
 }
 
 async function showLink() {
@@ -232,10 +244,20 @@ onMounted(load)
           M-Pesa isn't available for amounts over {{ formatKES(detail.mpesa_max) }}.
           {{
             detail.enable_redirect
-              ? 'Share the payment link or use Pay via iPay below.'
+              ? 'Use Pay via iPay below, or share the payment link.'
               : 'Card checkout is off — please contact the internal team.'
           }}
         </p>
+
+        <button
+          v-if="detail.enable_redirect"
+          type="button"
+          class="h-14 rounded-xl border-2 border-mpesa text-lg font-semibold text-mpesa transition active:scale-[.98] disabled:opacity-50"
+          :disabled="checkoutBusy"
+          @click="payViaIpay"
+        >
+          {{ checkoutBusy ? '…' : `Pay via iPay — ${formatKES(detail.amount)}` }}
+        </button>
 
         <div v-if="detail.enable_redirect" class="rounded-2xl border border-hairline bg-white p-4">
           <div class="flex gap-2">

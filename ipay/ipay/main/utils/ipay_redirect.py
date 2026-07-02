@@ -414,6 +414,18 @@ def start_checkout(invoice):
 
 
 @frappe.whitelist(methods=["POST"])
+def start_request_checkout(request):
+    """Hosted-checkout URL for an existing request/bundle — the operator's 'Pay via iPay'
+    on the request page. Mirrors start_checkout, but the request already exists (so the
+    full bundle amount is charged via card/Airtel/M-Pesa on the checkout page)."""
+    _require_operator()
+    _require_redirect_enabled()
+    _require_request_access(request)
+    token = _ensure_pay_token(request)
+    return {"url": f"/ipay_checkout?token={token}"}
+
+
+@frappe.whitelist(methods=["POST"])
 def get_payment_link(invoice=None, request=None):
     """Return a shareable, tokenised payment link for an invoice or request."""
     _require_operator()

@@ -23,6 +23,7 @@ const API = {
   regenerateLink: 'ipay.ipay.main.utils.ipay_redirect.regenerate_payment_link',
   discardBundle: 'ipay.ipay.main.utils.ipay_redirect.discard_bundle',
   startCheckout: 'ipay.ipay.main.utils.ipay_redirect.start_checkout',
+  startRequestCheckout: 'ipay.ipay.main.utils.ipay_redirect.start_request_checkout',
 }
 
 // Top-level list: customers with an outstanding collect-on-delivery balance,
@@ -79,3 +80,6 @@ export const discardBundle = (request) => call(API.discardBundle, { request })
 // start_checkout (POST) ensures the request + token and returns the hosted
 // checkout URL; the caller navigates there.
 export const startCheckout = (invoice) => call(API.startCheckout, { invoice })
+
+// Hosted checkout for an existing request/bundle (Pay via iPay on the request page).
+export const startRequestCheckout = (request) => call(API.startRequestCheckout, { request })
