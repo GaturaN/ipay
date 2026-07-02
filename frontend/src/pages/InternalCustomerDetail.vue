@@ -184,6 +184,9 @@ onMounted(() => load(true))
       <p v-if="collectError" class="-mt-2 px-1 text-sm text-danger">
         Couldn't start the collection — try again.
       </p>
+      <p v-if="invoices.length > 1 && !selected.length" class="-mt-2 px-1 text-xs text-ink/60">
+        Tick invoices to collect only some.
+      </p>
 
       <input
         v-model="search"
