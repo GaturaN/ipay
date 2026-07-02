@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { formatKES } from '@/utils/format'
 import { startCheckout } from '@/data/collection'
 
@@ -13,12 +13,6 @@ const props = defineProps({
 defineEmits(['prompt', 'toggle-select'])
 
 const checkoutBusy = ref(false)
-
-const meta = computed(() =>
-  [props.invoice.name, props.invoice.delivery_note, props.invoice.driver_name]
-    .filter(Boolean)
-    .join(' · '),
-)
 
 async function payViaIpay() {
   checkoutBusy.value = true
@@ -56,10 +50,13 @@ async function payViaIpay() {
       </button>
 
       <div class="min-w-0 flex-1">
-        <p class="truncate font-display text-base font-semibold text-ink">
-          {{ invoice.customer_name }}
+        <p class="truncate font-display text-base font-semibold text-ink">{{ invoice.name }}</p>
+        <p v-if="invoice.delivery_note" class="mt-0.5 break-words text-xs text-ink/70">
+          {{ invoice.delivery_note }}
         </p>
-        <p class="truncate text-xs text-ink/70">{{ meta }}</p>
+        <p v-if="invoice.driver_name" class="break-words text-xs text-ink/55">
+          {{ invoice.driver_name }}
+        </p>
       </div>
 
       <p class="shrink-0 font-mono text-xl font-semibold tabular-nums text-owed">
