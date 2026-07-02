@@ -157,43 +157,42 @@ onMounted(() => load(true))
         </p>
       </section>
 
-      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-        <input
-          v-model="search"
-          type="search"
-          aria-label="Search this customer's invoices"
-          placeholder="Search invoice number…"
-          class="h-11 w-full rounded-xl border border-hairline bg-white px-4 text-sm text-ink placeholder:text-ink/50 focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40 sm:max-w-sm"
-          @input="onSearch"
-        />
-        <div v-if="selected.length || canCollectAll" class="flex gap-2 sm:ml-auto">
-          <button
-            type="button"
-            class="h-11 rounded-xl bg-mpesa px-5 font-semibold text-white disabled:opacity-50"
-            :disabled="creatingBundle"
-            @click="selected.length ? collectSelected() : collectAll()"
-          >
-            {{
-              creatingBundle
-                ? '…'
-                : selected.length
-                  ? `Collect ${selected.length} — ${formatKES(selectedTotal)}`
-                  : `Collect all — ${formatKES(total)}`
-            }}
-          </button>
-          <button
-            v-if="selected.length"
-            type="button"
-            class="h-11 rounded-xl border border-hairline px-4 font-medium text-ink/70"
-            @click="clearSelection"
-          >
-            Clear
-          </button>
-        </div>
+      <div v-if="selected.length || canCollectAll" class="flex gap-2">
+        <button
+          type="button"
+          class="h-14 flex-1 rounded-xl bg-mpesa text-lg font-semibold text-white transition active:scale-[.98] disabled:opacity-50"
+          :disabled="creatingBundle"
+          @click="selected.length ? collectSelected() : collectAll()"
+        >
+          {{
+            creatingBundle
+              ? '…'
+              : selected.length
+                ? `Collect ${selected.length} — ${formatKES(selectedTotal)}`
+                : `Collect all — ${formatKES(total)}`
+          }}
+        </button>
+        <button
+          v-if="selected.length"
+          type="button"
+          class="h-14 shrink-0 rounded-xl border border-hairline px-5 font-medium text-ink/70"
+          @click="clearSelection"
+        >
+          Clear
+        </button>
       </div>
       <p v-if="collectError" class="-mt-2 px-1 text-sm text-danger">
         Couldn't start the collection — try again.
       </p>
+
+      <input
+        v-model="search"
+        type="search"
+        aria-label="Search this customer's invoices"
+        placeholder="Search invoice number…"
+        class="h-11 w-full rounded-xl border border-hairline bg-white px-4 text-sm text-ink placeholder:text-ink/50 focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40"
+        @input="onSearch"
+      />
 
       <div v-if="loading" class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         <div v-for="n in 6" :key="n" class="h-28 animate-pulse rounded-xl bg-ink/5" />

@@ -6,6 +6,7 @@ const props = defineProps({
   collectedToday: { type: Number, default: 0 },
   outstandingToday: { type: Number, default: 0 },
   remaining: { type: Number, default: 0 },
+  countLabel: { type: String, default: 'to collect' }, // 'customers' in internal mode
   loading: Boolean,
 })
 
@@ -33,7 +34,7 @@ const progress = computed(() => {
     </div>
     <div class="mt-2 flex justify-between font-mono text-xs tabular-nums text-paper/70">
       <span>{{ formatKES(outstandingToday) }} to go</span>
-      <span>{{ remaining }} to collect</span>
+      <span>{{ remaining }} {{ countLabel }}</span>
     </div>
   </section>
 </template>

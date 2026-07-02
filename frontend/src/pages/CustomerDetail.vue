@@ -32,6 +32,14 @@ const selectedTotal = computed(() =>
   selected.value.reduce((sum, inv) => sum + Number(inv.outstanding_amount || 0), 0),
 )
 
+// Narrow the shown invoices by number; "Collect all" still covers the whole balance.
+const search = ref('')
+const filtered = computed(() => {
+  const query = search.value.trim().toLowerCase()
+  if (!query) return invoices.value
+  return invoices.value.filter((inv) => inv.name.toLowerCase().includes(query))
+})
+
 const isSelected = (inv) => selected.value.some((i) => i.name === inv.name)
 
 function toggleSelect(inv) {
@@ -157,12 +165,24 @@ onMounted(load)
       Tick invoices to collect only some.
     </p>
 
+    <input
+      v-if="invoices.length > 1"
+      v-model="search"
+      type="search"
+      aria-label="Search this customer's invoices"
+      placeholder="Search invoice number…"
+      class="h-11 w-full rounded-xl border border-hairline bg-white px-4 text-sm text-ink placeholder:text-ink/50 focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40"
+    />
+
     <div v-if="loading" class="grid grid-cols-1 gap-3 md:grid-cols-2">
       <div v-for="n in 3" :key="n" class="h-28 animate-pulse rounded-xl bg-ink/5" />
     </div>
+    <p v-else-if="!filtered.length" class="py-16 text-center font-display text-ink/70">
+      No invoices match.
+    </p>
     <div v-else class="grid grid-cols-1 gap-3 md:grid-cols-2">
       <InvoiceCard
-        v-for="inv in invoices"
+        v-for="inv in filtered"
         :key="inv.name"
         :invoice="inv"
         :enable-redirect="enableRedirect"

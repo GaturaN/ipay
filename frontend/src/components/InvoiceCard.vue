@@ -51,9 +51,8 @@ async function payViaIpay() {
 
       <div class="min-w-0 flex-1">
         <p class="truncate font-display text-base font-semibold text-ink">{{ invoice.name }}</p>
-        <p v-if="invoice.posting_date || invoice.due_date" class="mt-0.5 text-xs text-ink/60">
-          <span v-if="invoice.posting_date">{{ formatDate(invoice.posting_date) }}</span>
-          <span v-if="invoice.due_date" class="text-ink/50"> · due {{ formatDate(invoice.due_date) }}</span>
+        <p v-if="invoice.due_date" class="mt-0.5 text-xs text-ink/60">
+          Due {{ formatDate(invoice.due_date) }}
         </p>
         <p v-if="invoice.delivery_note" class="break-words text-xs text-ink/70">
           {{ invoice.delivery_note }}

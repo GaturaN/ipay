@@ -22,10 +22,6 @@ const filtered = computed(() => {
   return customers.value.filter((c) => c.customer_name.toLowerCase().includes(query))
 })
 
-const invoiceCount = computed(() =>
-  filtered.value.reduce((sum, c) => sum + (c.invoice_count || 0), 0),
-)
-
 async function loadCustomers() {
   listLoading.value = true
   loadError.value = false
@@ -61,7 +57,8 @@ onMounted(() => {
     <RoundHeader
       :collected-today="stats.collected_today"
       :outstanding-today="stats.outstanding_today"
-      :remaining="invoiceCount"
+      :remaining="filtered.length"
+      count-label="customers"
       :loading="statsLoading"
     />
 
