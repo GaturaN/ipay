@@ -38,9 +38,11 @@ let searchTimer = null
 let loadSeq = 0 // guards against out-of-order load/search/load-more responses
 
 // Operators may tick a subset (across pages) to collect just those; per-invoice prompt
-// stays for one-offs.
+// stays for one-offs. Ticking only makes sense at 3+ invoices — 1 has nothing to bundle
+// and 2 are already covered by "Collect all" (count is the customer's full total).
 const { selected, isSelected, toggleSelect, clearSelection, dropSelected, selectedTotal } =
   useInvoiceSelection()
+const selectable = computed(() => count.value > 2)
 
 // Over the M-Pesa cap with no card fallback a bundle can't be paid (and hides its invoices
 // ~30 min) — block it and let the operator collect invoices individually.
@@ -91,8 +93,10 @@ function onSearch() {
 function promptInvoice(inv) {
   prompting.value = {
     name: inv.name,
-    label: `${inv.customer_name} · ${inv.name}`,
+    title: inv.customer_name,
+    subtitle: inv.name,
     phone: inv.customer_phone || '',
+    amount: Number(inv.outstanding_amount || 0),
     kind: 'invoice',
   }
 }
@@ -139,6 +143,7 @@ const toList = () =>
   })
 
 function onPaid(name) {
+  prompting.value = null // dismiss the success screen
   const paid = invoices.value.find((inv) => inv.name === name)
   invoices.value = invoices.value.filter((inv) => inv.name !== name)
   dropSelected(name)
@@ -183,7 +188,7 @@ onMounted(() => load(true))
         :bundle-blocked="bundleBlocked"
         :mpesa-max="mpesaMax"
         :collect-error="collectError"
-        :show-tick-hint="invoices.length > 1 && !selected.length"
+        :show-tick-hint="selectable && !selected.length"
         @collect="collectNow"
         @clear="clearSelection"
       />
@@ -211,7 +216,7 @@ onMounted(() => load(true))
             :invoice="inv"
             :enable-redirect="enableRedirect"
             :mpesa-max="mpesaMax"
-            :selectable="true"
+            :selectable="selectable"
             :selected="isSelected(inv)"
             :actions-disabled="selected.length > 0"
             @prompt="promptInvoice(inv)"

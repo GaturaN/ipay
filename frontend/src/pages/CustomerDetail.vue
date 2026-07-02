@@ -28,7 +28,9 @@ const prompting = ref(null)
 
 const { selected, isSelected, toggleSelect, clearSelection, dropSelected, selectedTotal } =
   useInvoiceSelection()
-const selectable = computed(() => canBundle.value && invoices.value.length > 1)
+// Ticking a subset only makes sense at 3+ invoices — 1 has nothing to bundle and 2 are
+// already covered by "Collect all".
+const selectable = computed(() => canBundle.value && invoices.value.length > 2)
 
 const total = computed(() =>
   invoices.value.reduce((sum, inv) => sum + Number(inv.outstanding_amount || 0), 0),
@@ -71,8 +73,10 @@ async function load() {
 function promptInvoice(inv) {
   prompting.value = {
     name: inv.name,
-    label: `${inv.customer_name} · ${inv.name}`,
+    title: inv.customer_name,
+    subtitle: inv.name,
     phone: inv.customer_phone || '',
+    amount: Number(inv.outstanding_amount || 0),
     kind: 'invoice',
   }
 }
@@ -105,6 +109,7 @@ const collectNow = () =>
 const toList = () => router.push({ name: 'Collect', query: driver ? { driver } : {} })
 
 function onPaid(name) {
+  prompting.value = null // dismiss the success screen
   invoices.value = invoices.value.filter((inv) => inv.name !== name)
   dropSelected(name)
   if (!invoices.value.length) toList()

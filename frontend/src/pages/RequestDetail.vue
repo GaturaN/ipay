@@ -95,8 +95,10 @@ watch(prompting, (target) => {
 function promptNow() {
   prompting.value = {
     name: detail.value.name,
-    label: `${detail.value.customer_name} · ${formatKES(detail.value.amount)}`,
+    title: detail.value.customer_name,
+    subtitle: detail.value.is_bundle ? 'Bundle' : '',
     phone: detail.value.customer_phone,
+    amount: Number(detail.value.amount || 0),
     kind: 'request',
   }
 }
@@ -107,6 +109,7 @@ function onPaid() {
     detail.value.paid = true
   }
   stopPolling()
+  prompting.value = null // dismiss the success screen
 }
 
 async function payViaIpay() {
