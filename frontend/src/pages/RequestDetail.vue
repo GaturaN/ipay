@@ -31,6 +31,11 @@ let pollTimer = null
 const SETTLED = ['Success', 'Underpaid', 'Overpaid', 'Cancelled']
 const promptable = computed(() => detail.value && !SETTLED.includes(detail.value.status))
 
+// M-Pesa can't process a charge over the ceiling — hide the prompt, steer to the link/iPay.
+const mpesaBlocked = computed(
+  () => detail.value && detail.value.mpesa_max > 0 && Number(detail.value.amount || 0) > detail.value.mpesa_max,
+)
+
 const statusPill = computed(() => {
   const s = detail.value?.status
   if (s === 'Success') return 'bg-landed text-white'
@@ -216,12 +221,21 @@ onMounted(load)
 
       <template v-if="promptable">
         <button
+          v-if="!mpesaBlocked"
           type="button"
           class="h-14 rounded-xl bg-mpesa text-lg font-semibold text-white transition active:scale-[.98]"
           @click="promptNow"
         >
           Prompt M-Pesa — {{ formatKES(detail.amount) }}
         </button>
+        <p v-else class="rounded-xl bg-owed/10 px-3 py-2 text-sm text-owed">
+          M-Pesa isn't available for amounts over {{ formatKES(detail.mpesa_max) }}.
+          {{
+            detail.enable_redirect
+              ? 'Share the payment link or use Pay via iPay below.'
+              : 'Card checkout is off — please contact the internal team.'
+          }}
+        </p>
 
         <div v-if="detail.enable_redirect" class="rounded-2xl border border-hairline bg-white p-4">
           <div class="flex gap-2">

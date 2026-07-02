@@ -14,6 +14,7 @@
   "request_for_cod",
   "collect_payment_terms",
   "enable_redirect",
+  "mpesa_max_amount",
   "payment_link_ttl_days",
   "cash_account"
  ],
@@ -67,6 +68,13 @@
    "fieldname": "enable_redirect",
    "fieldtype": "Check",
    "label": "Use Hosted Checkout Redirect"
+  },
+  {
+   "default": "250000",
+   "fieldname": "mpesa_max_amount",
+   "fieldtype": "Currency",
+   "label": "M-Pesa Max Amount",
+   "description": "Above this amount the M-Pesa STK prompt is hidden (M-Pesa can't process it) and only hosted checkout (card / Airtel) is offered. 0 = no cap."
   },
   {
    "fieldname": "payment_link_ttl_days",

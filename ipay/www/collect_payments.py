@@ -325,6 +325,7 @@ def customer_collection(customer, driver=None):
         "customer_name": invoices[0].customer_name if invoices else customer,
         "invoices": invoices,
         "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
+        "mpesa_max": flt(frappe.db.get_single_value("iPay Settings", "mpesa_max_amount")),
         "can_bundle": not is_collector_only(frappe.session.user),
     }
 
@@ -460,4 +461,5 @@ def internal_customer_invoices(customer, start=0, page_length=50, search=None, d
         "total_outstanding": total,
         "has_more": start + page_length < len(invoices),
         "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
+        "mpesa_max": flt(frappe.db.get_single_value("iPay Settings", "mpesa_max_amount")),
     }

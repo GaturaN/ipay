@@ -326,6 +326,12 @@ def _live_request_amount(request_name, sales_invoice):
     return total
 
 
+def _mpesa_max_amount():
+    """The M-Pesa STK ceiling (iPay Settings -> M-Pesa Max Amount, default 250,000). Above
+    it only hosted checkout (card/Airtel) is offered. 0/blank = no cap."""
+    return frappe.utils.flt(frappe.db.get_single_value("iPay Settings", "mpesa_max_amount"))
+
+
 def _enqueue_stk(request_name, phone):
     """Enqueue an M-Pesa STK push on the long worker (the verify loop can exceed
     the 30s gunicorn timeout); the reconcile poller backstops finalisation."""
@@ -357,6 +363,15 @@ def _enqueue_stk(request_name, phone):
     amount = _live_request_amount(request_name, req.sales_invoice)
     if amount <= 0:
         return {"status": "error", "message": "Nothing left to collect on this request."}
+
+    # M-Pesa can't process a charge over the configured ceiling — refuse it here so no
+    # path (operator, bundle, or the guest pay link) can enqueue an STK that would fail.
+    cap = _mpesa_max_amount()
+    if cap and amount > cap:
+        return {
+            "status": "error",
+            "message": f"M-Pesa isn't available for amounts over KES {cap:,.0f}. Please pay by card or via iPay.",
+        }
 
     # Per-request cooldown: a double-click (or a retried call) can't enqueue a
     # second STK prompt for the same request within the window — the operator
@@ -661,6 +676,8 @@ def request_detail(request):
         "paid": req.status == "Success",
         # Drives whether the detail page shows the payment-link actions.
         "enable_redirect": _redirect_enabled(),
+        # Above this the M-Pesa prompt is hidden (only hosted checkout can take it).
+        "mpesa_max": _mpesa_max_amount(),
     }
 
 

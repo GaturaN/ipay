@@ -15,6 +15,7 @@ const customerName = ref('')
 const invoices = ref([])
 const enableRedirect = ref(false)
 const canBundle = ref(false)
+const mpesaMax = ref(0)
 const loading = ref(true)
 const loadError = ref(false)
 const creatingBundle = ref(false)
@@ -60,6 +61,7 @@ async function load() {
     invoices.value = data.invoices || []
     enableRedirect.value = Boolean(data.enable_redirect)
     canBundle.value = Boolean(data.can_bundle)
+    mpesaMax.value = data.mpesa_max || 0
   } catch {
     loadError.value = true
   } finally {
@@ -186,6 +188,7 @@ onMounted(load)
         :key="inv.name"
         :invoice="inv"
         :enable-redirect="enableRedirect"
+        :mpesa-max="mpesaMax"
         :selectable="selectable"
         :selected="isSelected(inv)"
         :actions-disabled="selected.length > 0"

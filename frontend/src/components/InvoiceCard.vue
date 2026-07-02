@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { formatKES, formatDate } from '@/utils/format'
 import { startCheckout } from '@/data/collection'
 
@@ -9,10 +9,16 @@ const props = defineProps({
   selectable: Boolean,
   selected: Boolean,
   actionsDisabled: Boolean,
+  mpesaMax: { type: Number, default: 0 }, // M-Pesa ceiling; 0 = no cap
 })
 defineEmits(['prompt', 'toggle-select'])
 
 const checkoutBusy = ref(false)
+
+// M-Pesa can't process a charge over the ceiling — hide the prompt and steer to card/iPay.
+const mpesaBlocked = computed(
+  () => props.mpesaMax > 0 && Number(props.invoice.outstanding_amount || 0) > props.mpesaMax,
+)
 
 async function payViaIpay() {
   checkoutBusy.value = true
@@ -69,6 +75,7 @@ async function payViaIpay() {
 
     <div class="mt-3 flex gap-2">
       <button
+        v-if="!mpesaBlocked"
         type="button"
         class="h-12 flex-1 rounded-xl bg-mpesa font-semibold text-white transition active:scale-[.98] disabled:opacity-40"
         :disabled="actionsDisabled"
@@ -79,12 +86,16 @@ async function payViaIpay() {
       <button
         v-if="enableRedirect"
         type="button"
-        class="h-12 rounded-xl border border-hairline px-4 font-medium text-ink transition active:scale-[.98] disabled:opacity-40"
+        class="h-12 flex-1 rounded-xl border border-hairline px-4 font-medium text-ink transition active:scale-[.98] disabled:opacity-40"
         :disabled="actionsDisabled || checkoutBusy"
         @click="payViaIpay"
       >
         {{ checkoutBusy ? '…' : 'Card / other' }}
       </button>
     </div>
+    <p v-if="mpesaBlocked" class="mt-2 text-xs text-owed">
+      M-Pesa isn't available over {{ formatKES(mpesaMax) }}.
+      {{ enableRedirect ? 'Use Card / other.' : 'Card checkout is off — contact the internal team.' }}
+    </p>
   </article>
 </template>

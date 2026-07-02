@@ -20,6 +20,7 @@ const total = ref(0)
 const count = ref(0)
 const hasMore = ref(false)
 const enableRedirect = ref(false)
+const mpesaMax = ref(0)
 
 const loading = ref(true)
 const loadError = ref(false)
@@ -67,6 +68,7 @@ async function load(reset = true) {
     total.value = data.total_outstanding
     count.value = data.invoice_count
     enableRedirect.value = Boolean(data.enable_redirect)
+    mpesaMax.value = data.mpesa_max || 0
     invoices.value = reset ? data.invoices || [] : [...invoices.value, ...(data.invoices || [])]
     hasMore.value = Boolean(data.has_more)
   } catch {
@@ -159,7 +161,7 @@ onMounted(() => load(true))
         <p class="truncate font-display text-lg font-bold">{{ customerName }}</p>
         <p class="mt-1 font-mono text-3xl font-semibold tabular-nums">{{ formatKES(total) }}</p>
         <p class="text-sm text-paper/60">
-          {{ count }} invoice{{ count === 1 ? '' : 's' }} outstanding · all terms
+          {{ count }} invoice{{ count === 1 ? '' : 's' }} outstanding · {{ paymentTerm || 'all terms' }}
         </p>
       </section>
 
@@ -216,6 +218,7 @@ onMounted(() => load(true))
             :key="inv.name"
             :invoice="inv"
             :enable-redirect="enableRedirect"
+            :mpesa-max="mpesaMax"
             :selectable="true"
             :selected="isSelected(inv)"
             :actions-disabled="selected.length > 0"
