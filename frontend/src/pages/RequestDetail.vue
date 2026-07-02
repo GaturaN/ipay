@@ -154,7 +154,16 @@ async function discardIfNeeded() {
 // cancelled (not before) — otherwise its invoices look lost.
 async function backToList() {
   await discardIfNeeded()
-  router.push({ name: 'Collect' })
+  // Return to where the bundle was started: internal mode (that customer) or the field list.
+  if (route.query.from === 'internal') {
+    router.push(
+      route.query.customer
+        ? { name: 'InternalCustomer', params: { customer: route.query.customer } }
+        : { name: 'Internal' },
+    )
+  } else {
+    router.push({ name: 'Collect' })
+  }
 }
 
 // Fallback for browser-back / any other navigation away.

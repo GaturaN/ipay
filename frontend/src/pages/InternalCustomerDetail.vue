@@ -95,7 +95,9 @@ async function collect(names) {
   collectError.value = false
   try {
     const res = await createBundle(customer, names)
-    if (res?.request) router.push({ name: 'Request', params: { name: res.request } })
+    // Tag the origin so the request page's Back returns here, not to the field app.
+    if (res?.request)
+      router.push({ name: 'Request', params: { name: res.request }, query: { from: 'internal', customer } })
     else collectError.value = true
   } catch {
     collectError.value = true
