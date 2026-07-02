@@ -768,9 +768,14 @@ def pay_prompt_mpesa(token, phone):
 
 @frappe.whitelist(allow_guest=True)
 def pay_state(token):
-    """Poll target for the payment-link page (customer, by token). Returns only
-    coarse status — never the PII-bearing result_detail — to unauthenticated callers."""
+    """Poll target for the payment-link page (customer, by token). Exposes the specific
+    M-Pesa reason on a FAILED outcome (cancelled / wrong PIN / insufficient) — which is a
+    plain reason string, not PII — so the payer knows why; but never the success/partial
+    receipt detail (payer name/phone/ref) to an unauthenticated caller."""
     request_name = _request_from_token(token)
     if not request_name:
         return {"status": "", "paid": False, "failed": False}
-    return _payment_state(request_name)
+    state = _payment_state(request_name, include_detail=True)
+    if not state.get("failed"):
+        state["detail"] = ""
+    return state
