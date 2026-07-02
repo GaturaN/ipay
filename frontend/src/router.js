@@ -13,6 +13,16 @@ const routes = [
     component: () => import('@/pages/CustomerDetail.vue'),
   },
   {
+    path: '/internal',
+    name: 'Internal',
+    component: () => import('@/pages/InternalCollect.vue'),
+  },
+  {
+    path: '/internal/customer/:customer',
+    name: 'InternalCustomer',
+    component: () => import('@/pages/InternalCustomerDetail.vue'),
+  },
+  {
     path: '/request/:name',
     name: 'Request',
     component: () => import('@/pages/RequestDetail.vue'),

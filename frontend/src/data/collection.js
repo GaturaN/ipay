@@ -10,6 +10,8 @@ function call(method, params, httpMethod = 'POST') {
 const API = {
   collectionCustomers: 'ipay.www.collect_payments.collection_customers',
   customerCollection: 'ipay.www.collect_payments.customer_collection',
+  internalCustomers: 'ipay.www.collect_payments.internal_customers',
+  internalCustomerInvoices: 'ipay.www.collect_payments.internal_customer_invoices',
   collectionStats: 'ipay.www.collect_payments.collection_stats',
   promptMpesa: 'ipay.ipay.main.utils.ipay_redirect.prompt_mpesa',
   promptRequest: 'ipay.ipay.main.utils.ipay_redirect.prompt_request_mpesa',
@@ -32,8 +34,15 @@ export const fetchCollectionCustomers = (driver) =>
 export const fetchCustomerCollection = (customer, driver) =>
   call(API.customerCollection, { customer, driver: driver || '' }, 'GET')
 
-export const fetchCollectionStats = (driver) =>
-  call(API.collectionStats, { driver: driver || '' }, 'GET')
+export const fetchCollectionStats = (driver, allTerms) =>
+  call(API.collectionStats, { driver: driver || '', all_terms: allTerms ? 1 : 0 }, 'GET')
+
+// Internal (operator) mode: all-terms customer list (lazy) + one customer's invoices,
+// paginated + searchable.
+export const fetchInternalCustomers = () => call(API.internalCustomers, {}, 'GET')
+
+export const fetchInternalCustomerInvoices = (customer, { start = 0, pageLength = 50, search = '' } = {}) =>
+  call(API.internalCustomerInvoices, { customer, start, page_length: pageLength, search }, 'GET')
 
 export const promptMpesa = (invoice, phone) =>
   call(API.promptMpesa, { invoice, phone: phone || '' })

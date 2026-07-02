@@ -4,12 +4,13 @@ import { formatKES } from '@/utils/format'
 defineProps({
   customer: { type: Object, required: true },
   driver: { type: String, default: '' }, // carried through so the detail stays driver-scoped
+  routeName: { type: String, default: 'Customer' }, // 'InternalCustomer' for internal mode
 })
 </script>
 
 <template>
   <router-link
-    :to="{ name: 'Customer', params: { customer: customer.customer }, query: driver ? { driver } : {} }"
+    :to="{ name: routeName, params: { customer: customer.customer }, query: driver ? { driver } : {} }"
     class="flex items-center gap-3 rounded-xl border border-hairline bg-white p-4 transition-colors active:bg-mpesa/5"
   >
     <div class="min-w-0 flex-1">
@@ -18,6 +19,7 @@ defineProps({
       </p>
       <p class="text-xs text-ink/70">
         {{ customer.invoice_count }} invoice{{ customer.invoice_count === 1 ? '' : 's' }}
+        <span v-if="customer.latest_date"> · latest {{ customer.latest_date }}</span>
       </p>
     </div>
     <p class="shrink-0 font-mono text-xl font-semibold tabular-nums text-owed">

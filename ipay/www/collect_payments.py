@@ -1,5 +1,5 @@
 import frappe
-from frappe.utils import add_to_date, flt, now_datetime, today
+from frappe.utils import add_to_date, cint, flt, now_datetime, today
 
 from ipay.ipay.main.utils.prepaid import prepaid_invoice_names
 from ipay.ipay.main.utils.collector import is_collector_only, collector_scope
@@ -110,7 +110,6 @@ def _annotate_delivery(invoices):
         inv.delivery_note = ", ".join(dns)
         inv.drivers = sorted({driver_by_dn[n] for n in dns if driver_by_dn.get(n)})
         inv.driver_name = ", ".join(inv.drivers)
-        inv.driver_filter = "|".join(inv.drivers)  # pipe-joined for the Jinja data-attr
 
 
 def _collectable_terms():
@@ -144,7 +143,7 @@ def _outstanding_invoices(user, customer=None):
     invoices = frappe.get_all(
         "Sales Invoice",
         filters=si_filters,
-        fields=["name", "customer", "customer_name", "outstanding_amount", "posting_date"],
+        fields=["name", "customer", "customer_name", "outstanding_amount", "posting_date", "due_date"],
         order_by="posting_date asc",
         limit_page_length=0,
     )
@@ -152,28 +151,6 @@ def _outstanding_invoices(user, customer=None):
     if prepaid:
         invoices = [inv for inv in invoices if inv.name not in prepaid]
     return _drop_bundled(invoices)
-
-
-def _collection_invoices(user):
-    """Capped, annotated outstanding list for the legacy Jinja page (get_context).
-    The SPA uses the customer-grouped endpoints instead. Returns (invoices, drivers)."""
-    si_filters = _outstanding_si_filters(user)
-    invoices = frappe.get_all(
-        "Sales Invoice",
-        filters=si_filters,
-        fields=["name", "customer", "customer_name", "outstanding_amount", "posting_date"],
-        order_by="posting_date desc",
-        limit_page_length=100,
-    )
-    prepaid = prepaid_invoice_names([inv.name for inv in invoices])
-    if prepaid:
-        invoices = [inv for inv in invoices if inv.name not in prepaid]
-    invoices = _drop_bundled(invoices)
-    _annotate_delivery(invoices)
-    _annotate_customer_phone(invoices)
-
-    drivers = sorted({d for inv in invoices for d in inv.get("drivers", [])})
-    return invoices, drivers
 
 
 def _group_customers(invoices):
@@ -228,23 +205,20 @@ def _annotate_customer_phone(invoices):
 
 
 def get_context(context):
+    """The collection UI now lives in the SPA. This legacy route just redirects:
+    operators to internal mode (/collect/internal, all terms), field collectors to their
+    scoped app (/collect); guests log in first."""
     context.no_cache = 1
     if frappe.session.user == "Guest":
+        # Back to this route (not straight to /collect/internal) so the role branch below
+        # runs after login — a collector must land on /collect, not internal mode.
         frappe.local.flags.redirect_location = "/login?redirect-to=/collect_payments"
         raise frappe.Redirect
     _require_collection_access()
-
-    invoices, drivers = _collection_invoices(frappe.session.user)
-    context.invoices = invoices
-    context.drivers = drivers
-    context.enable_redirect = frappe.db.get_single_value("iPay Settings", "enable_redirect")
-    # Collectors can't bundle (create_bundle rejects them) — hide the bundle UI so
-    # it isn't a dead end, matching the SPA.
-    context.can_bundle = not is_collector_only(frappe.session.user)
-
-    stats = collection_stats()
-    context.collected_today = stats["collected_today"]
-    context.outstanding_today = stats["outstanding_today"]
+    frappe.local.flags.redirect_location = (
+        "/collect" if is_collector_only(frappe.session.user) else "/collect/internal"
+    )
+    raise frappe.Redirect
 
 
 def _invoices_for_driver_name(driver_name):
@@ -279,11 +253,12 @@ def _requests_for_invoices(invoices):
 
 
 @frappe.whitelist()
-def collection_stats(driver=None):
+def collection_stats(driver=None, all_terms=0):
     """Today's collected + yet-to-collect totals, optionally scoped to a single
     driver (by name) — backs the driver filter on the collection page. Operator/
     collector gated; a collector is always restricted to their own book, so the
-    driver argument can only narrow within it, never widen it."""
+    driver argument can only narrow within it, never widen it. `all_terms` drops the
+    collect-on-delivery term scope for the internal (all-terms) header."""
     _require_collection_access()
 
     today_date = today()
@@ -304,9 +279,10 @@ def collection_stats(driver=None):
 
     _, collected_today = _collected_totals(today_date, requests)
     out_filter = {"posting_date": today_date}
-    # Scope "to go" to the same collect-on-delivery terms as the customer list, so the
-    # header total never counts credit invoices that never appear on the page.
-    terms = _collectable_terms()
+    # Scope "to go" to the same collect-on-delivery terms as the field customer list, so
+    # the header total never counts credit invoices that never appear on the page. The
+    # internal (all-terms) header passes all_terms to keep every term in the figure.
+    terms = [] if cint(all_terms) else _collectable_terms()
     if terms:
         out_filter["payment_terms_template"] = ["in", terms]
     if invoices is not None:
@@ -350,4 +326,82 @@ def customer_collection(customer, driver=None):
         "invoices": invoices,
         "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
         "can_bundle": not is_collector_only(frappe.session.user),
+    }
+
+
+# --- Internal mode (/collect/internal) ------------------------------------------------
+# A full-operator tool to prompt ANY customer, ALL payment terms — the opposite of the
+# field app's collect-on-delivery scope. Customer-first + lazy: aggregate the customer
+# list in one query, then fetch a customer's invoices only when they are opened.
+
+INTERNAL_ROLES = {"System Manager", "iPay Manager", "iPay User"}
+
+
+def _require_internal():
+    """Internal collection is for full operators only — a field collector stays on the
+    scoped /collect app."""
+    if frappe.session.user == "Guest" or not (INTERNAL_ROLES & set(frappe.get_roles())):
+        frappe.throw("You are not permitted to use internal collection.", frappe.PermissionError)
+
+
+@frappe.whitelist()
+def internal_customers():
+    """Internal top level: every customer with an outstanding balance (ALL terms),
+    newest-invoice customer first. One aggregate query — the invoices themselves are
+    fetched lazily per customer, so nothing heavy loads upfront."""
+    _require_internal()
+    customers = frappe.get_all(
+        "Sales Invoice",
+        filters={"docstatus": 1, "is_return": 0, "outstanding_amount": [">", 0]},
+        fields=[
+            "customer",
+            "max(customer_name) as customer_name",
+            "sum(outstanding_amount) as total_outstanding",
+            "count(name) as invoice_count",
+            "max(posting_date) as latest_date",
+        ],
+        group_by="customer",
+        order_by="latest_date desc",
+    )
+    return {"customers": customers}
+
+
+@frappe.whitelist()
+def internal_customer_invoices(customer, start=0, page_length=50, search=None):
+    """One customer's outstanding invoices for the internal drill-down: ALL terms,
+    newest first, paginated (big accounts hold thousands). `search` narrows by invoice
+    number within the customer; the header totals still cover the whole balance."""
+    _require_internal()
+    start, page_length = cint(start), cint(page_length) or 50
+
+    base = {"docstatus": 1, "is_return": 0, "outstanding_amount": [">", 0], "customer": customer}
+    totals = frappe.get_all(
+        "Sales Invoice",
+        filters=base,
+        fields=["sum(outstanding_amount) as total", "count(name) as cnt"],
+    )[0]
+
+    page_filters = dict(base)
+    if search:
+        page_filters["name"] = ["like", f"%{search}%"]
+    # No search means page_filters == base, so reuse the count already taken above.
+    matched = frappe.db.count("Sales Invoice", page_filters) if search else cint(totals.cnt)
+    invoices = frappe.get_all(
+        "Sales Invoice",
+        filters=page_filters,
+        fields=["name", "customer", "customer_name", "outstanding_amount", "posting_date", "due_date"],
+        order_by="posting_date desc",
+        limit_start=start,
+        limit_page_length=page_length,
+    )
+    _annotate_delivery(invoices)
+    _annotate_customer_phone(invoices)
+    return {
+        "customer": customer,
+        "customer_name": frappe.db.get_value("Customer", customer, "customer_name") or customer,
+        "invoices": invoices,
+        "invoice_count": cint(totals.cnt),
+        "total_outstanding": flt(totals.total),
+        "has_more": start + page_length < matched,
+        "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
     }
