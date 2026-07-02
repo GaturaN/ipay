@@ -7,9 +7,11 @@ import {
   getPaymentLink,
   paymentState,
   regeneratePaymentLink,
+  startRequestCheckout,
 } from '@/data/collection'
 import { formatKES } from '@/utils/format'
 import PromptDialog from '@/components/PromptDialog.vue'
+import ErrorRetry from '@/components/ErrorRetry.vue'
 
 // The transient home for a request or bundle: live status, the invoices it
 // covers, prompt the full amount, and share/regenerate the link. An unpaid bundle
@@ -21,8 +23,10 @@ const name = route.params.name
 
 const detail = ref(null)
 const loading = ref(true)
+const loadError = ref(false)
 const link = ref(null)
 const linkBusy = ref(false)
+const checkoutBusy = ref(false)
 const copied = ref(false)
 const linkExpiry = ref(null)
 const prompting = ref(null)
@@ -31,19 +35,27 @@ let pollTimer = null
 const SETTLED = ['Success', 'Underpaid', 'Overpaid', 'Cancelled']
 const promptable = computed(() => detail.value && !SETTLED.includes(detail.value.status))
 
-const statusTone = computed(() => {
+// M-Pesa can't process a charge over the ceiling — hide the prompt, steer to the link/iPay.
+const mpesaBlocked = computed(
+  () => detail.value && detail.value.mpesa_max > 0 && Number(detail.value.amount || 0) > detail.value.mpesa_max,
+)
+
+const statusPill = computed(() => {
   const s = detail.value?.status
-  if (s === 'Success') return 'text-green-700'
-  if (s === 'Underpaid' || s === 'Overpaid') return 'text-amber-700'
-  if (s === 'Failed' || s === 'Abandoned' || s === 'Cancelled') return 'text-red-700'
-  return 'text-gray-500'
+  if (s === 'Success') return 'bg-landed text-white'
+  if (s === 'Underpaid' || s === 'Overpaid') return 'bg-owed text-white'
+  if (s === 'Failed' || s === 'Abandoned' || s === 'Cancelled') return 'bg-danger text-white'
+  return 'bg-paper/20 text-paper'
 })
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     detail.value = await fetchRequestDetail(name)
     if (promptable.value) startPolling()
+  } catch {
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -83,8 +95,10 @@ watch(prompting, (target) => {
 function promptNow() {
   prompting.value = {
     name: detail.value.name,
-    label: `${detail.value.customer_name} · ${formatKES(detail.value.amount)}`,
+    title: detail.value.customer_name,
+    subtitle: detail.value.is_bundle ? 'Bundle' : '',
     phone: detail.value.customer_phone,
+    amount: Number(detail.value.amount || 0),
     kind: 'request',
   }
 }
@@ -95,6 +109,17 @@ function onPaid() {
     detail.value.paid = true
   }
   stopPolling()
+  prompting.value = null // dismiss the success screen
+}
+
+async function payViaIpay() {
+  checkoutBusy.value = true
+  try {
+    const res = await startRequestCheckout(name)
+    if (res?.url) window.location = res.url
+  } finally {
+    checkoutBusy.value = false
+  }
 }
 
 async function showLink() {
@@ -154,7 +179,31 @@ async function discardIfNeeded() {
 // cancelled (not before) — otherwise its invoices look lost.
 async function backToList() {
   await discardIfNeeded()
-  router.push({ name: 'Collect' })
+  // Return to where the bundle was started: the customer it was built from (internal or
+  // field, preserving that page's scope), else the top list.
+  const q = route.query
+  if (q.from === 'internal') {
+    router.push(
+      q.customer
+        ? {
+            name: 'InternalCustomer',
+            params: { customer: q.customer },
+            query: {
+              ...(q.driver ? { driver: q.driver } : {}),
+              ...(q.payment_term ? { payment_term: q.payment_term } : {}),
+            },
+          }
+        : { name: 'Internal' },
+    )
+  } else if (q.from === 'field' && q.customer) {
+    router.push({
+      name: 'Customer',
+      params: { customer: q.customer },
+      query: q.driver ? { driver: q.driver } : {},
+    })
+  } else {
+    router.push({ name: 'Collect' })
+  }
 }
 
 // Fallback for browser-back / any other navigation away.
@@ -165,56 +214,109 @@ onMounted(load)
 
 <template>
   <main class="mx-auto flex min-h-full w-full max-w-md flex-col gap-4 p-4">
-    <button class="self-start text-sm text-gray-500" @click="backToList">← Back</button>
+    <button class="self-start text-sm font-medium text-ink/70" @click="backToList">‹ Back</button>
 
-    <p v-if="loading" class="py-10 text-center text-sm text-gray-400">Loading…</p>
+    <p v-if="loading" class="py-10 text-center text-sm text-ink/50">Loading…</p>
+
+    <ErrorRetry v-else-if="loadError" @retry="load" />
 
     <template v-else-if="detail">
-      <header>
-        <h1 class="text-xl font-semibold text-gray-900">{{ detail.customer_name }}</h1>
-        <p class="text-sm text-gray-500">
-          {{ detail.name }} · {{ detail.is_bundle ? 'Bundle' : 'Single' }}
-        </p>
-      </header>
-
-      <div class="rounded-xl border border-gray-200 bg-white p-4">
-        <div class="flex items-baseline justify-between">
-          <span class="text-sm text-gray-500">Amount</span>
-          <span class="text-lg font-semibold tabular-nums">{{ formatKES(detail.amount) }}</span>
+      <section class="rounded-2xl bg-ink px-5 py-4 text-paper">
+        <p class="truncate font-display text-lg font-bold">{{ detail.customer_name }}</p>
+        <p class="mt-1 font-mono text-3xl font-semibold tabular-nums">{{ formatKES(detail.amount) }}</p>
+        <div class="mt-2 flex flex-wrap items-center gap-2">
+          <span class="rounded-full px-2.5 py-0.5 text-xs font-semibold" :class="statusPill">
+            {{ detail.status }}
+          </span>
+          <span class="font-mono text-xs text-paper/50">
+            {{ detail.name }} · {{ detail.is_bundle ? 'Bundle' : 'Single' }}
+          </span>
         </div>
-        <div class="mt-1 flex items-baseline justify-between">
-          <span class="text-sm text-gray-500">Status</span>
-          <span class="font-medium" :class="statusTone">{{ detail.status }}</span>
-        </div>
-        <p v-if="detail.result_detail" class="mt-2 text-xs text-gray-500">
-          {{ detail.result_detail }}
-        </p>
-      </div>
+      </section>
 
-      <div class="rounded-xl border border-gray-200 bg-white p-4">
-        <p class="text-sm font-medium text-gray-700">Invoices ({{ detail.invoices.length }})</p>
-        <ul class="mt-2 space-y-1 text-sm text-gray-600">
-          <li v-for="inv in detail.invoices" :key="inv" class="truncate">{{ inv }}</li>
+      <p v-if="detail.result_detail" class="rounded-xl bg-paper px-3 py-2 text-xs text-ink/70">
+        {{ detail.result_detail }}
+      </p>
+
+      <div class="rounded-2xl border border-hairline bg-white p-4">
+        <p class="font-display text-sm font-semibold text-ink">
+          {{ detail.is_bundle ? `Invoices (${detail.invoices.length})` : 'Invoice' }}
+        </p>
+        <ul class="mt-1 divide-y divide-hairline">
+          <li
+            v-for="inv in detail.invoices"
+            :key="inv.name"
+            class="flex items-center justify-between gap-3 py-2"
+          >
+            <span class="truncate font-mono text-sm text-ink/80">{{ inv.name }}</span>
+            <span class="shrink-0 font-mono text-sm font-semibold tabular-nums text-ink">
+              {{ formatKES(inv.amount) }}
+            </span>
+          </li>
         </ul>
       </div>
 
       <template v-if="promptable">
-        <Button variant="solid" theme="green" @click="promptNow">
-          Prompt M-Pesa (full amount)
-        </Button>
+        <button
+          v-if="!mpesaBlocked"
+          type="button"
+          class="h-14 rounded-xl bg-mpesa text-lg font-semibold text-white transition active:scale-[.98]"
+          @click="promptNow"
+        >
+          Prompt M-Pesa — {{ formatKES(detail.amount) }}
+        </button>
+        <p v-else class="rounded-xl bg-owed/10 px-3 py-2 text-sm text-owed">
+          M-Pesa isn't available for amounts over {{ formatKES(detail.mpesa_max) }}.
+          {{
+            detail.enable_redirect
+              ? 'Use Pay via iPay below, or share the payment link.'
+              : 'Card checkout is off — please contact the internal team.'
+          }}
+        </p>
 
-        <div v-if="detail.enable_redirect" class="rounded-xl border border-gray-200 bg-white p-4">
+        <button
+          v-if="detail.enable_redirect"
+          type="button"
+          class="h-14 rounded-xl border-2 border-mpesa text-lg font-semibold text-mpesa transition active:scale-[.98] disabled:opacity-50"
+          :disabled="checkoutBusy"
+          :aria-busy="checkoutBusy"
+          @click="payViaIpay"
+        >
+          {{ checkoutBusy ? 'Opening…' : `Pay via iPay — ${formatKES(detail.amount)}` }}
+        </button>
+
+        <div v-if="detail.enable_redirect" class="rounded-2xl border border-hairline bg-white p-4">
           <div class="flex gap-2">
-            <Button class="flex-1" :loading="linkBusy" @click="showLink">Payment link</Button>
-            <Button class="flex-1" :loading="linkBusy" @click="regenerate">Regenerate</Button>
+            <button
+              type="button"
+              class="h-11 flex-1 rounded-xl border border-hairline font-medium text-ink disabled:opacity-50"
+              :disabled="linkBusy"
+              :aria-busy="linkBusy"
+              @click="showLink"
+            >
+              {{ linkBusy ? 'Loading…' : 'Payment link' }}
+            </button>
+            <button
+              type="button"
+              class="h-11 flex-1 rounded-xl border border-hairline font-medium text-ink disabled:opacity-50"
+              :disabled="linkBusy"
+              :aria-busy="linkBusy"
+              @click="regenerate"
+            >
+              Regenerate
+            </button>
           </div>
           <div v-if="link" class="mt-3">
-            <div class="break-all rounded-lg border border-gray-200 bg-gray-50 p-2 text-xs">
+            <div class="break-all rounded-lg border border-hairline bg-paper p-2 text-xs text-ink/80">
               {{ link }}
             </div>
-            <Button variant="subtle" class="mt-2 w-full" @click="copyLink">
+            <button
+              type="button"
+              class="mt-2 h-11 w-full rounded-xl bg-ink font-medium text-paper"
+              @click="copyLink"
+            >
               {{ copied ? 'Copied ✓' : 'Copy link' }}
-            </Button>
+            </button>
           </div>
         </div>
       </template>

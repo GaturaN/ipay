@@ -30,6 +30,11 @@ def get_context():
     if not set(frappe.get_roles()) & ALLOWED_ROLES:
         raise frappe.PermissionError("You do not have access to iPay Collect.")
 
+    # Freshness on resume/bfcache (e.g. returning from the hosted-checkout redirect) is
+    # handled client-side by useResumeRefresh's pageshow/visibilitychange refetch — it
+    # fires on bfcache restore regardless of HTTP caching. (A server Cache-Control header
+    # can't be set from a www get_context in this Frappe version: the website response is
+    # built from the renderer's headers, which this controller can't reach.)
     frappe.db.commit()
     context = frappe._dict()
     context.boot = get_boot()

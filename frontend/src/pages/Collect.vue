@@ -1,103 +1,52 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { createBundle, fetchCollectionList, fetchCollectionStats } from '@/data/collection'
-import { formatKES } from '@/utils/format'
-import StatCards from '@/components/StatCards.vue'
-import InvoiceCard from '@/components/InvoiceCard.vue'
-import PromptDialog from '@/components/PromptDialog.vue'
+import { useRoute } from 'vue-router'
+import { fetchCollectionCustomers, fetchCollectionStats } from '@/data/collection'
+import { useResumeRefresh } from '@/composables/useResumeRefresh'
+import CustomerListShell from '@/components/CustomerListShell.vue'
 
-const router = useRouter()
+const route = useRoute()
 
-const invoices = ref([])
+const customers = ref([])
 const drivers = ref([])
-const enableRedirect = ref(false)
-const canBundle = ref(false)
 const listLoading = ref(true)
+const loadError = ref(false)
 
 const stats = ref({ collected_today: 0, outstanding_today: 0 })
 const statsLoading = ref(false)
 
 const search = ref('')
-const driver = ref('') // '' = all drivers
+const driver = ref(route.query.driver || '') // restored when returning from a detail page
 
-// The M-Pesa prompt target for a single invoice (bundles open their detail page).
-const prompting = ref(null)
-
-// Bundling (operators only): a bundle must be ONE customer. The operator may
-// select freely, but "Pay together" only appears when every selected invoice
-// shares a customer — a mixed selection can never be prompted (the server
-// enforces this too).
-const selected = ref([])
-const creatingBundle = ref(false)
-
-const bundleCustomer = computed(() => selected.value[0]?.customer || null)
-const sameCustomer = computed(() => new Set(selected.value.map((i) => i.customer)).size <= 1)
-const bundleTotal = computed(() =>
-  selected.value.reduce((sum, inv) => sum + Number(inv.outstanding_amount || 0), 0),
-)
-
-// Search + driver filter run client-side over the loaded list; the stat cards
-// re-fetch per driver because "collected today" is computed server-side.
+// The driver filter is server-side (it scopes each customer's total); this only narrows the
+// loaded list — by customer name, invoice number, or delivery note.
 const filtered = computed(() => {
   const query = search.value.trim().toLowerCase()
-  return invoices.value.filter((inv) => {
-    const matchesDriver = !driver.value || (inv.drivers || []).includes(driver.value)
-    const haystack = `${inv.name} ${inv.customer_name} ${inv.delivery_note}`.toLowerCase()
-    return matchesDriver && (!query || haystack.includes(query))
-  })
+  if (!query) return customers.value
+  return customers.value.filter(
+    (c) =>
+      c.customer_name.toLowerCase().includes(query) ||
+      (c.keywords || []).some((k) => k.toLowerCase().includes(query)),
+  )
 })
 
-function promptInvoice(inv) {
-  prompting.value = {
-    name: inv.name,
-    label: `${inv.customer_name} · ${inv.name}`,
-    phone: inv.customer_phone || '',
-    kind: 'invoice',
-  }
-}
+const invoiceCount = computed(() =>
+  filtered.value.reduce((sum, c) => sum + (c.invoice_count || 0), 0),
+)
 
-function isSelected(inv) {
-  return selected.value.some((i) => i.name === inv.name)
-}
+const emptyMessage = computed(() =>
+  search.value.trim() ? 'No customers match your search.' : 'All collected — no customers owe you.',
+)
 
-function toggleSelect(inv) {
-  selected.value = isSelected(inv)
-    ? selected.value.filter((i) => i.name !== inv.name)
-    : [...selected.value, inv]
-}
-
-function clearSelection() {
-  selected.value = []
-}
-
-async function createBundleNow() {
-  if (!selected.value.length || !sameCustomer.value) return
-  const names = selected.value.map((i) => i.name)
-  creatingBundle.value = true
-  try {
-    const res = await createBundle(bundleCustomer.value, names)
-    if (res?.request) {
-      const bundled = new Set(names)
-      invoices.value = invoices.value.filter((inv) => !bundled.has(inv.name))
-      clearSelection()
-      // Land on the bundle's detail page to prompt the full amount, share the
-      // link, or split it.
-      router.push({ name: 'Request', params: { name: res.request } })
-    }
-  } finally {
-    creatingBundle.value = false
-  }
-}
-
-async function loadList() {
+async function loadCustomers() {
   listLoading.value = true
+  loadError.value = false
   try {
-    const data = await fetchCollectionList()
-    invoices.value = data.invoices || []
+    const data = await fetchCollectionCustomers(driver.value)
+    customers.value = data.customers || []
     drivers.value = data.drivers || []
-    enableRedirect.value = Boolean(data.enable_redirect)
-    canBundle.value = Boolean(data.can_bundle)
+  } catch {
+    loadError.value = true
   } finally {
     listLoading.value = false
   }
@@ -112,110 +61,48 @@ async function loadStats() {
   }
 }
 
-function onPaid(name) {
-  // For an invoice, drop it from the list; for a bundle the invoices were already
-  // removed at creation, so this is a no-op besides refreshing the stats.
-  invoices.value = invoices.value.filter((inv) => inv.name !== name)
+function refreshAll() {
+  loadCustomers()
   loadStats()
 }
 
-// A partial/failed payment moved an invoice's outstanding — re-pull the list.
-function resync() {
-  loadList()
-  loadStats()
-}
-
-onMounted(() => {
-  loadList()
-  loadStats()
-})
+useResumeRefresh(refreshAll) // re-pull when the PWA returns to the foreground
+onMounted(refreshAll)
 </script>
 
 <template>
-  <main class="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-4 p-4 pb-24">
-    <header>
-      <h1 class="text-xl font-semibold text-gray-900">Collect Payment</h1>
-      <p class="text-sm text-gray-500">Prompt a customer for payment.</p>
-    </header>
-
-    <StatCards
-      :collected-today="stats.collected_today"
-      :outstanding-today="stats.outstanding_today"
-      :loading="statsLoading"
-    />
-
-    <div class="flex flex-col gap-2 sm:flex-row">
+  <CustomerListShell
+    container-class="max-w-xl md:max-w-4xl"
+    title="Collect"
+    :collected-today="stats.collected_today"
+    :outstanding-today="stats.outstanding_today"
+    :remaining="invoiceCount"
+    :stats-loading="statsLoading"
+    :list-loading="listLoading"
+    :load-error="loadError"
+    :customers="filtered"
+    :empty-message="emptyMessage"
+    :card-driver="driver"
+    @retry="loadCustomers"
+  >
+    <template #filters>
       <input
         v-model="search"
         type="search"
-        placeholder="Search invoice, customer or delivery note…"
-        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+        aria-label="Search customer, invoice or delivery note"
+        placeholder="Search customer, invoice or DN…"
+        class="h-11 w-full rounded-xl border border-hairline bg-white px-4 text-sm text-ink placeholder:text-ink/50 focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40"
       />
       <select
         v-if="drivers.length"
         v-model="driver"
-        class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm sm:w-64"
-        @change="loadStats"
+        aria-label="Filter by driver"
+        class="h-11 w-full rounded-xl border border-hairline bg-white px-3 text-sm text-ink focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40 sm:w-48"
+        @change="refreshAll"
       >
         <option value="">All drivers</option>
         <option v-for="d in drivers" :key="d" :value="d">{{ d }}</option>
       </select>
-    </div>
-
-    <p v-if="listLoading" class="py-10 text-center text-sm text-gray-400">Loading…</p>
-    <p v-else-if="!filtered.length" class="py-10 text-center text-sm text-gray-400">
-      No invoices to collect.
-    </p>
-    <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      <InvoiceCard
-        v-for="inv in filtered"
-        :key="inv.name"
-        :invoice="inv"
-        :enable-redirect="enableRedirect"
-        :selectable="canBundle"
-        :selected="isSelected(inv)"
-        :actions-disabled="selected.length > 0"
-        @prompt="promptInvoice(inv)"
-        @toggle-select="toggleSelect(inv)"
-      />
-    </div>
-
-    <!-- Bundle bar: pinned to the bottom (always visible) while invoices are
-         selected. A mixed-customer selection turns it into a warning with no
-         "Pay together" button — bundling is per customer. -->
-    <div
-      v-if="selected.length"
-      class="fixed inset-x-0 bottom-0 z-40 border-t p-3 backdrop-blur"
-      :class="sameCustomer ? 'border-gray-200 bg-white/95' : 'border-amber-200 bg-amber-50'"
-    >
-      <div class="mx-auto flex max-w-5xl items-center gap-3">
-        <div class="min-w-0 flex-1 text-sm">
-          <template v-if="sameCustomer">
-            <span class="font-medium">{{ selected.length }} selected</span>
-            <span class="text-gray-500"> · {{ formatKES(bundleTotal) }}</span>
-          </template>
-          <span v-else class="font-medium text-amber-800">
-            {{ selected.length }} selected across different customers — bundling is per customer.
-          </span>
-        </div>
-        <Button @click="clearSelection">Clear</Button>
-        <Button
-          v-if="sameCustomer"
-          variant="solid"
-          theme="green"
-          :loading="creatingBundle"
-          @click="createBundleNow"
-        >
-          Pay together
-        </Button>
-      </div>
-    </div>
-
-    <PromptDialog
-      :target="prompting"
-      @close="prompting = null"
-      @paid="onPaid"
-      @changed="resync"
-    />
-  </main>
+    </template>
+  </CustomerListShell>
 </template>

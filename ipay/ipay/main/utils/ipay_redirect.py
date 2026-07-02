@@ -326,6 +326,12 @@ def _live_request_amount(request_name, sales_invoice):
     return total
 
 
+def _mpesa_max_amount():
+    """The M-Pesa STK ceiling (iPay Settings -> M-Pesa Max Amount, default 250,000). Above
+    it only hosted checkout (card/Airtel) is offered. 0/blank = no cap."""
+    return frappe.utils.flt(frappe.db.get_single_value("iPay Settings", "mpesa_max_amount"))
+
+
 def _enqueue_stk(request_name, phone):
     """Enqueue an M-Pesa STK push on the long worker (the verify loop can exceed
     the 30s gunicorn timeout); the reconcile poller backstops finalisation."""
@@ -358,21 +364,35 @@ def _enqueue_stk(request_name, phone):
     if amount <= 0:
         return {"status": "error", "message": "Nothing left to collect on this request."}
 
-    # Per-request cooldown: a double-click (or a retried call) can't enqueue a
-    # second STK prompt for the same request within the window — the operator
-    # prompt_mpesa path has no other guard (pay_prompt_mpesa adds a per-token one).
-    cache = frappe.cache()
-    cooldown_key = f"ipay_stk_req_cooldown:{request_name}"
-    if cache.get_value(cooldown_key):
+    # M-Pesa can't process a charge over the configured ceiling — refuse it here so no
+    # path (operator, bundle, or the guest pay link) can enqueue an STK that would fail.
+    cap = _mpesa_max_amount()
+    if cap and amount > cap:
         return {
             "status": "error",
-            "message": "An M-Pesa prompt was just sent for this request — please wait a moment before retrying.",
+            "message": f"M-Pesa isn't available for amounts over KES {cap:,.0f}. Please pay by card or via iPay.",
         }
-    cache.set_value(cooldown_key, 1, expires_in_sec=15)
 
-    frappe.enqueue(
+    # A retry after a terminal failure (cancelled / wrong PIN / insufficient / timeout):
+    # clear the old Failed/Abandoned status and its reason BEFORE the new STK, so the poll
+    # shows this attempt as in-flight instead of surfacing the previous error. lipana_mpesa
+    # writes the new outcome when it resolves.
+    if req.status in ("Failed", "Abandoned"):
+        frappe.db.set_value(
+            "iPay Request", request_name, {"status": "Pending", "result_detail": ""}
+        )
+        frappe.db.commit()
+
+    # One STK in flight per request: deduplicate on the request-scoped job id. A second
+    # prompt for the same request (double-click, two operators, desk + SPA) while the first
+    # is still QUEUED or RUNNING is refused by RQ — enqueue returns None — so the customer
+    # can't be double-charged. Once the worker finishes (any outcome), a fresh prompt queues
+    # normally, so a genuine retry still works.
+    job = frappe.enqueue(
         "ipay.ipay.main.main.lipana_mpesa",
         queue="long",
+        job_id=f"ipay_stk:{request_name}",
+        deduplicate=True,
         docid=request_name,
         user_id=req.customer,
         phone=phone,
@@ -381,6 +401,11 @@ def _enqueue_stk(request_name, phone):
         customer_email=req.customer_email,
         payment_request_type="Mpesa Express",
     )
+    if job is None:
+        return {
+            "status": "error",
+            "message": "An M-Pesa prompt is already in progress for this request — wait for it to finish.",
+        }
     return {"status": "sent", "message": "M-Pesa prompt sent. Awaiting payment."}
 
 
@@ -395,6 +420,18 @@ def start_checkout(invoice):
     _require_invoice_access(invoice)
     request_name = _ensure_request(invoice)
     token = _ensure_pay_token(request_name)
+    return {"url": f"/ipay_checkout?token={token}"}
+
+
+@frappe.whitelist(methods=["POST"])
+def start_request_checkout(request):
+    """Hosted-checkout URL for an existing request/bundle — the operator's 'Pay via iPay'
+    on the request page. Mirrors start_checkout, but the request already exists (so the
+    full bundle amount is charged via card/Airtel/M-Pesa on the checkout page)."""
+    _require_operator()
+    _require_redirect_enabled()
+    _require_request_access(request)
+    token = _ensure_pay_token(request)
     return {"url": f"/ipay_checkout?token={token}"}
 
 
@@ -627,13 +664,20 @@ def request_detail(request):
     if not req:
         frappe.throw("Unknown request.")
 
+    rows = frappe.get_all(
+        "iPay Request Invoice",
+        filters={"parent": request},
+        fields=["sales_invoice", "outstanding_amount"],
+    )
     invoices = [
-        name
-        for name in frappe.get_all(
-            "iPay Request Invoice", filters={"parent": request}, pluck="sales_invoice"
-        )
-        if name
-    ] or [req.sales_invoice]
+        {"name": r.sales_invoice, "amount": frappe.utils.flt(r.outstanding_amount)}
+        for r in rows
+        if r.sales_invoice
+    ]
+    if not invoices and req.sales_invoice:
+        # A single (non-bundle) request has no child rows; its one invoice carries the
+        # whole request amount.
+        invoices = [{"name": req.sales_invoice, "amount": frappe.utils.flt(req.amount)}]
     cancelled = req.docstatus == 2
     status = "Cancelled" if cancelled else (req.status or "Pending")
     is_bundle = len(invoices) > 1
@@ -654,6 +698,8 @@ def request_detail(request):
         "paid": req.status == "Success",
         # Drives whether the detail page shows the payment-link actions.
         "enable_redirect": _redirect_enabled(),
+        # Above this the M-Pesa prompt is hidden (only hosted checkout can take it).
+        "mpesa_max": _mpesa_max_amount(),
     }
 
 
@@ -722,9 +768,14 @@ def pay_prompt_mpesa(token, phone):
 
 @frappe.whitelist(allow_guest=True)
 def pay_state(token):
-    """Poll target for the payment-link page (customer, by token). Returns only
-    coarse status — never the PII-bearing result_detail — to unauthenticated callers."""
+    """Poll target for the payment-link page (customer, by token). Exposes the specific
+    M-Pesa reason on a FAILED outcome (cancelled / wrong PIN / insufficient) — which is a
+    plain reason string, not PII — so the payer knows why; but never the success/partial
+    receipt detail (payer name/phone/ref) to an unauthenticated caller."""
     request_name = _request_from_token(token)
     if not request_name:
         return {"status": "", "paid": False, "failed": False}
-    return _payment_state(request_name)
+    state = _payment_state(request_name, include_detail=True)
+    if not state.get("failed"):
+        state["detail"] = ""
+    return state

@@ -1,11 +1,12 @@
 import frappe
 
-from ipay.ipay.main.utils.ipay_redirect import resolve_pay_token
+from ipay.ipay.main.utils.ipay_redirect import _mpesa_max_amount, resolve_pay_token
 from ipay.www.collect_payments import ALLOWED_ROLES
 
 
 def get_context(context):
     context.no_cache = 1
+    context.favicon = "/assets/ipay/manifest/favicon-196.png"  # iPay Collect tab icon
     token = frappe.form_dict.get("token")
     request_name, status = resolve_pay_token(token)
 
@@ -48,6 +49,11 @@ def get_context(context):
     context.enable_redirect = frappe.db.get_single_value(
         "iPay Settings", "enable_redirect"
     )
+    # Above the M-Pesa ceiling the STK can't process the charge, so the page hides the
+    # M-Pesa option (only hosted checkout, if enabled, can take it).
+    mpesa_max = _mpesa_max_amount()
+    context.mpesa_ok = not mpesa_max or context.amount <= mpesa_max
+    context.mpesa_max = mpesa_max
 
     # Operator-only toolbar: copy the link to share, and a "back to collection" that
     # discards an unpaid bundle so its invoices return to the list. A guest paying a

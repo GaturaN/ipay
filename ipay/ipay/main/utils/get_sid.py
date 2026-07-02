@@ -64,12 +64,14 @@ def get_sid(vid: str, secret_key: str, amount: str, oid: str, phone: str, eml: s
         
         logger.info("Sending iPay transaction request: %s", transaction_payload)
         
-        # Send a POST request
+        # Send a POST request. iPay's /transact latency is variable (often several seconds,
+        # sometimes >15s); this runs in the long STK worker (no web timeout), so allow more
+        # headroom before giving up with "Failed to get session id".
         response = requests.post(
             "https://apis.ipayafrica.com/payments/v2/transact",
             data=transaction_payload,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=15  
+            timeout=45
         )
         
         # Raise HTTP error for bad responses

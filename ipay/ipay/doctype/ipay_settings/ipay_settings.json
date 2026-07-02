@@ -12,7 +12,9 @@
   "callback_secret",
   "is_live",
   "request_for_cod",
+  "collect_payment_terms",
   "enable_redirect",
+  "mpesa_max_amount",
   "payment_link_ttl_days",
   "cash_account"
  ],
@@ -55,10 +57,24 @@
    "label": "Automatically Create iPay Request for COD Customers Enabled"
   },
   {
+   "fieldname": "collect_payment_terms",
+   "fieldtype": "Table MultiSelect",
+   "label": "Collect Payment Terms",
+   "options": "iPay Collection Payment Term",
+   "description": "Only invoices on these payment terms appear in the Collect app (e.g. Cash on Delivery, End of Day) — the terms drivers settle on delivery. Leave empty to include every outstanding invoice."
+  },
+  {
    "default": "0",
    "fieldname": "enable_redirect",
    "fieldtype": "Check",
    "label": "Use Hosted Checkout Redirect"
+  },
+  {
+   "default": "250000",
+   "fieldname": "mpesa_max_amount",
+   "fieldtype": "Currency",
+   "label": "M-Pesa Max Amount",
+   "description": "Above this amount the M-Pesa STK prompt is hidden (M-Pesa can't process it) and only hosted checkout (card / Airtel) is offered. 0 = no cap."
   },
   {
    "fieldname": "payment_link_ttl_days",

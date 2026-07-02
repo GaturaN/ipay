@@ -45,6 +45,29 @@ def lipana_mpesa(
         )
         return {"status": "skipped", "message": "This request is no longer chargeable."}
 
+    # Enforce the M-Pesa STK ceiling on EVERY path — the desk button calls this directly,
+    # bypassing _enqueue_stk's check. Over the cap M-Pesa can't process the charge.
+    if payment_request_type == "Mpesa Express":
+        cap = frappe.utils.flt(frappe.db.get_single_value("iPay Settings", "mpesa_max_amount"))
+        if cap and frappe.utils.flt(amount) > cap:
+            create_log_entry("ERR", f"Amount {amount} exceeds the M-Pesa cap {cap} for {docid}")
+            frappe.throw(
+                f"M-Pesa isn't available for amounts over KES {cap:,.0f}. Please pay by card or via iPay."
+            )
+
+    # Persist the amount we're about to charge (the live outstanding at prompt time) so EVERY
+    # finaliser — the in-session worker, the reconcile backstop, and the manual Verify Payment —
+    # resolves Success/Under/Overpaid against what was actually charged, not a stale stored
+    # amount that would misread a correct payment as Underpaid.
+    frappe.db.set_value("iPay Request", docid, "amount", amount)
+
+    # A retry after a terminal failure: clear the old Failed/Abandoned status + reason so any
+    # poll shows this attempt as in-flight rather than the previous error. The SPA/token paths
+    # already reset in _enqueue_stk (this is a no-op then); this covers the direct desk call.
+    if state.get("status") in ("Failed", "Abandoned"):
+        frappe.db.set_value("iPay Request", docid, {"status": "Pending", "result_detail": ""})
+        frappe.db.commit()
+
     # set payment request type
     frappe.db.set_value(
         "iPay Request", docid, "payment_request_type", payment_request_type
@@ -104,9 +127,13 @@ def lipana_mpesa(
         # return immediately so the request can't time out (504). The enqueued run
         # has no request and falls through to the synchronous flow below.
         if getattr(frappe.local, "request", None):
-            frappe.enqueue(
+            # Same request-scoped dedup as _enqueue_stk so the desk button (which otherwise
+            # has no guard) can't fire a second STK while one is already queued/running.
+            job = frappe.enqueue(
                 "ipay.ipay.main.main.lipana_mpesa",
                 queue="long",
+                job_id=f"ipay_stk:{docid}",
+                deduplicate=True,
                 docid=docid,
                 user_id=user_id,
                 phone=phone,
@@ -115,6 +142,8 @@ def lipana_mpesa(
                 customer_email=customer_email,
                 payment_request_type=payment_request_type,
             )
+            if job is None:
+                return {"status": "error", "message": "An M-Pesa prompt is already in progress for this request — wait for it to finish."}
             return {"status": "processing", "message": "M-Pesa prompt is being sent; it will confirm shortly."}
 
         try:
@@ -140,8 +169,13 @@ def lipana_mpesa(
                 )
 
                 if not verification_response:
-                    create_log_entry("ERR", "Payment Verification Failed")
-                    frappe.throw("Payment Verification Failed")
+                    # Not confirmed within the verify window — the payment may still be
+                    # in flight (the customer can take up to ~60s to enter their PIN).
+                    # Leave the request Pending so reconcile_pending_payments finalises
+                    # it; marking it Failed here would tell the operator it failed (and
+                    # invite a double charge) while the money is still on its way.
+                    create_log_entry("INF", "Not yet confirmed; leaving Pending for the reconciler")
+                    return
 
                 # Finalise via the shared path: record the Payment Entry, set
                 # the request status (Success / Underpaid / Overpaid) and notify
@@ -150,8 +184,12 @@ def lipana_mpesa(
                 # Allocate against the request's own invoice/amount (read server-
                 # side inside finalize_payment), never the client-supplied oid —
                 # the STK lookup already used the request's own order id, so the
-                # money found is this request's.
-                result = finalize_payment(docid, data)
+                # money found is this request's. Resolve Success/Under/Overpaid
+                # against the amount the STK actually charged (live outstanding at
+                # prompt time), not the request's stored amount which may differ if
+                # a member invoice settled separately — else a correct payment reads
+                # as Underpaid.
+                result = finalize_payment(docid, data, expected_amount=amount)
                 response_data = result.get("response_data", {})
                 create_log_entry(
                     "INF", f"Payment received with response_data: {response_data}"

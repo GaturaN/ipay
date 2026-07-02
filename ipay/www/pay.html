@@ -64,6 +64,7 @@
 
         <div id="ipay-pay-alerts"></div>
 
+        {% if mpesa_ok %}
         <div class="opt text-left">
           <h6>Pay with M-Pesa</h6>
           <p class="muted small mb-2">Enter your M-Pesa number and we'll send a PIN prompt to your phone.</p>
@@ -72,6 +73,15 @@
             Send M-Pesa prompt
           </button>
         </div>
+        {% else %}
+        <div class="opt text-left">
+          <h6>M-Pesa not available</h6>
+          <p class="muted small mb-0">
+            M-Pesa can't process amounts over KES {{ "{:,.0f}".format(mpesa_max) }}.
+            {% if enable_redirect %}Please use the card / iPay option below.{% else %}Please contact the internal team to complete this payment.{% endif %}
+          </p>
+        </div>
+        {% endif %}
 
         {% if enable_redirect %}
         <div class="divider">— or —</div>
@@ -143,7 +153,12 @@ function ipayPayPoll() {
           ipayPayNotify("<strong>Payment received.</strong> The amount differs from the balance &mdash; our team will reconcile it shortly.", "info");
         } else if (s.failed) {
           clearInterval(iv);
-          ipayPayNotify("<strong>Payment failed.</strong> Please try again.", "danger");
+          // s.detail is the specific M-Pesa reason; escape it (www pages don't autoescape
+          // and ipayPayNotify writes innerHTML).
+          var reason = s.detail ? String(s.detail).replace(/[<>&"']/g, function (ch) {
+            return { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&#39;" }[ch];
+          }) : "";
+          ipayPayNotify("<strong>Payment failed.</strong> " + (reason || "Please try again."), "danger");
         } else if (tries >= max) {
           clearInterval(iv);
           ipayPayNotify("Still waiting for your payment. If you've paid, it will reflect shortly.", "warning");

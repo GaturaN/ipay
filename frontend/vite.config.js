@@ -34,8 +34,8 @@ export default defineConfig({
         display: 'standalone',
         scope: '/collect',
         start_url: '/collect',
-        theme_color: '#16a34a',
-        background_color: '#ffffff',
+        theme_color: '#007a36',
+        background_color: '#f2f5f1',
         icons: [
           { src: '/assets/ipay/manifest/manifest-icon-192.maskable.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
           { src: '/assets/ipay/manifest/manifest-icon-192.maskable.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
@@ -47,5 +47,8 @@ export default defineConfig({
   ],
   resolve: {
     alias: { '@': path.resolve(__dirname, 'src') },
+  },
+  build: {
+    reportCompressedSize: false,
   },
 })

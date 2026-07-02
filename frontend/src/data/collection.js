@@ -8,7 +8,10 @@ function call(method, params, httpMethod = 'POST') {
 }
 
 const API = {
-  collectionList: 'ipay.www.collect_payments.collection_list',
+  collectionCustomers: 'ipay.www.collect_payments.collection_customers',
+  customerCollection: 'ipay.www.collect_payments.customer_collection',
+  internalCustomers: 'ipay.www.collect_payments.internal_customers',
+  internalCustomerInvoices: 'ipay.www.collect_payments.internal_customer_invoices',
   collectionStats: 'ipay.www.collect_payments.collection_stats',
   promptMpesa: 'ipay.ipay.main.utils.ipay_redirect.prompt_mpesa',
   promptRequest: 'ipay.ipay.main.utils.ipay_redirect.prompt_request_mpesa',
@@ -20,12 +23,35 @@ const API = {
   regenerateLink: 'ipay.ipay.main.utils.ipay_redirect.regenerate_payment_link',
   discardBundle: 'ipay.ipay.main.utils.ipay_redirect.discard_bundle',
   startCheckout: 'ipay.ipay.main.utils.ipay_redirect.start_checkout',
+  startRequestCheckout: 'ipay.ipay.main.utils.ipay_redirect.start_request_checkout',
 }
 
-export const fetchCollectionList = () => call(API.collectionList, {}, 'GET')
+// Top-level list: customers with an outstanding collect-on-delivery balance,
+// optionally scoped to one driver's deliveries.
+export const fetchCollectionCustomers = (driver) =>
+  call(API.collectionCustomers, { driver: driver || '' }, 'GET')
 
-export const fetchCollectionStats = (driver) =>
-  call(API.collectionStats, { driver: driver || '' }, 'GET')
+// Drill-down: one customer's outstanding invoices, optionally driver-scoped.
+export const fetchCustomerCollection = (customer, driver) =>
+  call(API.customerCollection, { customer, driver: driver || '' }, 'GET')
+
+export const fetchCollectionStats = (driver, allTerms) =>
+  call(API.collectionStats, { driver: driver || '', all_terms: allTerms ? 1 : 0 }, 'GET')
+
+// Internal (operator) mode: all-terms customer list (lazy) + one customer's invoices,
+// paginated + searchable.
+export const fetchInternalCustomers = (driver, paymentTerm) =>
+  call(API.internalCustomers, { driver: driver || '', payment_term: paymentTerm || '' }, 'GET')
+
+export const fetchInternalCustomerInvoices = (
+  customer,
+  { start = 0, pageLength = 50, search = '', driver = '', paymentTerm = '' } = {},
+) =>
+  call(
+    API.internalCustomerInvoices,
+    { customer, start, page_length: pageLength, search, driver, payment_term: paymentTerm },
+    'GET',
+  )
 
 export const promptMpesa = (invoice, phone) =>
   call(API.promptMpesa, { invoice, phone: phone || '' })
@@ -54,3 +80,6 @@ export const discardBundle = (request) => call(API.discardBundle, { request })
 // start_checkout (POST) ensures the request + token and returns the hosted
 // checkout URL; the caller navigates there.
 export const startCheckout = (invoice) => call(API.startCheckout, { invoice })
+
+// Hosted checkout for an existing request/bundle (Pay via iPay on the request page).
+export const startRequestCheckout = (request) => call(API.startRequestCheckout, { request })
