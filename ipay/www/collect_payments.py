@@ -177,8 +177,9 @@ def _collection_invoices(user):
 
 
 def _group_customers(invoices):
-    """Group outstanding invoices by customer — total owed, invoice count, and the
-    invoice names (so the list can be searched by invoice) — most-owed first."""
+    """Group outstanding invoices by customer — total owed, invoice count, and search
+    keywords (each invoice's number and delivery note, so the list can be searched by
+    either) — most-owed first. Invoices must already be delivery-annotated."""
     by_customer = {}
     for inv in invoices:
         row = by_customer.get(inv.customer)
@@ -188,11 +189,13 @@ def _group_customers(invoices):
                 "customer_name": inv.customer_name or inv.customer,
                 "total_outstanding": 0.0,
                 "invoice_count": 0,
-                "invoices": [],
+                "keywords": [],
             }
         row["total_outstanding"] += flt(inv.outstanding_amount)
         row["invoice_count"] += 1
-        row["invoices"].append(inv.name)
+        row["keywords"].append(inv.name)
+        if inv.get("delivery_note"):
+            row["keywords"].append(inv.delivery_note)
     return sorted(by_customer.values(), key=lambda r: r["total_outstanding"], reverse=True)
 
 

@@ -16,14 +16,14 @@ const search = ref('')
 const driver = ref('')
 
 // The driver filter is applied server-side (it scopes each customer's total), so this
-// only narrows the loaded list — by customer name or by any of the customer's invoice numbers.
+// only narrows the loaded list — by customer name, invoice number, or delivery note.
 const filtered = computed(() => {
   const query = search.value.trim().toLowerCase()
   if (!query) return customers.value
   return customers.value.filter(
     (c) =>
       c.customer_name.toLowerCase().includes(query) ||
-      (c.invoices || []).some((name) => name.toLowerCase().includes(query)),
+      (c.keywords || []).some((k) => k.toLowerCase().includes(query)),
   )
 })
 
@@ -80,8 +80,8 @@ onMounted(() => {
       <input
         v-model="search"
         type="search"
-        aria-label="Search customer or invoice"
-        placeholder="Search customer or invoice…"
+        aria-label="Search customer, invoice or delivery note"
+        placeholder="Search customer, invoice or DN…"
         class="h-11 w-full rounded-xl border border-hairline bg-white px-4 text-sm text-ink placeholder:text-ink/50 focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40"
       />
       <select
