@@ -4,13 +4,18 @@ import { formatKES, formatDate } from '@/utils/format'
 defineProps({
   customer: { type: Object, required: true },
   driver: { type: String, default: '' }, // carried through so the detail stays driver-scoped
+  paymentTerm: { type: String, default: '' }, // carried through so the detail stays term-scoped
   routeName: { type: String, default: 'Customer' }, // 'InternalCustomer' for internal mode
 })
 </script>
 
 <template>
   <router-link
-    :to="{ name: routeName, params: { customer: customer.customer }, query: driver ? { driver } : {} }"
+    :to="{
+      name: routeName,
+      params: { customer: customer.customer },
+      query: { ...(driver ? { driver } : {}), ...(paymentTerm ? { payment_term: paymentTerm } : {}) },
+    }"
     class="flex items-center gap-3 rounded-xl border border-hairline bg-white p-4 transition-colors active:bg-mpesa/5"
   >
     <div class="min-w-0 flex-1">

@@ -2,7 +2,7 @@ import frappe
 from frappe.utils import add_to_date, cint, flt, now_datetime, today
 
 from ipay.ipay.main.utils.prepaid import all_prepaid_invoice_names, prepaid_invoice_names
-from ipay.ipay.main.utils.collector import is_collector_only, collector_scope
+from ipay.ipay.main.utils.collector import OPERATOR_ROLES, collector_scope, is_collector_only
 from ipay.ipay.main.utils.constants import ACTIVE_BUNDLE_WINDOW_MIN
 
 # Roles allowed to use the collection page.
@@ -334,23 +334,22 @@ def customer_collection(customer, driver=None):
 # field app's collect-on-delivery scope. Customer-first + lazy: aggregate the customer
 # list in one query, then fetch a customer's invoices only when they are opened.
 
-INTERNAL_ROLES = {"System Manager", "iPay Manager", "iPay User"}
-
-
 def _require_internal():
     """Internal collection is for full operators only — a field collector stays on the
     scoped /collect app."""
-    if frappe.session.user == "Guest" or not (INTERNAL_ROLES & set(frappe.get_roles())):
+    if frappe.session.user == "Guest" or not (OPERATOR_ROLES & set(frappe.get_roles())):
         frappe.throw("You are not permitted to use internal collection.", frappe.PermissionError)
 
 
-def _internal_outstanding(customer=None):
+def _internal_outstanding(customer=None, payment_term=None):
     """All-terms outstanding invoices the internal tool may collect — prepaid and
     actively-bundled invoices dropped (they must never be re-collected, and create_bundle
-    rejects them), newest first, optionally for one customer."""
+    rejects them), newest first, optionally scoped to one customer and/or payment term."""
     filters = {"docstatus": 1, "is_return": 0, "outstanding_amount": [">", 0]}
     if customer:
         filters["customer"] = customer
+    if payment_term:
+        filters["payment_terms_template"] = payment_term
     invoices = frappe.get_all(
         "Sales Invoice",
         filters=filters,
@@ -364,15 +363,52 @@ def _internal_outstanding(customer=None):
     return _drop_bundled(invoices)
 
 
+def _internal_driver_names():
+    """Active drivers who appear on submitted delivery notes — the internal driver filter's
+    options (Suspended/Left drivers are excluded). Driver.full_name is the name stored on
+    the delivery note."""
+    active = set(frappe.get_all("Driver", filters={"status": "Active"}, pluck="full_name"))
+    on_dns = frappe.get_all(
+        "Delivery Note",
+        filters={"docstatus": 1, "driver_name": ["is", "set"]},
+        pluck="driver_name",
+        distinct=True,
+    )
+    return sorted(name for name in on_dns if name and name in active)
+
+
+def _internal_payment_terms():
+    """Distinct payment-terms templates on outstanding invoices — the internal filter's
+    options (so a member can view e.g. only NET 30 invoices)."""
+    terms = frappe.get_all(
+        "Sales Invoice",
+        filters={
+            "docstatus": 1,
+            "is_return": 0,
+            "outstanding_amount": [">", 0],
+            "payment_terms_template": ["is", "set"],
+        },
+        pluck="payment_terms_template",
+        distinct=True,
+    )
+    return sorted({t for t in terms if t})
+
+
 @frappe.whitelist()
-def internal_customers():
+def internal_customers(driver=None, payment_term=None):
     """Internal top level: every customer with a COLLECTABLE balance (ALL terms, prepaid
-    /actively-bundled excluded), newest-invoice customer first. Invoices are fetched
-    lazily per customer. Excluding prepaid here (via the order-first lookup) keeps a
-    fully-prepaid customer from showing a balance that opens to an empty drill-down."""
+    /actively-bundled excluded), newest-invoice customer first, optionally scoped to one
+    driver's deliveries and/or a payment term; the driver and payment-term options are
+    returned for the filters. Invoices are fetched lazily per customer. Excluding prepaid
+    here (via the order-first lookup) keeps a fully-prepaid customer from showing a balance
+    that opens to an empty drill-down."""
     _require_internal()
+    invoices = _internal_outstanding(payment_term=payment_term)
+    if driver:
+        driver_invoices = _invoices_for_driver_name(driver)
+        invoices = [inv for inv in invoices if inv.name in driver_invoices]
     by_customer = {}
-    for inv in _internal_outstanding():
+    for inv in invoices:
         row = by_customer.get(inv.customer)
         if row is None:
             row = by_customer[inv.customer] = {
@@ -387,18 +423,26 @@ def internal_customers():
         if inv.posting_date and (not row["latest_date"] or inv.posting_date > row["latest_date"]):
             row["latest_date"] = inv.posting_date
     customers = sorted(by_customer.values(), key=lambda r: str(r["latest_date"] or ""), reverse=True)
-    return {"customers": customers}
+    return {
+        "customers": customers,
+        "drivers": _internal_driver_names(),
+        "payment_terms": _internal_payment_terms(),
+    }
 
 
 @frappe.whitelist()
-def internal_customer_invoices(customer, start=0, page_length=50, search=None):
+def internal_customer_invoices(customer, start=0, page_length=50, search=None, driver=None, payment_term=None):
     """One customer's collectable invoices for the internal drill-down: ALL terms
-    (prepaid/bundled excluded), newest first, paginated (big accounts hold thousands).
-    `search` narrows by invoice number; the header totals cover the whole balance."""
+    (prepaid/bundled excluded), newest first, paginated (big accounts hold thousands),
+    optionally scoped to one driver's deliveries and/or a payment term. `search` narrows by
+    invoice number; the header totals cover the whole (scoped) balance."""
     _require_internal()
     start, page_length = cint(start), cint(page_length) or 50
 
-    invoices = _internal_outstanding(customer)
+    invoices = _internal_outstanding(customer, payment_term=payment_term)
+    if driver:
+        driver_invoices = _invoices_for_driver_name(driver)
+        invoices = [inv for inv in invoices if inv.name in driver_invoices]
     total = sum(flt(inv.outstanding_amount) for inv in invoices)
     count = len(invoices)
     if search:

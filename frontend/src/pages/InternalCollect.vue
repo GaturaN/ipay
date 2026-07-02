@@ -15,6 +15,10 @@ const stats = ref({ collected_today: 0, outstanding_today: 0 })
 const statsLoading = ref(false)
 
 const search = ref('')
+const drivers = ref([])
+const driver = ref('')
+const paymentTerms = ref([])
+const paymentTerm = ref('')
 
 const filtered = computed(() => {
   const query = search.value.trim().toLowerCase()
@@ -26,8 +30,10 @@ async function loadCustomers() {
   listLoading.value = true
   loadError.value = false
   try {
-    const data = await fetchInternalCustomers()
+    const data = await fetchInternalCustomers(driver.value, paymentTerm.value)
     customers.value = data.customers || []
+    drivers.value = data.drivers || []
+    paymentTerms.value = data.payment_terms || []
   } catch {
     loadError.value = true
   } finally {
@@ -38,10 +44,16 @@ async function loadCustomers() {
 async function loadStats() {
   statsLoading.value = true
   try {
-    stats.value = await fetchCollectionStats('', true)
+    stats.value = await fetchCollectionStats(driver.value, true)
   } finally {
     statsLoading.value = false
   }
+}
+
+// The driver/term filters are server-side (they scope each customer's balance), so re-fetch.
+function onFilterChange() {
+  loadCustomers()
+  loadStats()
 }
 
 onMounted(() => {
@@ -62,13 +74,35 @@ onMounted(() => {
       :loading="statsLoading"
     />
 
-    <input
-      v-model="search"
-      type="search"
-      aria-label="Search customers"
-      placeholder="Search customer…"
-      class="h-11 w-full rounded-xl border border-hairline bg-white px-4 text-sm text-ink placeholder:text-ink/50 focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40 sm:max-w-sm"
-    />
+    <div class="flex flex-col gap-2 sm:flex-row">
+      <input
+        v-model="search"
+        type="search"
+        aria-label="Search customers"
+        placeholder="Search customer…"
+        class="h-11 w-full rounded-xl border border-hairline bg-white px-4 text-sm text-ink placeholder:text-ink/50 focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40 sm:max-w-sm"
+      />
+      <select
+        v-if="drivers.length"
+        v-model="driver"
+        aria-label="Filter by driver"
+        class="h-11 w-full rounded-xl border border-hairline bg-white px-3 text-sm text-ink focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40 sm:w-56"
+        @change="onFilterChange"
+      >
+        <option value="">All drivers</option>
+        <option v-for="d in drivers" :key="d" :value="d">{{ d }}</option>
+      </select>
+      <select
+        v-if="paymentTerms.length"
+        v-model="paymentTerm"
+        aria-label="Filter by payment term"
+        class="h-11 w-full rounded-xl border border-hairline bg-white px-3 text-sm text-ink focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40 sm:w-48"
+        @change="onFilterChange"
+      >
+        <option value="">All terms</option>
+        <option v-for="t in paymentTerms" :key="t" :value="t">{{ t }}</option>
+      </select>
+    </div>
 
     <div v-if="listLoading" class="grid grid-cols-1 gap-3 md:grid-cols-2">
       <div v-for="n in 6" :key="n" class="h-20 animate-pulse rounded-xl bg-ink/5" />
@@ -92,6 +126,8 @@ onMounted(() => {
         :key="c.customer"
         :customer="c"
         route-name="InternalCustomer"
+        :driver="driver"
+        :payment-term="paymentTerm"
       />
     </div>
   </main>

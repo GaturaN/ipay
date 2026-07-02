@@ -11,6 +11,8 @@ const PAGE = 50
 const route = useRoute()
 const router = useRouter()
 const customer = route.params.customer
+const driver = route.query.driver || '' // scope the detail to the driver picked on the list
+const paymentTerm = route.query.payment_term || '' // and to the payment term picked on the list
 
 const customerName = ref('')
 const invoices = ref([])
@@ -57,6 +59,8 @@ async function load(reset = true) {
       start: reset ? 0 : invoices.value.length,
       pageLength: PAGE,
       search: search.value.trim(),
+      driver,
+      paymentTerm,
     })
     if (seq !== loadSeq) return // a newer load/search superseded this response — drop it
     customerName.value = data.customer_name || customer
@@ -108,9 +112,11 @@ async function collect(names) {
 const collectSelected = () => collect(selected.value.map((inv) => inv.name))
 const collectAll = () => collect(invoices.value.map((inv) => inv.name))
 
-// "Collect all" only when the whole balance is on screen — a big account paginates, so
-// there'd be more than the loaded rows to collect.
-const canCollectAll = computed(() => !hasMore.value && invoices.value.length > 1)
+// "Collect all" only when the whole balance is on screen: no more pages AND no active
+// search (a search narrows the loaded rows, so "all" would bundle just the matches).
+const canCollectAll = computed(
+  () => !hasMore.value && invoices.value.length > 1 && !search.value.trim(),
+)
 
 function onPaid(name) {
   const paid = invoices.value.find((inv) => inv.name === name)

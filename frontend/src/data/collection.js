@@ -39,10 +39,18 @@ export const fetchCollectionStats = (driver, allTerms) =>
 
 // Internal (operator) mode: all-terms customer list (lazy) + one customer's invoices,
 // paginated + searchable.
-export const fetchInternalCustomers = () => call(API.internalCustomers, {}, 'GET')
+export const fetchInternalCustomers = (driver, paymentTerm) =>
+  call(API.internalCustomers, { driver: driver || '', payment_term: paymentTerm || '' }, 'GET')
 
-export const fetchInternalCustomerInvoices = (customer, { start = 0, pageLength = 50, search = '' } = {}) =>
-  call(API.internalCustomerInvoices, { customer, start, page_length: pageLength, search }, 'GET')
+export const fetchInternalCustomerInvoices = (
+  customer,
+  { start = 0, pageLength = 50, search = '', driver = '', paymentTerm = '' } = {},
+) =>
+  call(
+    API.internalCustomerInvoices,
+    { customer, start, page_length: pageLength, search, driver, payment_term: paymentTerm },
+    'GET',
+  )
 
 export const promptMpesa = (invoice, phone) =>
   call(API.promptMpesa, { invoice, phone: phone || '' })
