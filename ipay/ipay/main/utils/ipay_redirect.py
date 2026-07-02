@@ -385,6 +385,16 @@ def _enqueue_stk(request_name, phone):
         }
     cache.set_value(cooldown_key, 1, expires_in_sec=15)
 
+    # A retry after a terminal failure (cancelled / wrong PIN / insufficient / timeout):
+    # clear the old Failed/Abandoned status and its reason BEFORE the new STK, so the poll
+    # shows this attempt as in-flight instead of surfacing the previous error. lipana_mpesa
+    # writes the new outcome when it resolves.
+    if req.status in ("Failed", "Abandoned"):
+        frappe.db.set_value(
+            "iPay Request", request_name, {"status": "Pending", "result_detail": ""}
+        )
+        frappe.db.commit()
+
     frappe.enqueue(
         "ipay.ipay.main.main.lipana_mpesa",
         queue="long",
