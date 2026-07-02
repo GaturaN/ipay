@@ -1,7 +1,7 @@
 import frappe
 from frappe.utils import add_to_date, cint, flt, now_datetime, today
 
-from ipay.ipay.main.utils.prepaid import prepaid_invoice_names
+from ipay.ipay.main.utils.prepaid import all_prepaid_invoice_names, prepaid_invoice_names
 from ipay.ipay.main.utils.collector import is_collector_only, collector_scope
 from ipay.ipay.main.utils.constants import ACTIVE_BUNDLE_WINDOW_MIN
 
@@ -358,7 +358,7 @@ def _internal_outstanding(customer=None):
         order_by="posting_date desc",
         limit_page_length=0,
     )
-    prepaid = prepaid_invoice_names([inv.name for inv in invoices])
+    prepaid = all_prepaid_invoice_names()
     if prepaid:
         invoices = [inv for inv in invoices if inv.name not in prepaid]
     return _drop_bundled(invoices)
@@ -366,25 +366,27 @@ def _internal_outstanding(customer=None):
 
 @frappe.whitelist()
 def internal_customers():
-    """Internal top level: every customer with an outstanding balance (ALL terms),
-    newest-invoice customer first — one aggregate query, invoices fetched lazily per
-    customer. Grouped by customer id (max customer_name) so a diverged stored name still
-    collapses to one row. The few prepaid/bundled invoices are dropped in the drill-down,
-    not here (the whole-list prepaid scan costs ~1.5s to remove ~5 invoices)."""
+    """Internal top level: every customer with a COLLECTABLE balance (ALL terms, prepaid
+    /actively-bundled excluded), newest-invoice customer first. Invoices are fetched
+    lazily per customer. Excluding prepaid here (via the order-first lookup) keeps a
+    fully-prepaid customer from showing a balance that opens to an empty drill-down."""
     _require_internal()
-    customers = frappe.get_all(
-        "Sales Invoice",
-        filters={"docstatus": 1, "is_return": 0, "outstanding_amount": [">", 0]},
-        fields=[
-            "customer",
-            "max(customer_name) as customer_name",
-            "sum(outstanding_amount) as total_outstanding",
-            "count(name) as invoice_count",
-            "max(posting_date) as latest_date",
-        ],
-        group_by="customer",
-        order_by="latest_date desc",
-    )
+    by_customer = {}
+    for inv in _internal_outstanding():
+        row = by_customer.get(inv.customer)
+        if row is None:
+            row = by_customer[inv.customer] = {
+                "customer": inv.customer,
+                "customer_name": inv.customer_name or inv.customer,
+                "total_outstanding": 0.0,
+                "invoice_count": 0,
+                "latest_date": inv.posting_date,
+            }
+        row["total_outstanding"] += flt(inv.outstanding_amount)
+        row["invoice_count"] += 1
+        if inv.posting_date and (not row["latest_date"] or inv.posting_date > row["latest_date"]):
+            row["latest_date"] = inv.posting_date
+    customers = sorted(by_customer.values(), key=lambda r: str(r["latest_date"] or ""), reverse=True)
     return {"customers": customers}
 
 

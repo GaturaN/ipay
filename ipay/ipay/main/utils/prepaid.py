@@ -36,6 +36,26 @@ def is_sales_invoice_prepaid(sales_invoice):
     return False
 
 
+def all_prepaid_invoice_names():
+    """Every prepaid Sales Invoice name, traced from the (few) prepaid Sales Orders.
+    Far cheaper than prepaid_invoice_names when filtering a large set — it starts from
+    the prepaid orders instead of scanning every candidate invoice's line items."""
+    if not frappe.get_meta("Sales Order").has_field("wave_payment_classification"):
+        return set()
+    prepaid_orders = frappe.get_all(
+        "Sales Order",
+        filters={"wave_payment_classification": PREPAID_CLASSIFICATION},
+        pluck="name",
+    )
+    if not prepaid_orders:
+        return set()
+    return set(frappe.get_all(
+        "Sales Invoice Item",
+        filters={"sales_order": ["in", prepaid_orders]},
+        pluck="parent",
+    ))
+
+
 def prepaid_invoice_names(sales_invoices):
     """Subset of the given Sales Invoices that are prepaid (two batched queries).
 
