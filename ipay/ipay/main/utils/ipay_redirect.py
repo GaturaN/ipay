@@ -373,18 +373,6 @@ def _enqueue_stk(request_name, phone):
             "message": f"M-Pesa isn't available for amounts over KES {cap:,.0f}. Please pay by card or via iPay.",
         }
 
-    # Per-request cooldown: a double-click (or a retried call) can't enqueue a
-    # second STK prompt for the same request within the window — the operator
-    # prompt_mpesa path has no other guard (pay_prompt_mpesa adds a per-token one).
-    cache = frappe.cache()
-    cooldown_key = f"ipay_stk_req_cooldown:{request_name}"
-    if cache.get_value(cooldown_key):
-        return {
-            "status": "error",
-            "message": "An M-Pesa prompt was just sent for this request — please wait a moment before retrying.",
-        }
-    cache.set_value(cooldown_key, 1, expires_in_sec=15)
-
     # A retry after a terminal failure (cancelled / wrong PIN / insufficient / timeout):
     # clear the old Failed/Abandoned status and its reason BEFORE the new STK, so the poll
     # shows this attempt as in-flight instead of surfacing the previous error. lipana_mpesa
@@ -395,9 +383,16 @@ def _enqueue_stk(request_name, phone):
         )
         frappe.db.commit()
 
-    frappe.enqueue(
+    # One STK in flight per request: deduplicate on the request-scoped job id. A second
+    # prompt for the same request (double-click, two operators, desk + SPA) while the first
+    # is still QUEUED or RUNNING is refused by RQ — enqueue returns None — so the customer
+    # can't be double-charged. Once the worker finishes (any outcome), a fresh prompt queues
+    # normally, so a genuine retry still works.
+    job = frappe.enqueue(
         "ipay.ipay.main.main.lipana_mpesa",
         queue="long",
+        job_id=f"ipay_stk:{request_name}",
+        deduplicate=True,
         docid=request_name,
         user_id=req.customer,
         phone=phone,
@@ -406,6 +401,11 @@ def _enqueue_stk(request_name, phone):
         customer_email=req.customer_email,
         payment_request_type="Mpesa Express",
     )
+    if job is None:
+        return {
+            "status": "error",
+            "message": "An M-Pesa prompt is already in progress for this request — wait for it to finish.",
+        }
     return {"status": "sent", "message": "M-Pesa prompt sent. Awaiting payment."}
 
 

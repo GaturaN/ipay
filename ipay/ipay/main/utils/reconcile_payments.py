@@ -167,12 +167,15 @@ def _reconcile_one(req, vid, secret_key):
 
 
 def _search_transaction(oid, vid, secret_key):
-    """Single-shot lookup of a payment by order id. Returns the data dict if a
-    paid transaction is found, else None.
+    """Single-shot lookup of a payment by order id. Returns the data dict if a paid
+    transaction is found, or None ONLY for an authoritative "no record" (a payment
+    that genuinely isn't there). Any errored lookup RAISES so the caller retries and
+    never treats a transient iPay failure as "not paid" (which would abandon and
+    silently lose a genuinely-paid request).
 
-    iPay returns HTTP 404 ("no record found") while a payment is still pending,
-    so a missing transaction is treated as a quiet None rather than an error;
-    only genuine transport failures raise (caught and retried by the caller).
+    iPay uses HTTP 404 for "no record found" (still pending / never paid) — the only
+    clean not-paid signal. A 5xx/HTML/unparseable response is an errored lookup, not a
+    verdict, so it must raise rather than return None.
     """
     resp = requests.post(
         SEARCH_URL,
@@ -180,8 +183,13 @@ def _search_transaction(oid, vid, secret_key):
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         timeout=15,
     )
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()  # any other non-2xx is an errored lookup — raise, don't abandon
     try:
         data = resp.json().get("data") or {}
     except ValueError:
-        return None
+        # 2xx but not JSON (e.g. an HTML error/maintenance page) — an errored lookup,
+        # never a "not paid" verdict.
+        raise requests.RequestException(f"iPay search returned a non-JSON body for {oid}")
     return data if data.get("transaction_code") else None
