@@ -1,8 +1,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { fetchCollectionCustomers, fetchCollectionStats } from '@/data/collection'
+import { useResumeRefresh } from '@/composables/useResumeRefresh'
 import RoundHeader from '@/components/RoundHeader.vue'
 import CustomerCard from '@/components/CustomerCard.vue'
+
+const route = useRoute()
 
 const customers = ref([])
 const drivers = ref([])
@@ -13,7 +17,7 @@ const stats = ref({ collected_today: 0, outstanding_today: 0 })
 const statsLoading = ref(false)
 
 const search = ref('')
-const driver = ref('')
+const driver = ref(route.query.driver || '') // restored when returning from a detail page
 
 // The driver filter is applied server-side (it scopes each customer's total), so this
 // only narrows the loaded list — by customer name, invoice number, or delivery note.
@@ -59,10 +63,13 @@ function onDriverChange() {
   loadStats()
 }
 
-onMounted(() => {
+function refreshAll() {
   loadCustomers()
   loadStats()
-})
+}
+
+useResumeRefresh(refreshAll) // re-pull when the PWA returns to the foreground
+onMounted(refreshAll)
 </script>
 
 <template>
@@ -110,7 +117,7 @@ onMounted(() => {
       </button>
     </div>
     <p v-else-if="!filtered.length" class="py-16 text-center font-display text-ink/70">
-      All collected — no customers owe you.
+      {{ search.trim() ? 'No customers match your search.' : 'All collected — no customers owe you.' }}
     </p>
     <div v-else class="grid grid-cols-1 gap-3 md:grid-cols-2">
       <CustomerCard v-for="c in filtered" :key="c.customer" :customer="c" :driver="driver" />

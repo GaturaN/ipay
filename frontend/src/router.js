@@ -8,7 +8,8 @@ const routes = [
     component: () => import('@/pages/Collect.vue'),
   },
   {
-    path: '/customer/:customer',
+    // (.*) so customer ids containing '/' (real in this data) match into one param.
+    path: '/customer/:customer(.*)',
     name: 'Customer',
     component: () => import('@/pages/CustomerDetail.vue'),
   },
@@ -18,7 +19,7 @@ const routes = [
     component: () => import('@/pages/InternalCollect.vue'),
   },
   {
-    path: '/internal/customer/:customer',
+    path: '/internal/customer/:customer(.*)',
     name: 'InternalCustomer',
     component: () => import('@/pages/InternalCustomerDetail.vue'),
   },
@@ -26,6 +27,11 @@ const routes = [
     path: '/request/:name',
     name: 'Request',
     component: () => import('@/pages/RequestDetail.vue'),
+  },
+  // Unmatched URLs (typo, stale bookmark, mis-decoded path) land on the list, never blank.
+  {
+    path: '/:pathMatch(.*)*',
+    redirect: { name: 'Collect' },
   },
 ]
 

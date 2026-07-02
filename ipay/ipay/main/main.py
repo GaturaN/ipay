@@ -140,8 +140,13 @@ def lipana_mpesa(
                 )
 
                 if not verification_response:
-                    create_log_entry("ERR", "Payment Verification Failed")
-                    frappe.throw("Payment Verification Failed")
+                    # Not confirmed within the verify window — the payment may still be
+                    # in flight (the customer can take up to ~60s to enter their PIN).
+                    # Leave the request Pending so reconcile_pending_payments finalises
+                    # it; marking it Failed here would tell the operator it failed (and
+                    # invite a double charge) while the money is still on its way.
+                    create_log_entry("INF", "Not yet confirmed; leaving Pending for the reconciler")
+                    return
 
                 # Finalise via the shared path: record the Payment Entry, set
                 # the request status (Success / Underpaid / Overpaid) and notify

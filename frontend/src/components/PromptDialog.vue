@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import {
   paymentState,
   promptMpesa,
@@ -18,6 +18,7 @@ const emit = defineEmits(['close', 'paid', 'changed'])
 const phone = ref('')
 const busy = ref(false)
 const message = ref(null) // { tone, text }
+const dialogRef = ref(null)
 let pollTimer = null
 
 const toneBox = {
@@ -38,6 +39,7 @@ watch(
     message.value = null
     stopPolling()
     window[target ? 'addEventListener' : 'removeEventListener']('keydown', onKeydown)
+    if (target) nextTick(() => dialogRef.value?.querySelector('input')?.focus())
   },
 )
 
@@ -86,10 +88,12 @@ function startPolling(request) {
         settle('success', 'Payment received. Thank you!')
         emit('paid', props.target.name)
       } else if (state.partial) {
-        settle('warn', 'Paid, but the amount differs — the team will reconcile it.')
+        settle('warn', state.detail || 'Paid, but the amount differs — the team will reconcile it.')
         emit('changed')
       } else if (state.failed) {
-        settle('error', 'Payment failed. Please try again.')
+        // state.detail carries the specific M-Pesa reason (insufficient balance,
+        // wrong PIN, cancelled) the backend classified — show it, not just "failed".
+        settle('error', state.detail || 'Payment failed. Please try again.')
         emit('changed')
       } else if (tries >= 40) {
         settle('warn', 'Still waiting — it will reflect once the customer pays.')
@@ -126,6 +130,7 @@ onUnmounted(() => {
     @click.self="$emit('close')"
   >
     <div
+      ref="dialogRef"
       role="dialog"
       aria-modal="true"
       aria-labelledby="prompt-title"

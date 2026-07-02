@@ -30,6 +30,11 @@ def get_context():
     if not set(frappe.get_roles()) & ALLOWED_ROLES:
         raise frappe.PermissionError("You do not have access to iPay Collect.")
 
+    # Never let a cache (browser/bfcache/proxy) serve this authenticated shell — the
+    # operator must always boot against live data. no_cache=1 only skips Frappe's
+    # server-side HTML cache, not the client.
+    frappe.local.response.headers["Cache-Control"] = "no-store"
+
     frappe.db.commit()
     context = frappe._dict()
     context.boot = get_boot()

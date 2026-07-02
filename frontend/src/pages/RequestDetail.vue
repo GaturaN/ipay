@@ -22,6 +22,7 @@ const name = route.params.name
 
 const detail = ref(null)
 const loading = ref(true)
+const loadError = ref(false)
 const link = ref(null)
 const linkBusy = ref(false)
 const checkoutBusy = ref(false)
@@ -48,9 +49,12 @@ const statusPill = computed(() => {
 
 async function load() {
   loading.value = true
+  loadError.value = false
   try {
     detail.value = await fetchRequestDetail(name)
     if (promptable.value) startPolling()
+  } catch {
+    loadError.value = true
   } finally {
     loading.value = false
   }
@@ -171,13 +175,28 @@ async function discardIfNeeded() {
 // cancelled (not before) — otherwise its invoices look lost.
 async function backToList() {
   await discardIfNeeded()
-  // Return to where the bundle was started: internal mode (that customer) or the field list.
-  if (route.query.from === 'internal') {
+  // Return to where the bundle was started: the customer it was built from (internal or
+  // field, preserving that page's scope), else the top list.
+  const q = route.query
+  if (q.from === 'internal') {
     router.push(
-      route.query.customer
-        ? { name: 'InternalCustomer', params: { customer: route.query.customer } }
+      q.customer
+        ? {
+            name: 'InternalCustomer',
+            params: { customer: q.customer },
+            query: {
+              ...(q.driver ? { driver: q.driver } : {}),
+              ...(q.payment_term ? { payment_term: q.payment_term } : {}),
+            },
+          }
         : { name: 'Internal' },
     )
+  } else if (q.from === 'field' && q.customer) {
+    router.push({
+      name: 'Customer',
+      params: { customer: q.customer },
+      query: q.driver ? { driver: q.driver } : {},
+    })
   } else {
     router.push({ name: 'Collect' })
   }
@@ -194,6 +213,17 @@ onMounted(load)
     <button class="self-start text-sm font-medium text-ink/70" @click="backToList">‹ Back</button>
 
     <p v-if="loading" class="py-10 text-center text-sm text-ink/50">Loading…</p>
+
+    <div v-else-if="loadError" class="py-16 text-center">
+      <p class="font-display text-ink/70">Couldn't load — check your connection.</p>
+      <button
+        type="button"
+        class="mt-3 h-11 rounded-xl bg-mpesa px-5 font-semibold text-white"
+        @click="load"
+      >
+        Retry
+      </button>
+    </div>
 
     <template v-else-if="detail">
       <section class="rounded-2xl bg-ink px-5 py-4 text-paper">

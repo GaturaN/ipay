@@ -1,8 +1,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { fetchCollectionStats, fetchInternalCustomers } from '@/data/collection'
+import { useResumeRefresh } from '@/composables/useResumeRefresh'
 import RoundHeader from '@/components/RoundHeader.vue'
 import CustomerCard from '@/components/CustomerCard.vue'
+
+const route = useRoute()
 
 // Internal (operator) mode: every customer who owes, all payment terms, newest-invoice
 // customer first. The list is loaded once (one aggregate call); a customer's invoices
@@ -16,9 +20,9 @@ const statsLoading = ref(false)
 
 const search = ref('')
 const drivers = ref([])
-const driver = ref('')
+const driver = ref(route.query.driver || '') // restored when returning from a detail page
 const paymentTerms = ref([])
-const paymentTerm = ref('')
+const paymentTerm = ref(route.query.payment_term || '')
 
 const filtered = computed(() => {
   const query = search.value.trim().toLowerCase()
@@ -56,10 +60,13 @@ function onFilterChange() {
   loadStats()
 }
 
-onMounted(() => {
+function refreshAll() {
   loadCustomers()
   loadStats()
-})
+}
+
+useResumeRefresh(refreshAll) // re-pull when the PWA returns to the foreground
+onMounted(refreshAll)
 </script>
 
 <template>
@@ -118,7 +125,7 @@ onMounted(() => {
       </button>
     </div>
     <p v-else-if="!filtered.length" class="py-16 text-center font-display text-ink/70">
-      No customers with an outstanding balance.
+      {{ search.trim() ? 'No customers match your search.' : 'No customers with an outstanding balance.' }}
     </p>
     <div v-else class="grid grid-cols-1 gap-3 md:grid-cols-2">
       <CustomerCard

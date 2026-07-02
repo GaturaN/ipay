@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createBundle, fetchInternalCustomerInvoices } from '@/data/collection'
+import { useResumeRefresh } from '@/composables/useResumeRefresh'
 import { formatKES } from '@/utils/format'
 import InvoiceCard from '@/components/InvoiceCard.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
@@ -39,6 +40,14 @@ const selected = ref([])
 const selectedTotal = computed(() =>
   selected.value.reduce((sum, inv) => sum + Number(inv.outstanding_amount || 0), 0),
 )
+
+// Over the M-Pesa cap with no card fallback a bundle can't be paid (and hides its invoices
+// ~30 min) — block it and let the operator collect invoices individually.
+const bundleAmount = computed(() => (selected.value.length ? selectedTotal.value : total.value))
+const bundleBlocked = computed(
+  () => !enableRedirect.value && mpesaMax.value > 0 && bundleAmount.value > mpesaMax.value,
+)
+
 const isSelected = (inv) => selected.value.some((i) => i.name === inv.name)
 function toggleSelect(inv) {
   selected.value = isSelected(inv)
@@ -101,9 +110,18 @@ async function collect(names) {
   collectError.value = false
   try {
     const res = await createBundle(customer, names)
-    // Tag the origin so the request page's Back returns here, not to the field app.
+    // Tag the origin so the request page's Back returns here (with the same scope).
     if (res?.request)
-      router.push({ name: 'Request', params: { name: res.request }, query: { from: 'internal', customer } })
+      router.push({
+        name: 'Request',
+        params: { name: res.request },
+        query: {
+          from: 'internal',
+          customer,
+          ...(driver ? { driver } : {}),
+          ...(paymentTerm ? { payment_term: paymentTerm } : {}),
+        },
+      })
     else collectError.value = true
   } catch {
     collectError.value = true
@@ -120,6 +138,12 @@ const canCollectAll = computed(
   () => !hasMore.value && invoices.value.length > 1 && !search.value.trim(),
 )
 
+const toList = () =>
+  router.push({
+    name: 'Internal',
+    query: { ...(driver ? { driver } : {}), ...(paymentTerm ? { payment_term: paymentTerm } : {}) },
+  })
+
 function onPaid(name) {
   const paid = invoices.value.find((inv) => inv.name === name)
   invoices.value = invoices.value.filter((inv) => inv.name !== name)
@@ -128,10 +152,11 @@ function onPaid(name) {
   // settled — not merely when the loaded page emptied (a big account holds thousands).
   count.value = Math.max(0, count.value - 1)
   if (paid) total.value = Math.max(0, total.value - Number(paid.outstanding_amount || 0))
-  if (count.value <= 0) router.push({ name: 'Internal' })
+  if (count.value <= 0) toList()
   else if (!invoices.value.length) load(true)
 }
 
+useResumeRefresh(() => load(true)) // re-pull when the PWA returns to the foreground
 onMounted(() => load(true))
 </script>
 
@@ -140,7 +165,7 @@ onMounted(() => load(true))
     <button
       type="button"
       class="flex items-center gap-1 self-start text-sm font-medium text-ink/70"
-      @click="router.push({ name: 'Internal' })"
+      @click="toList"
     >
       ‹ All customers
     </button>
@@ -169,7 +194,7 @@ onMounted(() => load(true))
         <button
           type="button"
           class="h-14 flex-1 rounded-xl bg-mpesa text-lg font-semibold text-white transition active:scale-[.98] disabled:opacity-50"
-          :disabled="creatingBundle"
+          :disabled="creatingBundle || bundleBlocked"
           @click="selected.length ? collectSelected() : collectAll()"
         >
           {{
@@ -189,6 +214,9 @@ onMounted(() => load(true))
           Clear
         </button>
       </div>
+      <p v-if="bundleBlocked" class="-mt-2 px-1 text-xs text-owed">
+        This exceeds the M-Pesa limit ({{ formatKES(mpesaMax) }}) and card checkout is off — collect the invoices individually below.
+      </p>
       <p v-if="collectError" class="-mt-2 px-1 text-sm text-danger">
         Couldn't start the collection — try again.
       </p>
