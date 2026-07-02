@@ -3,9 +3,12 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createBundle, fetchInternalCustomerInvoices } from '@/data/collection'
 import { useResumeRefresh } from '@/composables/useResumeRefresh'
-import { formatKES } from '@/utils/format'
+import { useInvoiceSelection } from '@/composables/useInvoiceSelection'
 import InvoiceCard from '@/components/InvoiceCard.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
+import CustomerMoneyHeader from '@/components/CustomerMoneyHeader.vue'
+import CollectBar from '@/components/CollectBar.vue'
+import ErrorRetry from '@/components/ErrorRetry.vue'
 
 const PAGE = 50
 
@@ -35,11 +38,9 @@ let searchTimer = null
 let loadSeq = 0 // guards against out-of-order load/search/load-more responses
 
 // Operators may tick a subset (across pages) to collect just those; per-invoice prompt
-// stays for one-offs. No blanket "collect all" — a big account holds thousands.
-const selected = ref([])
-const selectedTotal = computed(() =>
-  selected.value.reduce((sum, inv) => sum + Number(inv.outstanding_amount || 0), 0),
-)
+// stays for one-offs.
+const { selected, isSelected, toggleSelect, clearSelection, dropSelected, selectedTotal } =
+  useInvoiceSelection()
 
 // Over the M-Pesa cap with no card fallback a bundle can't be paid (and hides its invoices
 // ~30 min) — block it and let the operator collect invoices individually.
@@ -47,14 +48,6 @@ const bundleAmount = computed(() => (selected.value.length ? selectedTotal.value
 const bundleBlocked = computed(
   () => !enableRedirect.value && mpesaMax.value > 0 && bundleAmount.value > mpesaMax.value,
 )
-
-const isSelected = (inv) => selected.value.some((i) => i.name === inv.name)
-function toggleSelect(inv) {
-  selected.value = isSelected(inv)
-    ? selected.value.filter((i) => i.name !== inv.name)
-    : [...selected.value, inv]
-}
-const clearSelection = () => (selected.value = [])
 
 async function load(reset = true) {
   const seq = ++loadSeq
@@ -129,8 +122,9 @@ async function collect(names) {
     creatingBundle.value = false
   }
 }
-const collectSelected = () => collect(selected.value.map((inv) => inv.name))
-const collectAll = () => collect(invoices.value.map((inv) => inv.name))
+// Ticked a subset → collect those; nothing ticked → the whole loaded balance.
+const collectNow = () =>
+  collect((selected.value.length ? selected.value : invoices.value).map((inv) => inv.name))
 
 // "Collect all" only when the whole balance is on screen: no more pages AND no active
 // search (a search narrows the loaded rows, so "all" would bundle just the matches).
@@ -147,7 +141,7 @@ const toList = () =>
 function onPaid(name) {
   const paid = invoices.value.find((inv) => inv.name === name)
   invoices.value = invoices.value.filter((inv) => inv.name !== name)
-  selected.value = selected.value.filter((inv) => inv.name !== name)
+  dropSelected(name)
   // Keep the header in step with the balance and only leave when the WHOLE customer is
   // settled — not merely when the loaded page emptied (a big account holds thousands).
   count.value = Math.max(0, count.value - 1)
@@ -170,59 +164,29 @@ onMounted(() => load(true))
       ‹ All customers
     </button>
 
-    <div v-if="loadError" class="py-16 text-center">
-      <p class="font-display text-ink/70">Couldn't load — check your connection.</p>
-      <button
-        type="button"
-        class="mt-3 h-11 rounded-xl bg-mpesa px-5 font-semibold text-white"
-        @click="load(true)"
-      >
-        Retry
-      </button>
-    </div>
+    <ErrorRetry v-if="loadError" @retry="load(true)" />
 
     <template v-else>
-      <section class="rounded-2xl bg-ink px-5 py-4 text-paper">
-        <p class="truncate font-display text-lg font-bold">{{ customerName }}</p>
-        <p class="mt-1 font-mono text-3xl font-semibold tabular-nums">{{ formatKES(total) }}</p>
-        <p class="text-sm text-paper/60">
-          {{ count }} invoice{{ count === 1 ? '' : 's' }} outstanding · {{ paymentTerm || 'all terms' }}
-        </p>
-      </section>
+      <CustomerMoneyHeader
+        :name="customerName"
+        :total="total"
+        :count="count"
+        :term="paymentTerm || 'all terms'"
+      />
 
-      <div v-if="selected.length || canCollectAll" class="flex gap-2">
-        <button
-          type="button"
-          class="h-14 flex-1 rounded-xl bg-mpesa text-lg font-semibold text-white transition active:scale-[.98] disabled:opacity-50"
-          :disabled="creatingBundle || bundleBlocked"
-          @click="selected.length ? collectSelected() : collectAll()"
-        >
-          {{
-            creatingBundle
-              ? '…'
-              : selected.length
-                ? `Collect ${selected.length} — ${formatKES(selectedTotal)}`
-                : `Collect all — ${formatKES(total)}`
-          }}
-        </button>
-        <button
-          v-if="selected.length"
-          type="button"
-          class="h-14 shrink-0 rounded-xl border border-hairline px-5 font-medium text-ink/70"
-          @click="clearSelection"
-        >
-          Clear
-        </button>
-      </div>
-      <p v-if="bundleBlocked" class="-mt-2 px-1 text-xs text-owed">
-        This exceeds the M-Pesa limit ({{ formatKES(mpesaMax) }}) and card checkout is off — collect the invoices individually below.
-      </p>
-      <p v-if="collectError" class="-mt-2 px-1 text-sm text-danger">
-        Couldn't start the collection — try again.
-      </p>
-      <p v-if="invoices.length > 1 && !selected.length" class="-mt-2 px-1 text-xs text-ink/60">
-        Tick invoices to collect only some.
-      </p>
+      <CollectBar
+        :show-bar="selected.length > 0 || canCollectAll"
+        :selected-count="selected.length"
+        :selected-total="selectedTotal"
+        :total="total"
+        :creating-bundle="creatingBundle"
+        :bundle-blocked="bundleBlocked"
+        :mpesa-max="mpesaMax"
+        :collect-error="collectError"
+        :show-tick-hint="invoices.length > 1 && !selected.length"
+        @collect="collectNow"
+        @clear="clearSelection"
+      />
 
       <input
         v-model="search"
@@ -259,9 +223,10 @@ onMounted(() => load(true))
           type="button"
           class="mx-auto h-11 rounded-xl border border-hairline px-6 font-medium text-ink disabled:opacity-50"
           :disabled="loadingMore"
+          :aria-busy="loadingMore"
           @click="load(false)"
         >
-          {{ loadingMore ? '…' : 'Load more' }}
+          {{ loadingMore ? 'Loading…' : 'Load more' }}
         </button>
       </template>
 

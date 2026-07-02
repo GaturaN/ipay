@@ -29,7 +29,25 @@ const toneBox = {
 }
 const waiting = computed(() => busy.value && message.value?.tone === 'info')
 
-const onKeydown = (e) => e.key === 'Escape' && emit('close')
+// Close on Escape and trap Tab within the dialog (keyboard/AT users can't wander to the
+// page behind the modal).
+function onKeydown(e) {
+  if (e.key === 'Escape') return emit('close')
+  if (e.key !== 'Tab') return
+  const items = Array.from(
+    dialogRef.value?.querySelectorAll('input, button, [href], [tabindex]:not([tabindex="-1"])') || [],
+  ).filter((el) => !el.disabled)
+  if (!items.length) return
+  const first = items[0]
+  const last = items[items.length - 1]
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault()
+    first.focus()
+  }
+}
 
 watch(
   () => props.target,
@@ -171,6 +189,7 @@ onUnmounted(() => {
           type="button"
           class="h-12 flex-1 rounded-xl bg-mpesa font-semibold text-white transition active:scale-[.98] disabled:opacity-40"
           :disabled="busy"
+          :aria-busy="busy"
           @click="send"
         >
           {{ busy ? 'Waiting…' : 'Send prompt' }}

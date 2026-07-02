@@ -3,9 +3,12 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createBundle, fetchCustomerCollection } from '@/data/collection'
 import { useResumeRefresh } from '@/composables/useResumeRefresh'
-import { formatKES } from '@/utils/format'
+import { useInvoiceSelection } from '@/composables/useInvoiceSelection'
 import InvoiceCard from '@/components/InvoiceCard.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
+import CustomerMoneyHeader from '@/components/CustomerMoneyHeader.vue'
+import CollectBar from '@/components/CollectBar.vue'
+import ErrorRetry from '@/components/ErrorRetry.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -23,15 +26,12 @@ const creatingBundle = ref(false)
 const collectError = ref(false)
 const prompting = ref(null)
 
-// Operators may tick a subset to collect only some invoices; nothing ticked = collect all.
-const selected = ref([])
+const { selected, isSelected, toggleSelect, clearSelection, dropSelected, selectedTotal } =
+  useInvoiceSelection()
 const selectable = computed(() => canBundle.value && invoices.value.length > 1)
 
 const total = computed(() =>
   invoices.value.reduce((sum, inv) => sum + Number(inv.outstanding_amount || 0), 0),
-)
-const selectedTotal = computed(() =>
-  selected.value.reduce((sum, inv) => sum + Number(inv.outstanding_amount || 0), 0),
 )
 
 // A bundle is charged as one M-Pesa STK (or hosted checkout). Over the cap with no card
@@ -49,16 +49,6 @@ const filtered = computed(() => {
   if (!query) return invoices.value
   return invoices.value.filter((inv) => inv.name.toLowerCase().includes(query))
 })
-
-const isSelected = (inv) => selected.value.some((i) => i.name === inv.name)
-
-function toggleSelect(inv) {
-  selected.value = isSelected(inv)
-    ? selected.value.filter((i) => i.name !== inv.name)
-    : [...selected.value, inv]
-}
-
-const clearSelection = () => (selected.value = [])
 
 async function load() {
   loading.value = true
@@ -116,7 +106,7 @@ const toList = () => router.push({ name: 'Collect', query: driver ? { driver } :
 
 function onPaid(name) {
   invoices.value = invoices.value.filter((inv) => inv.name !== name)
-  selected.value = selected.value.filter((inv) => inv.name !== name)
+  dropSelected(name)
   if (!invoices.value.length) toList()
 }
 
@@ -134,89 +124,54 @@ onMounted(load)
       ‹ All customers
     </button>
 
-    <div v-if="loadError" class="py-16 text-center">
-      <p class="font-display text-ink/70">Couldn't load — check your connection.</p>
-      <button
-        type="button"
-        class="mt-3 h-11 rounded-xl bg-mpesa px-5 font-semibold text-white"
-        @click="load"
-      >
-        Retry
-      </button>
-    </div>
+    <ErrorRetry v-if="loadError" @retry="load" />
 
     <template v-else>
-    <section class="rounded-2xl bg-ink px-5 py-4 text-paper">
-      <p class="truncate font-display text-lg font-bold">{{ customerName }}</p>
-      <p class="mt-1 font-mono text-3xl font-semibold tabular-nums">{{ formatKES(total) }}</p>
-      <p class="text-sm text-paper/60">
-        {{ invoices.length }} invoice{{ invoices.length === 1 ? '' : 's' }} outstanding
-      </p>
-    </section>
+      <CustomerMoneyHeader :name="customerName" :total="total" :count="invoices.length" />
 
-    <div v-if="canBundle && invoices.length > 1" class="flex gap-2">
-      <button
-        type="button"
-        class="h-14 flex-1 rounded-xl bg-mpesa text-lg font-semibold text-white transition active:scale-[.98] disabled:opacity-50"
-        :disabled="creatingBundle || bundleBlocked"
-        @click="collectNow"
-      >
-        {{
-          creatingBundle
-            ? '…'
-            : selected.length
-              ? `Collect ${selected.length} — ${formatKES(selectedTotal)}`
-              : `Collect all — ${formatKES(total)}`
-        }}
-      </button>
-      <button
-        v-if="selected.length"
-        type="button"
-        class="h-14 shrink-0 rounded-xl border border-hairline px-5 font-medium text-ink/70"
-        @click="clearSelection"
-      >
-        Clear
-      </button>
-    </div>
-    <p v-if="bundleBlocked" class="-mt-2 px-1 text-xs text-owed">
-      This exceeds the M-Pesa limit ({{ formatKES(mpesaMax) }}) and card checkout is off — collect the invoices individually below.
-    </p>
-    <p v-if="collectError" class="-mt-2 px-1 text-sm text-danger">
-      Couldn't start the collection — try again.
-    </p>
-    <p v-if="selectable && !selected.length" class="-mt-2 px-1 text-xs text-ink/60">
-      Tick invoices to collect only some.
-    </p>
-
-    <input
-      v-if="invoices.length > 1"
-      v-model="search"
-      type="search"
-      aria-label="Search this customer's invoices"
-      placeholder="Search invoice number…"
-      class="h-11 w-full rounded-xl border border-hairline bg-white px-4 text-sm text-ink placeholder:text-ink/50 focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40"
-    />
-
-    <div v-if="loading" class="grid grid-cols-1 gap-3 md:grid-cols-2">
-      <div v-for="n in 3" :key="n" class="h-28 animate-pulse rounded-xl bg-ink/5" />
-    </div>
-    <p v-else-if="!filtered.length" class="py-16 text-center font-display text-ink/70">
-      No invoices match.
-    </p>
-    <div v-else class="grid grid-cols-1 gap-3 md:grid-cols-2">
-      <InvoiceCard
-        v-for="inv in filtered"
-        :key="inv.name"
-        :invoice="inv"
-        :enable-redirect="enableRedirect"
+      <CollectBar
+        :show-bar="canBundle && invoices.length > 1"
+        :selected-count="selected.length"
+        :selected-total="selectedTotal"
+        :total="total"
+        :creating-bundle="creatingBundle"
+        :bundle-blocked="bundleBlocked"
         :mpesa-max="mpesaMax"
-        :selectable="selectable"
-        :selected="isSelected(inv)"
-        :actions-disabled="selected.length > 0"
-        @prompt="promptInvoice(inv)"
-        @toggle-select="toggleSelect(inv)"
+        :collect-error="collectError"
+        :show-tick-hint="selectable && !selected.length"
+        @collect="collectNow"
+        @clear="clearSelection"
       />
-    </div>
+
+      <input
+        v-if="invoices.length > 1"
+        v-model="search"
+        type="search"
+        aria-label="Search this customer's invoices"
+        placeholder="Search invoice number…"
+        class="h-11 w-full rounded-xl border border-hairline bg-white px-4 text-sm text-ink placeholder:text-ink/50 focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40"
+      />
+
+      <div v-if="loading" class="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div v-for="n in 3" :key="n" class="h-28 animate-pulse rounded-xl bg-ink/5" />
+      </div>
+      <p v-else-if="!filtered.length" class="py-16 text-center font-display text-ink/70">
+        No invoices match.
+      </p>
+      <div v-else class="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <InvoiceCard
+          v-for="inv in filtered"
+          :key="inv.name"
+          :invoice="inv"
+          :enable-redirect="enableRedirect"
+          :mpesa-max="mpesaMax"
+          :selectable="selectable"
+          :selected="isSelected(inv)"
+          :actions-disabled="selected.length > 0"
+          @prompt="promptInvoice(inv)"
+          @toggle-select="toggleSelect(inv)"
+        />
+      </div>
     </template>
 
     <PromptDialog :target="prompting" @close="prompting = null" @paid="onPaid" @changed="load" />

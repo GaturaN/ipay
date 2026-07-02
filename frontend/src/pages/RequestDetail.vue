@@ -11,6 +11,7 @@ import {
 } from '@/data/collection'
 import { formatKES } from '@/utils/format'
 import PromptDialog from '@/components/PromptDialog.vue'
+import ErrorRetry from '@/components/ErrorRetry.vue'
 
 // The transient home for a request or bundle: live status, the invoices it
 // covers, prompt the full amount, and share/regenerate the link. An unpaid bundle
@@ -214,16 +215,7 @@ onMounted(load)
 
     <p v-if="loading" class="py-10 text-center text-sm text-ink/50">Loading…</p>
 
-    <div v-else-if="loadError" class="py-16 text-center">
-      <p class="font-display text-ink/70">Couldn't load — check your connection.</p>
-      <button
-        type="button"
-        class="mt-3 h-11 rounded-xl bg-mpesa px-5 font-semibold text-white"
-        @click="load"
-      >
-        Retry
-      </button>
-    </div>
+    <ErrorRetry v-else-if="loadError" @retry="load" />
 
     <template v-else-if="detail">
       <section class="rounded-2xl bg-ink px-5 py-4 text-paper">
@@ -284,9 +276,10 @@ onMounted(load)
           type="button"
           class="h-14 rounded-xl border-2 border-mpesa text-lg font-semibold text-mpesa transition active:scale-[.98] disabled:opacity-50"
           :disabled="checkoutBusy"
+          :aria-busy="checkoutBusy"
           @click="payViaIpay"
         >
-          {{ checkoutBusy ? '…' : `Pay via iPay — ${formatKES(detail.amount)}` }}
+          {{ checkoutBusy ? 'Opening…' : `Pay via iPay — ${formatKES(detail.amount)}` }}
         </button>
 
         <div v-if="detail.enable_redirect" class="rounded-2xl border border-hairline bg-white p-4">
@@ -295,14 +288,16 @@ onMounted(load)
               type="button"
               class="h-11 flex-1 rounded-xl border border-hairline font-medium text-ink disabled:opacity-50"
               :disabled="linkBusy"
+              :aria-busy="linkBusy"
               @click="showLink"
             >
-              {{ linkBusy ? '…' : 'Payment link' }}
+              {{ linkBusy ? 'Loading…' : 'Payment link' }}
             </button>
             <button
               type="button"
               class="h-11 flex-1 rounded-xl border border-hairline font-medium text-ink disabled:opacity-50"
               :disabled="linkBusy"
+              :aria-busy="linkBusy"
               @click="regenerate"
             >
               Regenerate

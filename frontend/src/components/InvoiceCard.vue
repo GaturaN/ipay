@@ -88,9 +88,10 @@ async function payViaIpay() {
         type="button"
         class="h-12 flex-1 rounded-xl border border-hairline px-4 font-medium text-ink transition active:scale-[.98] disabled:opacity-40"
         :disabled="actionsDisabled || checkoutBusy"
+        :aria-busy="checkoutBusy"
         @click="payViaIpay"
       >
-        {{ checkoutBusy ? '…' : 'Card / other' }}
+        {{ checkoutBusy ? 'Opening…' : 'Card / other' }}
       </button>
     </div>
     <p v-if="mpesaBlocked" class="mt-2 text-xs text-owed">

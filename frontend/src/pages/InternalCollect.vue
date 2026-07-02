@@ -3,14 +3,13 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { fetchCollectionStats, fetchInternalCustomers } from '@/data/collection'
 import { useResumeRefresh } from '@/composables/useResumeRefresh'
-import RoundHeader from '@/components/RoundHeader.vue'
-import CustomerCard from '@/components/CustomerCard.vue'
+import CustomerListShell from '@/components/CustomerListShell.vue'
 
 const route = useRoute()
 
 // Internal (operator) mode: every customer who owes, all payment terms, newest-invoice
-// customer first. The list is loaded once (one aggregate call); a customer's invoices
-// are fetched only when opened.
+// customer first. The list is loaded once (one aggregate call); a customer's invoices are
+// fetched only when opened.
 const customers = ref([])
 const listLoading = ref(true)
 const loadError = ref(false)
@@ -30,6 +29,12 @@ const filtered = computed(() => {
   if (!query) return customers.value
   return customers.value.filter((c) => c.customer_name.toLowerCase().includes(query))
 })
+
+const emptyMessage = computed(() =>
+  search.value.trim()
+    ? 'No customers match your search.'
+    : 'No customers with an outstanding balance.',
+)
 
 async function loadCustomers() {
   listLoading.value = true
@@ -58,11 +63,6 @@ async function loadStats() {
 }
 
 // The driver/term filters are server-side (they scope each customer's balance), so re-fetch.
-function onFilterChange() {
-  loadCustomers()
-  loadStats()
-}
-
 function refreshAll() {
   loadCustomers()
   loadStats()
@@ -73,18 +73,25 @@ onMounted(refreshAll)
 </script>
 
 <template>
-  <main class="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-4 p-4 pb-10">
-    <h1 class="pt-1 font-display text-2xl font-bold tracking-tight text-ink">Collect Payments</h1>
-
-    <RoundHeader
-      :collected-today="stats.collected_today"
-      :outstanding-today="stats.outstanding_today"
-      :remaining="filtered.length"
-      count-label="customers"
-      :loading="statsLoading"
-    />
-
-    <div class="flex flex-col gap-2 sm:flex-row">
+  <CustomerListShell
+    container-class="max-w-5xl"
+    title="Collect Payments"
+    :collected-today="stats.collected_today"
+    :outstanding-today="stats.outstanding_today"
+    :remaining="filtered.length"
+    count-label="customers"
+    :stats-loading="statsLoading"
+    :list-loading="listLoading"
+    :load-error="loadError"
+    :not-permitted="notPermitted"
+    :customers="filtered"
+    :empty-message="emptyMessage"
+    card-route-name="InternalCustomer"
+    :card-driver="driver"
+    :card-payment-term="paymentTerm"
+    @retry="loadCustomers"
+  >
+    <template #filters>
       <input
         v-model="search"
         type="search"
@@ -97,7 +104,7 @@ onMounted(refreshAll)
         v-model="driver"
         aria-label="Filter by driver"
         class="h-11 w-full rounded-xl border border-hairline bg-white px-3 text-sm text-ink focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40 sm:w-56"
-        @change="onFilterChange"
+        @change="refreshAll"
       >
         <option value="">All drivers</option>
         <option v-for="d in drivers" :key="d" :value="d">{{ d }}</option>
@@ -107,47 +114,11 @@ onMounted(refreshAll)
         v-model="paymentTerm"
         aria-label="Filter by payment term"
         class="h-11 w-full rounded-xl border border-hairline bg-white px-3 text-sm text-ink focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40 sm:w-48"
-        @change="onFilterChange"
+        @change="refreshAll"
       >
         <option value="">All terms</option>
         <option v-for="t in paymentTerms" :key="t" :value="t">{{ t }}</option>
       </select>
-    </div>
-
-    <div v-if="listLoading" class="grid grid-cols-1 gap-3 md:grid-cols-2">
-      <div v-for="n in 6" :key="n" class="h-20 animate-pulse rounded-xl bg-ink/5" />
-    </div>
-    <div v-else-if="notPermitted" class="py-16 text-center">
-      <p class="font-display text-ink/70">Internal collection is for operators only.</p>
-      <a
-        href="/collect"
-        class="mt-3 inline-flex h-11 items-center rounded-xl bg-mpesa px-5 font-semibold text-white"
-      >
-        Go to Collect
-      </a>
-    </div>
-    <div v-else-if="loadError" class="py-16 text-center">
-      <p class="font-display text-ink/70">Couldn't load — check your connection.</p>
-      <button
-        type="button"
-        class="mt-3 h-11 rounded-xl bg-mpesa px-5 font-semibold text-white"
-        @click="loadCustomers"
-      >
-        Retry
-      </button>
-    </div>
-    <p v-else-if="!filtered.length" class="py-16 text-center font-display text-ink/70">
-      {{ search.trim() ? 'No customers match your search.' : 'No customers with an outstanding balance.' }}
-    </p>
-    <div v-else class="grid grid-cols-1 gap-3 md:grid-cols-2">
-      <CustomerCard
-        v-for="c in filtered"
-        :key="c.customer"
-        :customer="c"
-        route-name="InternalCustomer"
-        :driver="driver"
-        :payment-term="paymentTerm"
-      />
-    </div>
-  </main>
+    </template>
+  </CustomerListShell>
 </template>
