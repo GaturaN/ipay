@@ -55,6 +55,13 @@ def lipana_mpesa(
                 f"M-Pesa isn't available for amounts over KES {cap:,.0f}. Please pay by card or via iPay."
             )
 
+    # A retry after a terminal failure: clear the old Failed/Abandoned status + reason so any
+    # poll shows this attempt as in-flight rather than the previous error. The SPA/token paths
+    # already reset in _enqueue_stk (this is a no-op then); this covers the direct desk call.
+    if state.get("status") in ("Failed", "Abandoned"):
+        frappe.db.set_value("iPay Request", docid, {"status": "Pending", "result_detail": ""})
+        frappe.db.commit()
+
     # set payment request type
     frappe.db.set_value(
         "iPay Request", docid, "payment_request_type", payment_request_type
