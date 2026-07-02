@@ -45,6 +45,16 @@ def lipana_mpesa(
         )
         return {"status": "skipped", "message": "This request is no longer chargeable."}
 
+    # Enforce the M-Pesa STK ceiling on EVERY path — the desk button calls this directly,
+    # bypassing _enqueue_stk's check. Over the cap M-Pesa can't process the charge.
+    if payment_request_type == "Mpesa Express":
+        cap = frappe.utils.flt(frappe.db.get_single_value("iPay Settings", "mpesa_max_amount"))
+        if cap and frappe.utils.flt(amount) > cap:
+            create_log_entry("ERR", f"Amount {amount} exceeds the M-Pesa cap {cap} for {docid}")
+            frappe.throw(
+                f"M-Pesa isn't available for amounts over KES {cap:,.0f}. Please pay by card or via iPay."
+            )
+
     # set payment request type
     frappe.db.set_value(
         "iPay Request", docid, "payment_request_type", payment_request_type

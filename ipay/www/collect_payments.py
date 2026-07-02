@@ -120,6 +120,15 @@ def _collectable_terms():
     return [row.payment_terms_template for row in (settings.get("collect_payment_terms") or [])]
 
 
+def _settings_flags():
+    """The two iPay Settings every collection response carries: hosted-checkout
+    availability and the M-Pesa STK ceiling."""
+    return {
+        "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
+        "mpesa_max": flt(frappe.db.get_single_value("iPay Settings", "mpesa_max_amount")),
+    }
+
+
 def _outstanding_si_filters(user):
     """Base filters for the Sales Invoices `user` may collect — restricted to the
     configured collect-on-delivery payment terms, their own book if a collector, and a
@@ -153,24 +162,30 @@ def _outstanding_invoices(user, customer=None):
     return _drop_bundled(invoices)
 
 
+def _accumulate_customer(row_map, inv):
+    """Get-or-create inv's customer row and add its amount + count. Returns the row so the
+    caller can attach its own extra fields (search keywords, latest date)."""
+    row = row_map.get(inv.customer)
+    if row is None:
+        row = row_map[inv.customer] = {
+            "customer": inv.customer,
+            "customer_name": inv.customer_name or inv.customer,
+            "total_outstanding": 0.0,
+            "invoice_count": 0,
+        }
+    row["total_outstanding"] += flt(inv.outstanding_amount)
+    row["invoice_count"] += 1
+    return row
+
+
 def _group_customers(invoices):
-    """Group outstanding invoices by customer — total owed, invoice count, and search
-    keywords (each invoice's number and delivery note, so the list can be searched by
-    either) — most-owed first. Invoices must already be delivery-annotated."""
+    """Group outstanding invoices by customer — total owed, count, and search keywords
+    (each invoice's number and delivery note, so the list can be searched by either) —
+    most-owed first. Invoices must already be delivery-annotated."""
     by_customer = {}
     for inv in invoices:
-        row = by_customer.get(inv.customer)
-        if row is None:
-            row = by_customer[inv.customer] = {
-                "customer": inv.customer,
-                "customer_name": inv.customer_name or inv.customer,
-                "total_outstanding": 0.0,
-                "invoice_count": 0,
-                "keywords": [],
-            }
-        row["total_outstanding"] += flt(inv.outstanding_amount)
-        row["invoice_count"] += 1
-        row["keywords"].append(inv.name)
+        row = _accumulate_customer(by_customer, inv)
+        row.setdefault("keywords", []).append(inv.name)
         if inv.get("delivery_note"):
             row["keywords"].append(inv.delivery_note)
     return sorted(by_customer.values(), key=lambda r: r["total_outstanding"], reverse=True)
@@ -236,6 +251,15 @@ def _invoices_for_driver_name(driver_name):
     return set(frappe.get_all(
         "Sales Invoice Item", filters={"delivery_note": ["in", dns]}, pluck="parent"
     ))
+
+
+def _scope_to_driver(invoices, driver):
+    """Keep only invoices delivered by the named driver (via their delivery notes). Used by
+    the internal endpoints, which filter before annotating delivery data."""
+    if not driver:
+        return invoices
+    delivered = _invoices_for_driver_name(driver)
+    return [inv for inv in invoices if inv.name in delivered]
 
 
 def _requests_for_invoices(invoices):
@@ -324,8 +348,7 @@ def customer_collection(customer, driver=None):
         "customer": customer,
         "customer_name": invoices[0].customer_name if invoices else customer,
         "invoices": invoices,
-        "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
-        "mpesa_max": flt(frappe.db.get_single_value("iPay Settings", "mpesa_max_amount")),
+        **_settings_flags(),
         "can_bundle": not is_collector_only(frappe.session.user),
     }
 
@@ -404,26 +427,13 @@ def internal_customers(driver=None, payment_term=None):
     here (via the order-first lookup) keeps a fully-prepaid customer from showing a balance
     that opens to an empty drill-down."""
     _require_internal()
-    invoices = _internal_outstanding(payment_term=payment_term)
-    if driver:
-        driver_invoices = _invoices_for_driver_name(driver)
-        invoices = [inv for inv in invoices if inv.name in driver_invoices]
+    invoices = _scope_to_driver(_internal_outstanding(payment_term=payment_term), driver)
     by_customer = {}
     for inv in invoices:
-        row = by_customer.get(inv.customer)
-        if row is None:
-            row = by_customer[inv.customer] = {
-                "customer": inv.customer,
-                "customer_name": inv.customer_name or inv.customer,
-                "total_outstanding": 0.0,
-                "invoice_count": 0,
-                "latest_date": inv.posting_date,
-            }
-        row["total_outstanding"] += flt(inv.outstanding_amount)
-        row["invoice_count"] += 1
-        if inv.posting_date and (not row["latest_date"] or inv.posting_date > row["latest_date"]):
+        row = _accumulate_customer(by_customer, inv)
+        if inv.posting_date and (not row.get("latest_date") or inv.posting_date > row["latest_date"]):
             row["latest_date"] = inv.posting_date
-    customers = sorted(by_customer.values(), key=lambda r: str(r["latest_date"] or ""), reverse=True)
+    customers = sorted(by_customer.values(), key=lambda r: str(r.get("latest_date") or ""), reverse=True)
     return {
         "customers": customers,
         "drivers": _internal_driver_names(),
@@ -440,10 +450,7 @@ def internal_customer_invoices(customer, start=0, page_length=50, search=None, d
     _require_internal()
     start, page_length = cint(start), cint(page_length) or 50
 
-    invoices = _internal_outstanding(customer, payment_term=payment_term)
-    if driver:
-        driver_invoices = _invoices_for_driver_name(driver)
-        invoices = [inv for inv in invoices if inv.name in driver_invoices]
+    invoices = _scope_to_driver(_internal_outstanding(customer, payment_term=payment_term), driver)
     total = sum(flt(inv.outstanding_amount) for inv in invoices)
     count = len(invoices)
     if search:
@@ -460,6 +467,5 @@ def internal_customer_invoices(customer, start=0, page_length=50, search=None, d
         "invoice_count": count,
         "total_outstanding": total,
         "has_more": start + page_length < len(invoices),
-        "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
-        "mpesa_max": flt(frappe.db.get_single_value("iPay Settings", "mpesa_max_amount")),
+        **_settings_flags(),
     }

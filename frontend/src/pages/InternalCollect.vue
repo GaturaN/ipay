@@ -14,6 +14,7 @@ const route = useRoute()
 const customers = ref([])
 const listLoading = ref(true)
 const loadError = ref(false)
+const notPermitted = ref(false) // a collector reached internal mode — it's operator-only
 
 const stats = ref({ collected_today: 0, outstanding_today: 0 })
 const statsLoading = ref(false)
@@ -33,13 +34,15 @@ const filtered = computed(() => {
 async function loadCustomers() {
   listLoading.value = true
   loadError.value = false
+  notPermitted.value = false
   try {
     const data = await fetchInternalCustomers(driver.value, paymentTerm.value)
     customers.value = data.customers || []
     drivers.value = data.drivers || []
     paymentTerms.value = data.payment_terms || []
-  } catch {
-    loadError.value = true
+  } catch (e) {
+    if (e?.exc_type === 'PermissionError' || e?.response?.status === 403) notPermitted.value = true
+    else loadError.value = true
   } finally {
     listLoading.value = false
   }
@@ -113,6 +116,15 @@ onMounted(refreshAll)
 
     <div v-if="listLoading" class="grid grid-cols-1 gap-3 md:grid-cols-2">
       <div v-for="n in 6" :key="n" class="h-20 animate-pulse rounded-xl bg-ink/5" />
+    </div>
+    <div v-else-if="notPermitted" class="py-16 text-center">
+      <p class="font-display text-ink/70">Internal collection is for operators only.</p>
+      <a
+        href="/collect"
+        class="mt-3 inline-flex h-11 items-center rounded-xl bg-mpesa px-5 font-semibold text-white"
+      >
+        Go to Collect
+      </a>
     </div>
     <div v-else-if="loadError" class="py-16 text-center">
       <p class="font-display text-ink/70">Couldn't load — check your connection.</p>
