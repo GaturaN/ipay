@@ -6,6 +6,7 @@ from ipay.www.collect_payments import ALLOWED_ROLES
 
 def get_context(context):
     context.no_cache = 1
+    context.favicon = "/assets/ipay/manifest/favicon-196.png"  # iPay Collect tab icon
     token = frappe.form_dict.get("token")
     request_name, status = resolve_pay_token(token)
 

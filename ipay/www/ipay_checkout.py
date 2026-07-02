@@ -10,6 +10,7 @@ from ipay.ipay.main.utils.ipay_redirect import (
 
 def get_context(context):
     context.no_cache = 1
+    context.favicon = "/assets/ipay/manifest/favicon-196.png"  # iPay Collect tab icon
     token = frappe.form_dict.get("token")
     settings = frappe.get_single("iPay Settings")
 
