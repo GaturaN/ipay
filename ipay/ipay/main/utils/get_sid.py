@@ -5,6 +5,7 @@ import logging
 import frappe
 
 from ipay.ipay.main.utils.constants import clean_oid
+from ipay.ipay.main.utils.http import post_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -66,17 +67,15 @@ def get_sid(vid: str, secret_key: str, amount: str, oid: str, phone: str, eml: s
         
         # Send a POST request. iPay's /transact latency is variable (often several seconds,
         # sometimes >15s); this runs in the long STK worker (no web timeout), so allow more
-        # headroom before giving up with "Failed to get session id".
-        response = requests.post(
+        # headroom before giving up with "Failed to get session id". A momentary 429/5xx is
+        # retried with backoff rather than failing the whole payment.
+        response = post_with_backoff(
             "https://apis.ipayafrica.com/payments/v2/transact",
             data=transaction_payload,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
-            timeout=45
+            timeout=45,
         )
-        
-        # Raise HTTP error for bad responses
-        response.raise_for_status()
-        
+
         logger.info("SID served successfully")
         response_json = response.json()
         logger.info("Response: %s", response_json)
