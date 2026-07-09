@@ -152,7 +152,7 @@ def _outstanding_invoices(user, customer=None):
     invoices = frappe.get_all(
         "Sales Invoice",
         filters=si_filters,
-        fields=["name", "customer", "customer_name", "outstanding_amount", "posting_date", "due_date"],
+        fields=["name", "customer", "customer_name", "outstanding_amount", "posting_date", "due_date", "payment_terms_template"],
         order_by="posting_date asc",
         limit_page_length=0,
     )
@@ -377,7 +377,7 @@ def _internal_outstanding(customer=None, payment_term=None):
     invoices = frappe.get_all(
         "Sales Invoice",
         filters=filters,
-        fields=["name", "customer", "customer_name", "outstanding_amount", "posting_date", "due_date"],
+        fields=["name", "customer", "customer_name", "outstanding_amount", "posting_date", "due_date", "payment_terms_template"],
         order_by="posting_date desc",
         limit_page_length=0,
     )
