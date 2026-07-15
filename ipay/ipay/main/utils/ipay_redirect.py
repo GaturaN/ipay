@@ -215,11 +215,20 @@ def _ensure_request(invoice):
     # Reuse an existing SINGLE request for this invoice. Skip bundles (which carry
     # iPay Request Invoice child rows) so collecting a released invoice individually
     # charges only that invoice, not the whole old bundle.
-    for name in frappe.get_all(
-        "iPay Request", filters={"sales_invoice": invoice, "docstatus": 1}, pluck="name"
+    for req in frappe.get_all(
+        "iPay Request",
+        filters={"sales_invoice": invoice, "docstatus": 1},
+        fields=["name", "status"],
+        order_by="creation desc",
     ):
-        if not frappe.db.exists("iPay Request Invoice", {"parent": name}):
-            return name
+        # A settled request (Success/Underpaid/Overpaid) is the permanent record of
+        # that payment — never reuse it. Collect any remaining balance (an Underpaid
+        # invoice reappears in the list) through a FRESH request, so each collection
+        # keeps its own Payment Entry and callback.
+        if req.status in ("Success", "Underpaid", "Overpaid"):
+            continue
+        if not frappe.db.exists("iPay Request Invoice", {"parent": req.name}):
+            return req.name
 
     invoice_doc = frappe.get_doc("Sales Invoice", invoice)
     request = frappe.get_doc(
