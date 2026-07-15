@@ -5,6 +5,7 @@ import frappe
 from requests.exceptions import RequestException
 
 from ipay.ipay.main.utils.constants import search_hash
+from ipay.ipay.main.utils.alerts import iPayDeclined
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +106,9 @@ def verify_mpesa_payment(oid, phone, vid, secret_key):
 
             terminal = _terminal_error_message(error.response)
             if terminal:
-                frappe.throw(terminal)
+                # A decline is the payer's choice, not a system error — raise a
+                # typed exception so the caller logs it at INF, not ERR.
+                frappe.throw(terminal, exc=iPayDeclined)
             # Otherwise transient (e.g. "no payment record found", timeout) — keep polling.
             delay(retry_delay)
     
