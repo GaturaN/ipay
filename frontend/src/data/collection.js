@@ -67,30 +67,18 @@ export const fetchInternalCustomerInvoices = (
     'GET',
   )
 
-// Sales mode (all terms): a member's OWN book, or every book for their manager. The server
-// resolves a member from their login and ignores salesPerson for them, so it only ever
-// filters a manager's view.
-export const fetchSalesCustomers = (paymentTerm, salesPerson) =>
-  call(
-    API.salesCustomers,
-    { payment_term: paymentTerm || '', sales_person: salesPerson || '' },
-    'GET',
-  )
+// Sales mode: the signed-in member's OWN book (all terms). The server resolves the member
+// from their login, so there is no sales_person argument to pass. Managers use internal mode.
+export const fetchSalesCustomers = (paymentTerm) =>
+  call(API.salesCustomers, { payment_term: paymentTerm || '' }, 'GET')
 
 export const fetchSalesCustomerInvoices = (
   customer,
-  { start = 0, pageLength = 50, search = '', paymentTerm = '', salesPerson = '' } = {},
+  { start = 0, pageLength = 50, search = '', paymentTerm = '' } = {},
 ) =>
   call(
     API.salesCustomerInvoices,
-    {
-      customer,
-      start,
-      page_length: pageLength,
-      search,
-      payment_term: paymentTerm,
-      sales_person: salesPerson,
-    },
+    { customer, start, page_length: pageLength, search, payment_term: paymentTerm },
     'GET',
   )
 

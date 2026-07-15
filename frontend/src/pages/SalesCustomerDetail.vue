@@ -16,7 +16,6 @@ const route = useRoute()
 const router = useRouter()
 const customer = route.params.customer
 const paymentTerm = route.query.payment_term || '' // scope the detail to the term picked on the list
-const salesPerson = route.query.sales_person || '' // and to the member a manager picked (ignored for a member)
 
 const customerName = ref('')
 const invoices = ref([])
@@ -64,7 +63,6 @@ async function load(reset = true) {
       pageLength: PAGE,
       search: search.value.trim(),
       paymentTerm,
-      salesPerson,
     })
     if (seq !== loadSeq) return // a newer load/search superseded this response — drop it
     customerName.value = data.customer_name || customer
@@ -115,7 +113,6 @@ async function collect(names) {
           from: 'sales',
           customer,
           ...(paymentTerm ? { payment_term: paymentTerm } : {}),
-          ...(salesPerson ? { sales_person: salesPerson } : {}),
         },
       })
     else collectError.value = true
@@ -138,10 +135,7 @@ const canCollectAll = computed(
 const toList = () =>
   router.push({
     name: 'Sales',
-    query: {
-      ...(paymentTerm ? { payment_term: paymentTerm } : {}),
-      ...(salesPerson ? { sales_person: salesPerson } : {}),
-    },
+    query: { ...(paymentTerm ? { payment_term: paymentTerm } : {}) },
   })
 
 function onPaid(name) {

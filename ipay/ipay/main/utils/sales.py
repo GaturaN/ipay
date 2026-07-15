@@ -4,9 +4,8 @@ A sales team member may prompt/collect only for their own book: the customers an
 invoices their Sales Person record is named on. The login is mapped to a Sales Person
 through ERPNext's own chain — Employee.user_id -> Sales Person.employee.
 
-Their managers (iPay Sales Manager, and the iPay operator roles) are never scoped: they see
-every member's book and filter to one — mirroring how an operator sees every driver's work
-on the field page while a collector sees only their own.
+Anyone above a member — a manager or an operator — uses the internal page instead, which
+already lists every customer and filters by sales person.
 
 Everything degrades safely, mirroring collector.py: a login with no Employee, or an
 Employee with no Sales Person, resolves to nothing and therefore sees nothing rather than
@@ -18,25 +17,15 @@ import frappe
 from ipay.ipay.main.utils.collector import OPERATOR_ROLES
 
 SALES_ROLE = "iPay Sales"
-# Above a sales member: sees every member's book and may filter to one. Deliberately an
-# iPay-owned role, NOT ERPNext's stock "Sales Manager" — the reps themselves hold that one,
-# so using it would make every member a manager and the scoping inert.
-SALES_MANAGER_ROLE = "iPay Sales Manager"
-SALES_MANAGER_ROLES = OPERATOR_ROLES | {SALES_MANAGER_ROLE}
-
-
-def is_sales_manager(user=None):
-    """True when the user ranks above a sales member, so their view is never scoped."""
-    user = user or frappe.session.user
-    return bool(SALES_MANAGER_ROLES & set(frappe.get_roles(user)))
 
 
 def is_sales_only(user=None):
-    """True when the user sells and ranks no higher (so their view must be scoped).
-    Mirrors is_collector_only: holding a manager role cancels the scoping."""
+    """True when the user collects their own sales book (so their view must be scoped).
+    Granting iPay Sales is what marks someone a member; only a full iPay operator role
+    cancels it, mirroring is_collector_only."""
     user = user or frappe.session.user
     roles = set(frappe.get_roles(user))
-    return SALES_ROLE in roles and not (SALES_MANAGER_ROLES & roles)
+    return SALES_ROLE in roles and not (OPERATOR_ROLES & roles)
 
 
 def my_sales_person(user=None):
