@@ -3,6 +3,8 @@ import { useSession } from '@/stores/session'
 
 // A sales member's home is their own book — the driver page's data would only refuse them.
 const salesHome = () => (window.sales_only ? { name: 'Sales' } : true)
+// ...and only their own book lives under /sales; anyone else belongs on internal.
+const salesOnly = () => (window.sales_only ? true : { name: 'Internal' })
 
 const routes = [
   {
@@ -25,17 +27,21 @@ const routes = [
   {
     path: '/internal/customer/:customer(.*)',
     name: 'InternalCustomer',
-    component: () => import('@/pages/InternalCustomerDetail.vue'),
+    component: () => import('@/pages/PagedCustomerDetail.vue'),
+    meta: { mode: 'internal' },
   },
   {
     path: '/sales',
     name: 'Sales',
     component: () => import('@/pages/SalesCollect.vue'),
+    beforeEnter: salesOnly,
   },
   {
     path: '/sales/customer/:customer(.*)',
     name: 'SalesCustomer',
-    component: () => import('@/pages/SalesCustomerDetail.vue'),
+    component: () => import('@/pages/PagedCustomerDetail.vue'),
+    meta: { mode: 'sales' },
+    beforeEnter: salesOnly,
   },
   {
     path: '/request/:name',

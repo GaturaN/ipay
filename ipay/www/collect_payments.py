@@ -89,9 +89,10 @@ def _collected_totals(today_date, request_names=None):
     return (flt(row[0].total), flt(row[0].today_total)) if row else (0, 0)
 
 
-def _require_collection_access():
-    """Operators and collectors only. Guests are redirected to login by callers."""
-    if frappe.session.user == "Guest" or not (ALLOWED_ROLES & set(frappe.get_roles())):
+def _require_collection_access(roles=None):
+    """Operators and collectors only. Guests are redirected to login by callers. `roles`
+    widens the set for an endpoint shared with another page."""
+    if frappe.session.user == "Guest" or not ((roles or ALLOWED_ROLES) & set(frappe.get_roles())):
         frappe.throw("You are not permitted to collect payments.", frappe.PermissionError)
 
 
@@ -305,7 +306,9 @@ def collection_stats(driver=None, all_terms=0):
     collector gated; a collector is always restricted to their own book, so the
     driver argument can only narrow within it, never widen it. `all_terms` drops the
     collect-on-delivery term scope for the internal (all-terms) header."""
-    _require_collection_access()
+    # Backs the header on the field page AND internal mode, so it admits either page's roles —
+    # a sales manager on internal would otherwise read a permanently-zero round.
+    _require_collection_access(ALLOWED_ROLES | INTERNAL_ROLES)
 
     today_date = today()
 

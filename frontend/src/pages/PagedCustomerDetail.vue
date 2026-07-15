@@ -1,7 +1,11 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createBundle, fetchSalesCustomerInvoices } from '@/data/collection'
+import {
+  createBundle,
+  fetchInternalCustomerInvoices,
+  fetchSalesCustomerInvoices,
+} from '@/data/collection'
 import { useResumeRefresh } from '@/composables/useResumeRefresh'
 import { useInvoiceSelection } from '@/composables/useInvoiceSelection'
 import InvoiceCard from '@/components/InvoiceCard.vue'
@@ -12,10 +16,34 @@ import ErrorRetry from '@/components/ErrorRetry.vue'
 
 const PAGE = 50
 
+// The paginated drill-down behind both big-book lists — internal (every customer) and sales
+// (a member's own). They differ only in where the invoices come from and which scope the URL
+// carries, so paging, selection, bundling and prompting stay in one place. The field app's
+// CustomerDetail is separate: it loads a driver's whole round unpaginated.
+const MODES = {
+  internal: {
+    fetch: fetchInternalCustomerInvoices,
+    list: 'Internal',
+    back: 'All customers',
+    scope: ['driver', 'payment_term', 'sales_person'],
+  },
+  sales: {
+    fetch: fetchSalesCustomerInvoices,
+    list: 'Sales',
+    back: 'My customers',
+    scope: ['payment_term'],
+  },
+}
+
 const route = useRoute()
 const router = useRouter()
+const mode = MODES[route.meta.mode]
 const customer = route.params.customer
-const paymentTerm = route.query.payment_term || '' // scope the detail to the term picked on the list
+const paymentTerm = route.query.payment_term || '' // shown in the header; the rest scope silently
+
+// The scope this mode carries in the URL, kept so every navigation away and back preserves it.
+const scopeQuery = () =>
+  Object.fromEntries(mode.scope.filter((k) => route.query[k]).map((k) => [k, route.query[k]]))
 
 const customerName = ref('')
 const invoices = ref([])
@@ -36,14 +64,15 @@ const search = ref('')
 let searchTimer = null
 let loadSeq = 0 // guards against out-of-order load/search/load-more responses
 
-// Tick a subset to collect just those; per-invoice prompt stays for one-offs. Ticking only
-// makes sense at 3+ invoices — 1 has nothing to bundle and 2 are covered by "Collect all".
+// Operators may tick a subset (across pages) to collect just those; per-invoice prompt
+// stays for one-offs. Ticking only makes sense at 3+ invoices — 1 has nothing to bundle
+// and 2 are already covered by "Collect all" (count is the customer's full total).
 const { selected, isSelected, toggleSelect, clearSelection, dropSelected, selectedTotal } =
   useInvoiceSelection()
 const selectable = computed(() => count.value > 2)
 
 // Over the M-Pesa cap with no card fallback a bundle can't be paid (and hides its invoices
-// ~30 min) — block it and let the member collect invoices individually.
+// ~30 min) — block it and let the operator collect invoices individually.
 const bundleAmount = computed(() => (selected.value.length ? selectedTotal.value : total.value))
 const bundleBlocked = computed(
   () => !enableRedirect.value && mpesaMax.value > 0 && bundleAmount.value > mpesaMax.value,
@@ -58,11 +87,14 @@ async function load(reset = true) {
     loadingMore.value = true
   }
   try {
-    const data = await fetchSalesCustomerInvoices(customer, {
+    // Each mode's fetch destructures only the scope its own endpoint accepts; extras are ignored.
+    const data = await mode.fetch(customer, {
       start: reset ? 0 : invoices.value.length,
       pageLength: PAGE,
       search: search.value.trim(),
+      driver: route.query.driver || '',
       paymentTerm,
+      salesPerson: route.query.sales_person || '',
     })
     if (seq !== loadSeq) return // a newer load/search superseded this response — drop it
     customerName.value = data.customer_name || customer
@@ -109,11 +141,7 @@ async function collect(names) {
       router.push({
         name: 'Request',
         params: { name: res.request },
-        query: {
-          from: 'sales',
-          customer,
-          ...(paymentTerm ? { payment_term: paymentTerm } : {}),
-        },
+        query: { from: route.meta.mode, customer, ...scopeQuery() },
       })
     else collectError.value = true
   } catch {
@@ -132,11 +160,7 @@ const canCollectAll = computed(
   () => !hasMore.value && invoices.value.length > 1 && !search.value.trim(),
 )
 
-const toList = () =>
-  router.push({
-    name: 'Sales',
-    query: { ...(paymentTerm ? { payment_term: paymentTerm } : {}) },
-  })
+const toList = () => router.push({ name: mode.list, query: scopeQuery() })
 
 function onPaid(name) {
   prompting.value = null // dismiss the success screen
@@ -162,7 +186,7 @@ onMounted(() => load(true))
       class="flex items-center gap-1 self-start text-sm font-medium text-ink/70"
       @click="toList"
     >
-      ‹ My customers
+      ‹ {{ mode.back }}
     </button>
 
     <ErrorRetry v-if="loadError" @retry="load(true)" />

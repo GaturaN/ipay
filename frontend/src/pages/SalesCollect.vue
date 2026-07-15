@@ -15,7 +15,6 @@ const route = useRoute()
 const customers = ref([])
 const listLoading = ref(true)
 const loadError = ref(false)
-const notPermitted = ref(false)
 const unmapped = ref(false) // login has no Sales Person — the page explains rather than looking empty
 const person = ref('')
 
@@ -43,16 +42,16 @@ const emptyMessage = computed(() => {
 async function loadCustomers() {
   listLoading.value = true
   loadError.value = false
-  notPermitted.value = false
   try {
     const data = await fetchSalesCustomers(paymentTerm.value)
     customers.value = data.customers || []
     paymentTerms.value = data.payment_terms || []
     person.value = data.sales_person || ''
     unmapped.value = Boolean(data.unmapped)
-  } catch (e) {
-    if (e?.exc_type === 'PermissionError' || e?.response?.status === 403) notPermitted.value = true
-    else loadError.value = true
+  } catch {
+    // Only a sales member can reach this route (the router guards it), so any failure
+    // here is a genuine error rather than a permission problem.
+    loadError.value = true
   } finally {
     listLoading.value = false
   }
@@ -68,7 +67,6 @@ onMounted(loadCustomers)
     title="My Collections"
     :list-loading="listLoading"
     :load-error="loadError"
-    :not-permitted="notPermitted"
     :customers="filtered"
     :empty-message="emptyMessage"
     card-route-name="SalesCustomer"
