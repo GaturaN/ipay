@@ -401,6 +401,52 @@ def _internal_driver_names():
     return sorted(name for name in on_dns if name and name in active)
 
 
+def _sales_person_scope(sales_person):
+    """The invoices and the customers a sales team member is named on, read from the live
+    Sales Team rows of each."""
+    invoices = set(frappe.get_all(
+        "Sales Team",
+        filters={"parenttype": "Sales Invoice", "sales_person": sales_person},
+        pluck="parent",
+    ))
+    customers = set(frappe.get_all(
+        "Sales Team",
+        filters={"parenttype": "Customer", "sales_person": sales_person},
+        pluck="parent",
+    ))
+    return invoices, customers
+
+
+def _scope_to_sales_person(invoices, sales_person):
+    """Keep only invoices assigned to the named sales team member — by the invoice's own
+    sales team, or by their customer's. ERPNext copies the customer's team onto an invoice
+    when it is created and never refreshes it, so a reassigned customer's older invoices
+    keep the previous member; matching either honours both readings. Mirrors
+    _scope_to_driver: a post-filter, so it composes with the other internal filters."""
+    if not sales_person:
+        return invoices
+    named, customers = _sales_person_scope(sales_person)
+    return [inv for inv in invoices if inv.name in named or inv.customer in customers]
+
+
+def _internal_sales_persons():
+    """Sales team members named on any customer or invoice — the internal filter's options.
+    Read from the live Sales Team rows rather than the Sales Person master so a member whose
+    master record was deleted (their assignments survive) can still be filtered on, and a
+    disabled member's outstanding work stays reachable."""
+    names = frappe.get_all(
+        "Sales Team",
+        filters={"parenttype": ["in", ["Customer", "Sales Invoice"]]},
+        pluck="sales_person",
+        distinct=True,
+    )
+    # Drop tree group nodes (e.g. the "Sales Team" root, which some rows are booked against):
+    # the scope matches a name exactly, so a group would report only what is booked on the
+    # group itself and never its members' work — a total that reads as the whole team's.
+    groups = set(frappe.get_all("Sales Person", filters={"is_group": 1}, pluck="name"))
+    return sorted({name for name in names if name and name not in groups})
+
+
 def _internal_payment_terms():
     """Distinct payment-terms templates on outstanding invoices — the internal filter's
     options (so a member can view e.g. only NET 30 invoices)."""
@@ -419,15 +465,17 @@ def _internal_payment_terms():
 
 
 @frappe.whitelist()
-def internal_customers(driver=None, payment_term=None):
+def internal_customers(driver=None, payment_term=None, sales_person=None):
     """Internal top level: every customer with a COLLECTABLE balance (ALL terms, prepaid
     /actively-bundled excluded), newest-invoice customer first, optionally scoped to one
-    driver's deliveries and/or a payment term; the driver and payment-term options are
-    returned for the filters. Invoices are fetched lazily per customer. Excluding prepaid
-    here (via the order-first lookup) keeps a fully-prepaid customer from showing a balance
-    that opens to an empty drill-down."""
+    driver's deliveries, a payment term and/or a sales team member; the driver, payment-term
+    and sales-person options are returned for the filters. Invoices are fetched lazily per
+    customer. Excluding prepaid here (via the order-first lookup) keeps a fully-prepaid
+    customer from showing a balance that opens to an empty drill-down."""
     _require_internal()
-    invoices = _scope_to_driver(_internal_outstanding(payment_term=payment_term), driver)
+    invoices = _scope_to_sales_person(
+        _scope_to_driver(_internal_outstanding(payment_term=payment_term), driver), sales_person
+    )
     by_customer = {}
     for inv in invoices:
         row = _accumulate_customer(by_customer, inv)
@@ -438,19 +486,24 @@ def internal_customers(driver=None, payment_term=None):
         "customers": customers,
         "drivers": _internal_driver_names(),
         "payment_terms": _internal_payment_terms(),
+        "sales_persons": _internal_sales_persons(),
     }
 
 
 @frappe.whitelist()
-def internal_customer_invoices(customer, start=0, page_length=50, search=None, driver=None, payment_term=None):
+def internal_customer_invoices(customer, start=0, page_length=50, search=None, driver=None, payment_term=None, sales_person=None):
     """One customer's collectable invoices for the internal drill-down: ALL terms
     (prepaid/bundled excluded), newest first, paginated (big accounts hold thousands),
-    optionally scoped to one driver's deliveries and/or a payment term. `search` narrows by
+    optionally scoped to one driver's deliveries, a payment term and/or a sales team member.
+    The same scoping as the list it drills into, so the totals agree. `search` narrows by
     invoice number; the header totals cover the whole (scoped) balance."""
     _require_internal()
     start, page_length = cint(start), cint(page_length) or 50
 
-    invoices = _scope_to_driver(_internal_outstanding(customer, payment_term=payment_term), driver)
+    invoices = _scope_to_sales_person(
+        _scope_to_driver(_internal_outstanding(customer, payment_term=payment_term), driver),
+        sales_person,
+    )
     total = sum(flt(inv.outstanding_amount) for inv in invoices)
     count = len(invoices)
     if search:

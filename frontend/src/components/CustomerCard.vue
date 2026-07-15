@@ -5,6 +5,7 @@ defineProps({
   customer: { type: Object, required: true },
   driver: { type: String, default: '' }, // carried through so the detail stays driver-scoped
   paymentTerm: { type: String, default: '' }, // carried through so the detail stays term-scoped
+  salesPerson: { type: String, default: '' }, // carried through so the detail stays member-scoped
   routeName: { type: String, default: 'Customer' }, // 'InternalCustomer' for internal mode
 })
 </script>
@@ -14,7 +15,11 @@ defineProps({
     :to="{
       name: routeName,
       params: { customer: customer.customer },
-      query: { ...(driver ? { driver } : {}), ...(paymentTerm ? { payment_term: paymentTerm } : {}) },
+      query: {
+        ...(driver ? { driver } : {}),
+        ...(paymentTerm ? { payment_term: paymentTerm } : {}),
+        ...(salesPerson ? { sales_person: salesPerson } : {}),
+      },
     }"
     class="flex items-center gap-3 rounded-xl border border-hairline bg-white p-4 transition-colors active:bg-mpesa/5"
   >
