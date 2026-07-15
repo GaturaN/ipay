@@ -188,7 +188,10 @@ async function backToList() {
         ? {
             name: 'SalesCustomer',
             params: { customer: q.customer },
-            query: { ...(q.payment_term ? { payment_term: q.payment_term } : {}) },
+            query: {
+              ...(q.payment_term ? { payment_term: q.payment_term } : {}),
+              ...(q.sales_person ? { sales_person: q.sales_person } : {}),
+            },
           }
         : { name: 'Sales' },
     )

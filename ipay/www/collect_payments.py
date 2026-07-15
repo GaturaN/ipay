@@ -5,6 +5,7 @@ from ipay.ipay.main.utils.prepaid import all_prepaid_invoice_names, prepaid_invo
 from ipay.ipay.main.utils.collector import OPERATOR_ROLES, collector_scope, is_collector_only
 from ipay.ipay.main.utils.constants import ACTIVE_BUNDLE_WINDOW_MIN
 from ipay.ipay.main.utils.sales import (
+    SALES_MANAGER_ROLES,
     SALES_ROLE,
     is_sales_only,
     my_sales_person,
@@ -14,10 +15,10 @@ from ipay.ipay.main.utils.sales import (
 
 # Roles allowed to use the collection page.
 ALLOWED_ROLES = {"System Manager", "iPay Manager", "iPay User", "iPay Collector"}
-# Who may load the SPA shell. A sales member is deliberately NOT in ALLOWED_ROLES: that set
-# gates the field endpoints, which scope by collector and would hand a sales member the whole
-# collect-on-delivery book. They reach their own data through the sales endpoints below.
-PAGE_ROLES = ALLOWED_ROLES | {SALES_ROLE}
+# Who may load the SPA shell. A sales member/manager is deliberately NOT in ALLOWED_ROLES:
+# that set gates the field endpoints, which scope by collector and would hand a sales member
+# the whole collect-on-delivery book. They reach their data through the sales endpoints below.
+PAGE_ROLES = ALLOWED_ROLES | SALES_MANAGER_ROLES | {SALES_ROLE}
 
 
 def _drop_bundled(invoices):
@@ -512,43 +513,59 @@ def internal_customer_invoices(customer, start=0, page_length=50, search=None, d
 # paginated shape as internal mode — one member can own thousands of invoices.
 
 def _require_sales():
-    """The sales page is for sales members; operators may open it too (it always shows the
-    caller's OWN book, so an operator without a Sales Person simply sees nothing)."""
+    """The sales page is for sales members and the managers above them."""
     if frappe.session.user == "Guest" or not (
-        (OPERATOR_ROLES | {SALES_ROLE}) & set(frappe.get_roles())
+        (SALES_MANAGER_ROLES | {SALES_ROLE}) & set(frappe.get_roles())
     ):
         frappe.throw("You are not permitted to use sales collection.", frappe.PermissionError)
 
 
+def _sales_view_person(sales_person):
+    """The Sales Person to scope the sales page to. A member is locked to their own book —
+    their caller-supplied value is ignored, so the argument can never widen their view. A
+    manager sees every book (None) or filters to the one they picked."""
+    if is_sales_only():
+        return my_sales_person()
+    return sales_person or None
+
+
 @frappe.whitelist()
-def sales_customers(payment_term=None):
-    """The signed-in sales member's own customers with a collectable balance, newest-invoice
-    customer first, optionally scoped to a payment term. `sales_person` is never taken from
-    the caller — it is resolved from their login, so this can only ever return their own book.
-    An unmapped login reports `unmapped` so the page can say why it is empty."""
+def sales_customers(payment_term=None, sales_person=None):
+    """Customers with a collectable balance for the sales page, newest-invoice customer
+    first, optionally scoped to a payment term. A sales member gets their OWN book (resolved
+    from their login); a manager gets every member's book and may filter to one — mirroring
+    how an operator sees every driver's work on the field page. An unmapped member reports
+    `unmapped` so the page can say why it is empty."""
     _require_sales()
-    person = my_sales_person()
-    if not person:
-        return {"customers": [], "payment_terms": [], "sales_person": "", "unmapped": True}
+    manager = not is_sales_only()
+    person = _sales_view_person(sales_person)
+    if not manager and not person:
+        return {
+            "customers": [], "payment_terms": [], "sales_persons": [],
+            "sales_person": "", "is_manager": False, "unmapped": True,
+        }
     invoices = scope_to_sales_person(_internal_outstanding(payment_term=payment_term), person)
     return {
         "customers": _customers_by_latest(invoices),
         "payment_terms": _internal_payment_terms(),
-        "sales_person": person,
+        # Only a manager may filter by member; a member never receives the option list.
+        "sales_persons": sales_person_options() if manager else [],
+        "sales_person": person or "",
+        "is_manager": manager,
         "unmapped": False,
     }
 
 
 @frappe.whitelist()
-def sales_customer_invoices(customer, start=0, page_length=50, search=None, payment_term=None):
-    """One of the signed-in sales member's customers, drilled down. Scoped to their own book
-    exactly like sales_customers, so passing another member's customer returns nothing rather
-    than that customer's balance."""
+def sales_customer_invoices(customer, start=0, page_length=50, search=None, payment_term=None, sales_person=None):
+    """One customer drilled down, scoped exactly like sales_customers — so a member passing
+    another member's customer gets nothing rather than that customer's balance, while a
+    manager sees the whole balance (or one member's share of it)."""
     _require_sales()
-    person = my_sales_person()
-    if not person:
+    if is_sales_only() and not my_sales_person():
         frappe.throw("Your login is not linked to a sales person.", frappe.PermissionError)
     invoices = scope_to_sales_person(
-        _internal_outstanding(customer, payment_term=payment_term), person
+        _internal_outstanding(customer, payment_term=payment_term),
+        _sales_view_person(sales_person),
     )
     return _drill_down(invoices, customer, start, page_length, search)
