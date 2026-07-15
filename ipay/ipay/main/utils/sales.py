@@ -4,9 +4,9 @@ A sales team member may prompt/collect only for their own book: the customers an
 invoices their Sales Person record is named on. The login is mapped to a Sales Person
 through ERPNext's own chain — Employee.user_id -> Sales Person.employee.
 
-Their managers (System Manager / Sales Manager, and the iPay operator roles) are never
-scoped: they see every member's book and filter to one — mirroring how an operator sees
-every driver's work on the field page while a collector sees only their own.
+Their managers (iPay Sales Manager, and the iPay operator roles) are never scoped: they see
+every member's book and filter to one — mirroring how an operator sees every driver's work
+on the field page while a collector sees only their own.
 
 Everything degrades safely, mirroring collector.py: a login with no Employee, or an
 Employee with no Sales Person, resolves to nothing and therefore sees nothing rather than
@@ -18,9 +18,11 @@ import frappe
 from ipay.ipay.main.utils.collector import OPERATOR_ROLES
 
 SALES_ROLE = "iPay Sales"
-# Above a sales member: sees every member's book and may filter to one. ERPNext's own
-# Sales Manager sits here alongside the iPay operator roles.
-SALES_MANAGER_ROLES = OPERATOR_ROLES | {"Sales Manager"}
+# Above a sales member: sees every member's book and may filter to one. Deliberately an
+# iPay-owned role, NOT ERPNext's stock "Sales Manager" — the reps themselves hold that one,
+# so using it would make every member a manager and the scoping inert.
+SALES_MANAGER_ROLE = "iPay Sales Manager"
+SALES_MANAGER_ROLES = OPERATOR_ROLES | {SALES_MANAGER_ROLE}
 
 
 def is_sales_manager(user=None):
@@ -98,6 +100,17 @@ def sales_person_options():
     return sorted({name for name in names if name and name not in groups})
 
 
+def _cached_scope(sales_person):
+    """The member's book, cached for the life of the request: create_bundle checks access
+    once per invoice and the scope is two unbounded reads."""
+    cache = getattr(frappe.local, "ipay_sales_scope", None)
+    if cache is None:
+        cache = frappe.local.ipay_sales_scope = {}
+    if sales_person not in cache:
+        cache[sales_person] = sales_person_scope(sales_person)
+    return cache[sales_person]
+
+
 def _in_book(sales_invoice, named, customers):
     """True when the invoice is in a book described by (named invoices, named customers)."""
     if not sales_invoice:
@@ -113,7 +126,7 @@ def can_access_invoice(sales_invoice, user=None):
     person = my_sales_person(user)
     if not person:
         return False
-    named, customers = sales_person_scope(person)
+    named, customers = _cached_scope(person)
     return _in_book(sales_invoice, named, customers)
 
 
@@ -131,5 +144,5 @@ def can_access_request(request_name, user=None):
     members = [inv for inv in members if inv]
     if not members:
         return False
-    named, customers = sales_person_scope(person)
+    named, customers = _cached_scope(person)
     return all(_in_book(inv, named, customers) for inv in members)

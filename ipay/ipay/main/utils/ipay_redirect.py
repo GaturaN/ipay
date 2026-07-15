@@ -19,12 +19,12 @@ HASH_FIELD_ORDER = [
 
 OPERATOR_ROLES = {"System Manager", "iPay Manager", "iPay User"}
 # Collectors and sales members may prompt/collect, but only for their own work — guarded
-# per invoice/request by the access checks below. A Sales Manager ranks above a member and
+# per invoice/request by the access checks below. A sales manager ranks above a member and
 # is never scoped, so they prompt for any of their team's work.
-ALL_OPERATOR_ROLES = OPERATOR_ROLES | {"iPay Collector", "iPay Sales", "Sales Manager"}
+ALL_OPERATOR_ROLES = OPERATOR_ROLES | {"iPay Collector", "iPay Sales", "iPay Sales Manager"}
 # Bundling several invoices into one prompt: operators, sales members and their managers
 # (who chase a customer's whole balance). Field collectors stay one invoice at a time.
-BUNDLER_ROLES = OPERATOR_ROLES | {"iPay Sales", "Sales Manager"}
+BUNDLER_ROLES = OPERATOR_ROLES | {"iPay Sales", "iPay Sales Manager"}
 
 
 def _require_full_operator():
