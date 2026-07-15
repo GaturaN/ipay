@@ -50,10 +50,14 @@ def get_context_for_dev():
 
 
 def get_boot():
+    from ipay.ipay.main.utils.sales import is_sales_only
+
     return frappe._dict(
         {
             "frappe_version": frappe.__version__,
             "default_route": "/collect",
+            # A sales member's home is their own book; the driver page would only refuse them.
+            "sales_only": is_sales_only(),
             "site_name": frappe.local.site,
             "csrf_token": frappe.sessions.get_csrf_token(),
             "timezone": {
