@@ -12,6 +12,8 @@ const API = {
   customerCollection: 'ipay.www.collect_payments.customer_collection',
   internalCustomers: 'ipay.www.collect_payments.internal_customers',
   internalCustomerInvoices: 'ipay.www.collect_payments.internal_customer_invoices',
+  salesCustomers: 'ipay.www.collect_payments.sales_customers',
+  salesCustomerInvoices: 'ipay.www.collect_payments.sales_customer_invoices',
   collectionStats: 'ipay.www.collect_payments.collection_stats',
   promptMpesa: 'ipay.ipay.main.utils.ipay_redirect.prompt_mpesa',
   promptRequest: 'ipay.ipay.main.utils.ipay_redirect.prompt_request_mpesa',
@@ -62,6 +64,21 @@ export const fetchInternalCustomerInvoices = (
       payment_term: paymentTerm,
       sales_person: salesPerson,
     },
+    'GET',
+  )
+
+// Sales mode: the signed-in member's OWN book (all terms). The server resolves the sales
+// person from the login, so there is no sales_person argument to pass.
+export const fetchSalesCustomers = (paymentTerm) =>
+  call(API.salesCustomers, { payment_term: paymentTerm || '' }, 'GET')
+
+export const fetchSalesCustomerInvoices = (
+  customer,
+  { start = 0, pageLength = 50, search = '', paymentTerm = '' } = {},
+) =>
+  call(
+    API.salesCustomerInvoices,
+    { customer, start, page_length: pageLength, search, payment_term: paymentTerm },
     'GET',
   )
 

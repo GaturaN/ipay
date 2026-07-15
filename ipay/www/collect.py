@@ -25,9 +25,9 @@ def get_context():
     # Operator/collector-only: a logged-in user without a collection role gets a
     # clear 403 instead of the empty SPA shell (the APIs already scope; this gates
     # the page itself, matching /collect_payments).
-    from ipay.www.collect_payments import ALLOWED_ROLES
+    from ipay.www.collect_payments import PAGE_ROLES
 
-    if not set(frappe.get_roles()) & ALLOWED_ROLES:
+    if not set(frappe.get_roles()) & PAGE_ROLES:
         raise frappe.PermissionError("You do not have access to iPay Collect.")
 
     # Freshness on resume/bfcache (e.g. returning from the hosted-checkout redirect) is

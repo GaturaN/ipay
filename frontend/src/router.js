@@ -24,6 +24,16 @@ const routes = [
     component: () => import('@/pages/InternalCustomerDetail.vue'),
   },
   {
+    path: '/sales',
+    name: 'Sales',
+    component: () => import('@/pages/SalesCollect.vue'),
+  },
+  {
+    path: '/sales/customer/:customer(.*)',
+    name: 'SalesCustomer',
+    component: () => import('@/pages/SalesCustomerDetail.vue'),
+  },
+  {
     path: '/request/:name',
     name: 'Request',
     component: () => import('@/pages/RequestDetail.vue'),

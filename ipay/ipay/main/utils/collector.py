@@ -89,26 +89,46 @@ def collector_scope(user=None):
 
 
 def can_access_invoice(sales_invoice, user=None):
-    """May this user prompt/collect for the given invoice? Always True for full
-    operators; for a collector, only their own work."""
+    """May this user prompt/collect for the given invoice? Always True for a full operator;
+    a scoped actor (collector and/or sales member) may act only on their own work — the
+    union of the scopes their roles grant, so holding both roles widens rather than narrows."""
+    from ipay.ipay.main.utils import sales
+
     user = user or frappe.session.user
-    if not is_collector_only(user):
-        return True
-    if not sales_invoice:
-        return False
-    return sales_invoice in collector_scope(user)["invoices"]
+    scoped = False
+    if is_collector_only(user):
+        scoped = True
+        if sales_invoice and sales_invoice in collector_scope(user)["invoices"]:
+            return True
+    if sales.is_sales_only(user):
+        scoped = True
+        if sales.can_access_invoice(sales_invoice, user):
+            return True
+    return not scoped
 
 
 def can_access_request(request_name, user=None):
-    """May this user act on the given iPay Request? Always True for full
-    operators; for a collector, only their assigned/driver-mapped requests — and
-    for a bundle, only when EVERY member invoice is their own work (owning one
-    member must not grant prompting the whole bundle across co-invoices)."""
+    """May this user act on the given iPay Request? Always True for a full operator; for a
+    scoped actor, only their own requests — and for a bundle, only when EVERY member invoice
+    is their own work (owning one member must not grant prompting the whole bundle across
+    co-invoices)."""
+    from ipay.ipay.main.utils import sales
+
     user = user or frappe.session.user
-    if not is_collector_only(user):
-        return True
-    if not request_name:
-        return False
+    scoped = False
+    if is_collector_only(user):
+        scoped = True
+        if request_name and _collector_owns_request(request_name, user):
+            return True
+    if sales.is_sales_only(user):
+        scoped = True
+        if sales.can_access_request(request_name, user):
+            return True
+    return not scoped
+
+
+def _collector_owns_request(request_name, user):
+    """Every invoice a request covers must be the collector's own work."""
     scope = collector_scope(user)
     if request_name not in scope["requests"]:
         return False

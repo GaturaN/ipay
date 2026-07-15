@@ -32,13 +32,16 @@ defineEmits(['retry'])
   <main class="mx-auto flex min-h-full w-full flex-col gap-4 p-4 pb-10" :class="containerClass">
     <h1 class="pt-1 font-display text-2xl font-bold tracking-tight text-ink">{{ title }}</h1>
 
-    <RoundHeader
-      :collected-today="collectedToday"
-      :outstanding-today="outstandingToday"
-      :remaining="remaining"
-      :count-label="countLabel"
-      :loading="statsLoading"
-    />
+    <!-- Sales mode supplies its own header: "Today's round" is a driver framing. -->
+    <slot name="header">
+      <RoundHeader
+        :collected-today="collectedToday"
+        :outstanding-today="outstandingToday"
+        :remaining="remaining"
+        :count-label="countLabel"
+        :loading="statsLoading"
+      />
+    </slot>
 
     <div class="flex flex-col gap-2 sm:flex-row">
       <slot name="filters" />

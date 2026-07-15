@@ -4,9 +4,20 @@ from frappe.utils import add_to_date, cint, flt, now_datetime, today
 from ipay.ipay.main.utils.prepaid import all_prepaid_invoice_names, prepaid_invoice_names
 from ipay.ipay.main.utils.collector import OPERATOR_ROLES, collector_scope, is_collector_only
 from ipay.ipay.main.utils.constants import ACTIVE_BUNDLE_WINDOW_MIN
+from ipay.ipay.main.utils.sales import (
+    SALES_ROLE,
+    is_sales_only,
+    my_sales_person,
+    sales_person_options,
+    scope_to_sales_person,
+)
 
 # Roles allowed to use the collection page.
 ALLOWED_ROLES = {"System Manager", "iPay Manager", "iPay User", "iPay Collector"}
+# Who may load the SPA shell. A sales member is deliberately NOT in ALLOWED_ROLES: that set
+# gates the field endpoints, which scope by collector and would hand a sales member the whole
+# collect-on-delivery book. They reach their own data through the sales endpoints below.
+PAGE_ROLES = ALLOWED_ROLES | {SALES_ROLE}
 
 
 def _drop_bundled(invoices):
@@ -222,16 +233,21 @@ def _annotate_customer_phone(invoices):
 def get_context(context):
     """The collection UI now lives in the SPA. This legacy route just redirects:
     operators to internal mode (/collect/internal, all terms), field collectors to their
-    scoped app (/collect); guests log in first."""
+    scoped app (/collect), sales members to their own book (/collect/sales); guests log in
+    first."""
     context.no_cache = 1
     if frappe.session.user == "Guest":
         # Back to this route (not straight to /collect/internal) so the role branch below
         # runs after login — a collector must land on /collect, not internal mode.
         frappe.local.flags.redirect_location = "/login?redirect-to=/collect_payments"
         raise frappe.Redirect
+    user = frappe.session.user
+    if is_sales_only(user):
+        frappe.local.flags.redirect_location = "/collect/sales"
+        raise frappe.Redirect
     _require_collection_access()
     frappe.local.flags.redirect_location = (
-        "/collect" if is_collector_only(frappe.session.user) else "/collect/internal"
+        "/collect" if is_collector_only(user) else "/collect/internal"
     )
     raise frappe.Redirect
 
@@ -401,50 +417,41 @@ def _internal_driver_names():
     return sorted(name for name in on_dns if name and name in active)
 
 
-def _sales_person_scope(sales_person):
-    """The invoices and the customers a sales team member is named on, read from the live
-    Sales Team rows of each."""
-    invoices = set(frappe.get_all(
-        "Sales Team",
-        filters={"parenttype": "Sales Invoice", "sales_person": sales_person},
-        pluck="parent",
-    ))
-    customers = set(frappe.get_all(
-        "Sales Team",
-        filters={"parenttype": "Customer", "sales_person": sales_person},
-        pluck="parent",
-    ))
-    return invoices, customers
-
-
-def _scope_to_sales_person(invoices, sales_person):
-    """Keep only invoices assigned to the named sales team member — by the invoice's own
-    sales team, or by their customer's. ERPNext copies the customer's team onto an invoice
-    when it is created and never refreshes it, so a reassigned customer's older invoices
-    keep the previous member; matching either honours both readings. Mirrors
-    _scope_to_driver: a post-filter, so it composes with the other internal filters."""
-    if not sales_person:
-        return invoices
-    named, customers = _sales_person_scope(sales_person)
-    return [inv for inv in invoices if inv.name in named or inv.customer in customers]
-
-
-def _internal_sales_persons():
-    """Sales team members named on any customer or invoice — the internal filter's options.
-    Read from the live Sales Team rows rather than the Sales Person master so a member whose
-    master record was deleted (their assignments survive) can still be filtered on, and a
-    disabled member's outstanding work stays reachable."""
-    names = frappe.get_all(
-        "Sales Team",
-        filters={"parenttype": ["in", ["Customer", "Sales Invoice"]]},
-        pluck="sales_person",
-        distinct=True,
+def _customers_by_latest(invoices):
+    """Aggregate invoices into customer rows, newest-invoice customer first — the shape both
+    the internal and the sales list return."""
+    by_customer = {}
+    for inv in invoices:
+        row = _accumulate_customer(by_customer, inv)
+        if inv.posting_date and (not row.get("latest_date") or inv.posting_date > row["latest_date"]):
+            row["latest_date"] = inv.posting_date
+    return sorted(
+        by_customer.values(), key=lambda r: str(r.get("latest_date") or ""), reverse=True
     )
-    # Drop tree group nodes (e.g. the "Sales Team" root, which some rows are booked against):
-    # the scope matches a name exactly, so a group would report only what is booked on the
-    # group itself and never its members' work — a total that reads as the whole team's.
-    groups = set(frappe.get_all("Sales Person", filters={"is_group": 1}, pluck="name"))
-    return sorted({name for name in names if name and name not in groups})
+
+
+def _drill_down(invoices, customer, start, page_length, search):
+    """One customer's invoices for a drill-down: totals over the whole scoped balance, then
+    an optionally-searched page of it. Shared by the internal and sales detail views."""
+    start, page_length = cint(start), cint(page_length) or 50
+    total = sum(flt(inv.outstanding_amount) for inv in invoices)
+    count = len(invoices)
+    if search:
+        needle = search.strip().lower()
+        invoices = [inv for inv in invoices if needle in inv.name.lower()]
+
+    page = invoices[start : start + page_length]
+    _annotate_delivery(page)
+    _annotate_customer_phone(page)
+    return {
+        "customer": customer,
+        "customer_name": frappe.db.get_value("Customer", customer, "customer_name") or customer,
+        "invoices": page,
+        "invoice_count": count,
+        "total_outstanding": total,
+        "has_more": start + page_length < len(invoices),
+        **_settings_flags(),
+    }
 
 
 def _internal_payment_terms():
@@ -473,20 +480,14 @@ def internal_customers(driver=None, payment_term=None, sales_person=None):
     customer. Excluding prepaid here (via the order-first lookup) keeps a fully-prepaid
     customer from showing a balance that opens to an empty drill-down."""
     _require_internal()
-    invoices = _scope_to_sales_person(
+    invoices = scope_to_sales_person(
         _scope_to_driver(_internal_outstanding(payment_term=payment_term), driver), sales_person
     )
-    by_customer = {}
-    for inv in invoices:
-        row = _accumulate_customer(by_customer, inv)
-        if inv.posting_date and (not row.get("latest_date") or inv.posting_date > row["latest_date"]):
-            row["latest_date"] = inv.posting_date
-    customers = sorted(by_customer.values(), key=lambda r: str(r.get("latest_date") or ""), reverse=True)
     return {
-        "customers": customers,
+        "customers": _customers_by_latest(invoices),
         "drivers": _internal_driver_names(),
         "payment_terms": _internal_payment_terms(),
-        "sales_persons": _internal_sales_persons(),
+        "sales_persons": sales_person_options(),
     }
 
 
@@ -498,27 +499,56 @@ def internal_customer_invoices(customer, start=0, page_length=50, search=None, d
     The same scoping as the list it drills into, so the totals agree. `search` narrows by
     invoice number; the header totals cover the whole (scoped) balance."""
     _require_internal()
-    start, page_length = cint(start), cint(page_length) or 50
-
-    invoices = _scope_to_sales_person(
+    invoices = scope_to_sales_person(
         _scope_to_driver(_internal_outstanding(customer, payment_term=payment_term), driver),
         sales_person,
     )
-    total = sum(flt(inv.outstanding_amount) for inv in invoices)
-    count = len(invoices)
-    if search:
-        needle = search.strip().lower()
-        invoices = [inv for inv in invoices if needle in inv.name.lower()]
+    return _drill_down(invoices, customer, start, page_length, search)
 
-    page = invoices[start : start + page_length]
-    _annotate_delivery(page)
-    _annotate_customer_phone(page)
+
+# --- Sales mode (/collect/sales) --------------------------------------------------------
+# A sales team member's own book: only the customers/invoices their Sales Person is named on,
+# across ALL payment terms (they chase receivables, not just collect-on-delivery). Same
+# paginated shape as internal mode — one member can own thousands of invoices.
+
+def _require_sales():
+    """The sales page is for sales members; operators may open it too (it always shows the
+    caller's OWN book, so an operator without a Sales Person simply sees nothing)."""
+    if frappe.session.user == "Guest" or not (
+        (OPERATOR_ROLES | {SALES_ROLE}) & set(frappe.get_roles())
+    ):
+        frappe.throw("You are not permitted to use sales collection.", frappe.PermissionError)
+
+
+@frappe.whitelist()
+def sales_customers(payment_term=None):
+    """The signed-in sales member's own customers with a collectable balance, newest-invoice
+    customer first, optionally scoped to a payment term. `sales_person` is never taken from
+    the caller — it is resolved from their login, so this can only ever return their own book.
+    An unmapped login reports `unmapped` so the page can say why it is empty."""
+    _require_sales()
+    person = my_sales_person()
+    if not person:
+        return {"customers": [], "payment_terms": [], "sales_person": "", "unmapped": True}
+    invoices = scope_to_sales_person(_internal_outstanding(payment_term=payment_term), person)
     return {
-        "customer": customer,
-        "customer_name": frappe.db.get_value("Customer", customer, "customer_name") or customer,
-        "invoices": page,
-        "invoice_count": count,
-        "total_outstanding": total,
-        "has_more": start + page_length < len(invoices),
-        **_settings_flags(),
+        "customers": _customers_by_latest(invoices),
+        "payment_terms": _internal_payment_terms(),
+        "sales_person": person,
+        "unmapped": False,
     }
+
+
+@frappe.whitelist()
+def sales_customer_invoices(customer, start=0, page_length=50, search=None, payment_term=None):
+    """One of the signed-in sales member's customers, drilled down. Scoped to their own book
+    exactly like sales_customers, so passing another member's customer returns nothing rather
+    than that customer's balance."""
+    _require_sales()
+    person = my_sales_person()
+    if not person:
+        frappe.throw("Your login is not linked to a sales person.", frappe.PermissionError)
+    invoices = scope_to_sales_person(
+        _internal_outstanding(customer, payment_term=payment_term), person
+    )
+    return _drill_down(invoices, customer, start, page_length, search)
