@@ -20,6 +20,7 @@ const API = {
   saveContact: 'ipay.ipay.main.utils.ipay_redirect.save_customer_contact',
   invoiceNotes: 'ipay.ipay.main.utils.ipay_redirect.invoice_notes',
   addInvoiceNote: 'ipay.ipay.main.utils.ipay_redirect.add_invoice_note',
+  recordCheque: 'ipay.ipay.main.utils.ipay_redirect.record_cheque',
   paymentState: 'ipay.ipay.main.utils.ipay_redirect.payment_state',
   createBundle: 'ipay.ipay.main.utils.ipay_redirect.create_bundle',
   requestDetail: 'ipay.ipay.main.utils.ipay_redirect.request_detail',
@@ -109,6 +110,17 @@ export const saveCustomerContact = (request, phone) =>
 // Collection notes on an invoice — plain text; the server escapes on write and unescapes here.
 export const fetchInvoiceNotes = (invoice) => call(API.invoiceNotes, { invoice }, 'GET')
 export const addInvoiceNote = (invoice, note) => call(API.addInvoiceNote, { invoice, note })
+
+// A collected cheque becomes a DRAFT Payment Entry for the accounts team to submit. No invoices
+// records it on account. `photo` is a downscaled data URL; the server attaches it to the entry.
+export const recordCheque = ({ customer, amount, chequeNo, photo, invoices = [] }) =>
+  call(API.recordCheque, {
+    customer,
+    amount,
+    cheque_no: chequeNo,
+    photo,
+    invoices: JSON.stringify(invoices),
+  })
 
 export const paymentState = (request) => call(API.paymentState, { request }, 'GET')
 
