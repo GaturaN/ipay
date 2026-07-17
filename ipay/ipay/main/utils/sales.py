@@ -1,11 +1,11 @@
-"""Visibility scoping for the iPay Sales role.
+"""Visibility scoping for the sales team, on ERPNext's own Sales roles.
 
-A sales team member may prompt/collect only for their own book: the customers and the
-invoices their Sales Person record is named on. The login is mapped to a Sales Person
-through ERPNext's own chain — Employee.user_id -> Sales Person.employee.
+A Sales User may prompt/collect only for their own book: the customers and the invoices
+their Sales Person record is named on. The login is mapped to a Sales Person through
+ERPNext's own chain — Employee.user_id -> Sales Person.employee.
 
-Anyone above a member — a manager or an operator — uses the internal page instead, which
-already lists every customer and filters by sales person.
+Anyone above them — a Sales Manager or an iPay operator — uses the internal page instead,
+which already lists every customer and filters by sales person.
 
 Everything degrades safely, mirroring collector.py: a login with no Employee, or an
 Employee with no Sales Person, resolves to nothing and therefore sees nothing rather than
@@ -16,16 +16,17 @@ import frappe
 
 from ipay.ipay.main.utils.collector import OPERATOR_ROLES
 
-SALES_ROLE = "iPay Sales"
+SALES_ROLE = "Sales User"
+SALES_MANAGER_ROLES = OPERATOR_ROLES | {"Sales Manager"}
 
 
 def is_sales_only(user=None):
-    """True when the user collects their own sales book (so their view must be scoped).
-    Granting iPay Sales is what marks someone a member; only a full iPay operator role
-    cancels it, mirroring is_collector_only."""
+    """True when the user collects their own sales book (so their view must be scoped): they
+    sell and rank no higher. Mirrors is_collector_only — a manager role cancels the scoping,
+    so a Sales User who is also a Sales Manager sees everything via the internal page."""
     user = user or frappe.session.user
     roles = set(frappe.get_roles(user))
-    return SALES_ROLE in roles and not (OPERATOR_ROLES & roles)
+    return SALES_ROLE in roles and not (SALES_MANAGER_ROLES & roles)
 
 
 def my_sales_person(user=None):
