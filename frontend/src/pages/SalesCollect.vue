@@ -8,19 +8,22 @@ import CustomerListShell from '@/components/CustomerListShell.vue'
 
 const route = useRoute()
 
-// Sales mode: the signed-in member's OWN book — every customer their Sales Person is named
-// on, across all payment terms (they chase receivables, not just collect-on-delivery). The
-// server resolves the member from the login, so nothing here can widen the scope; managers
-// use internal mode, which lists every customer and filters by sales person.
+// The sales team's page, across all payment terms (they chase receivables, not just
+// collect-on-delivery): a sales user sees the customers their own Sales Person is named on,
+// their manager sees every member's book and filters to one. The server resolves a locked
+// caller from their login, so nothing here can widen a user's scope.
 const customers = ref([])
 const listLoading = ref(true)
 const loadError = ref(false)
 const unmapped = ref(false) // login has no Sales Person — the page explains rather than looking empty
-const person = ref('')
+const person = ref('') // whose book is shown; blank = every book (an unrestricted manager)
+const isManager = ref(false)
 
 const search = ref('')
 const paymentTerms = ref([])
 const paymentTerm = ref(route.query.payment_term || '')
+const salesPersons = ref([]) // only a manager is sent these
+const salesPerson = ref(route.query.sales_person || '')
 
 const filtered = computed(() => {
   const query = search.value.trim().toLowerCase()
@@ -43,10 +46,12 @@ async function loadCustomers() {
   listLoading.value = true
   loadError.value = false
   try {
-    const data = await fetchSalesCustomers(paymentTerm.value)
+    const data = await fetchSalesCustomers(paymentTerm.value, salesPerson.value)
     customers.value = data.customers || []
     paymentTerms.value = data.payment_terms || []
+    salesPersons.value = data.sales_persons || []
     person.value = data.sales_person || ''
+    isManager.value = Boolean(data.is_manager)
     unmapped.value = Boolean(data.unmapped)
   } catch {
     // Only a sales member can reach this route (the router guards it), so any failure
@@ -71,12 +76,13 @@ onMounted(loadCustomers)
     :empty-message="emptyMessage"
     card-route-name="SalesCustomer"
     :card-payment-term="paymentTerm"
+    :card-sales-person="salesPerson"
     @retry="loadCustomers"
   >
     <template #header>
       <section class="rounded-2xl bg-ink px-5 py-4 text-paper">
         <p class="font-display text-xs font-semibold uppercase tracking-widest text-paper/60">
-          {{ person || 'My book' }}
+          {{ person || (isManager ? 'All sales members' : 'My book') }}
         </p>
         <p class="mt-1 font-mono text-3xl font-semibold tabular-nums">
           {{ listLoading ? '—' : formatKES(bookTotal) }}
@@ -104,6 +110,17 @@ onMounted(loadCustomers)
       >
         <option value="">All terms</option>
         <option v-for="t in paymentTerms" :key="t" :value="t">{{ t }}</option>
+      </select>
+      <!-- Managers only: the server never sends these to a caller locked to their own book. -->
+      <select
+        v-if="salesPersons.length"
+        v-model="salesPerson"
+        aria-label="Filter by sales team member"
+        class="h-11 w-full rounded-xl border border-hairline bg-white px-3 text-sm text-ink focus:border-mpesa focus:outline-none focus:ring-2 focus:ring-mpesa/40 sm:w-48"
+        @change="loadCustomers"
+      >
+        <option value="">All sales members</option>
+        <option v-for="p in salesPersons" :key="p" :value="p">{{ p }}</option>
       </select>
     </template>
   </CustomerListShell>

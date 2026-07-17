@@ -1,10 +1,11 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useSession } from '@/stores/session'
 
-// A sales member's home is their own book — the driver page's data would only refuse them.
-const salesHome = () => (window.sales_only ? { name: 'Sales' } : true)
-// ...and only their own book lives under /sales; anyone else belongs on internal.
-const salesOnly = () => (window.sales_only ? true : { name: 'Internal' })
+// The sales team's home is the sales page — the driver page's data would only refuse them.
+const salesHome = () => (window.sales_home ? { name: 'Sales' } : true)
+// ...and /sales is open to the sales team and the operators above them; a field collector
+// has no book there, so send them to their own page.
+const salesOnly = () => (window.sales_access ? true : { name: 'Collect' })
 
 const routes = [
   {
@@ -51,7 +52,7 @@ const routes = [
   // Unmatched URLs (typo, stale bookmark, mis-decoded path) land on the list, never blank.
   {
     path: '/:pathMatch(.*)*',
-    redirect: () => (window.sales_only ? { name: 'Sales' } : { name: 'Collect' }),
+    redirect: () => (window.sales_home ? { name: 'Sales' } : { name: 'Collect' }),
   },
 ]
 

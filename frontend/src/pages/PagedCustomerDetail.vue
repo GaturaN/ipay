@@ -31,7 +31,7 @@ const MODES = {
     fetch: fetchSalesCustomerInvoices,
     list: 'Sales',
     back: 'My customers',
-    scope: ['payment_term'],
+    scope: ['payment_term', 'sales_person'],
   },
 }
 
