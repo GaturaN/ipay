@@ -893,15 +893,12 @@ def _require_customer_access(customer):
 
 
 def _cheque_account(company):
-    """Cheques land in the undeposited-cheque account, never cash."""
-    account = frappe.db.get_value(
-        "Mode of Payment Account", {"parent": CHEQUE_MODE, "company": company}, "default_account"
-    ) or frappe.db.get_single_value("iPay Settings", "cheque_account")
+    """Where collected cheques are booked — set once in iPay Settings, and never cash."""
+    account = frappe.db.get_single_value("iPay Settings", "cheque_account")
     if not account:
-        frappe.throw(
-            f"No cheque account is configured for {company}. Set a Default Account on Mode of "
-            f"Payment {CHEQUE_MODE}, or set iPay Settings → Cheque Account (fallback)."
-        )
+        frappe.throw("No cheque account is configured. Set iPay Settings → Cheque Account.")
+    if frappe.db.get_value("Account", account, "company") != company:
+        frappe.throw(f"The cheque account in iPay Settings does not belong to {company}.")
     return account
 
 

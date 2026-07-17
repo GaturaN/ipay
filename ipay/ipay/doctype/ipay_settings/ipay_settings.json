@@ -95,10 +95,10 @@
    "options": "Account"
   },
   {
-   "description": "Fallback account for collected cheques, used only when the Cheque Mode of Payment has no account set for the company. Cheques must never book to cash.",
+   "description": "Account collected cheques are booked to, as undeposited funds. Required before a cheque can be recorded — cheques must never book to cash.",
    "fieldname": "cheque_account",
    "fieldtype": "Link",
-   "label": "Cheque Account (fallback)",
+   "label": "Cheque Account",
    "options": "Account"
   },
   {
