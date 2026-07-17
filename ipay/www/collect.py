@@ -50,14 +50,16 @@ def get_context_for_dev():
 
 
 def get_boot():
-    from ipay.ipay.main.utils.sales import is_sales_only
+    from ipay.www.collect_payments import can_open_sales, lands_on_sales
 
     return frappe._dict(
         {
             "frappe_version": frappe.__version__,
             "default_route": "/collect",
-            # A sales member's home is their own book; the driver page would only refuse them.
-            "sales_only": is_sales_only(),
+            # The sales team's home is the sales page; the driver page would only refuse them.
+            "sales_home": lands_on_sales(),
+            # Operators may open it too, they just land on internal.
+            "sales_access": can_open_sales(),
             "site_name": frappe.local.site,
             "csrf_token": frappe.sessions.get_csrf_token(),
             "timezone": {
