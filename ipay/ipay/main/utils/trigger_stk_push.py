@@ -2,7 +2,9 @@ import requests
 import hmac
 import hashlib
 import logging
-import frappe  
+import frappe
+
+from ipay.ipay.main.utils.http import post_with_backoff
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +24,14 @@ def trigger_stk_push(phone: str, sid: str, vid: str, secret_key: str) -> dict:
             'hash': hash_value
         }       
 
-        # Send the STK push request
-        response = requests.post('https://apis.ipayafrica.com/payments/v2/transact/push/mpesa',
-                                 data=stk_push_payload,
-                                 headers={'Content-Type': 'application/x-www-form-urlencoded'})
-        
-        # check if the request was successful
-        response.raise_for_status()
+        # Send the STK push request. A momentary 429/5xx is retried with backoff; a
+        # timeout bounds the call so a hung socket can't wedge the worker.
+        response = post_with_backoff(
+            'https://apis.ipayafrica.com/payments/v2/transact/push/mpesa',
+            data=stk_push_payload,
+            headers={'Content-Type': 'application/x-www-form-urlencoded'},
+            timeout=30,
+        )
         logger.info('STK push initiated successfully')
         return response.json()
     
