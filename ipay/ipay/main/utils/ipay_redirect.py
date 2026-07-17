@@ -5,6 +5,7 @@ import hashlib
 import frappe
 from frappe.utils.file_manager import save_file
 
+from ipay.ipay.main.utils.cheque import awaiting_cheque_amounts
 from ipay.ipay.main.utils.make_payment_entry import allocate_references
 from ipay.ipay.main.utils.reconcile_payments import reconcile_request
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
@@ -522,6 +523,10 @@ def create_bundle(customer, invoices):
     if not invoices:
         frappe.throw("Select at least one invoice.")
 
+    # A cheque already in hand does not reduce outstanding until accounts bank it, so these
+    # invoices still look collectable here — bundling one would charge the money twice.
+    awaiting_cheque = awaiting_cheque_amounts(invoices)
+
     rows = []
     total = 0.0
     companies = set()
@@ -529,11 +534,14 @@ def create_bundle(customer, invoices):
         # A scoped caller (sales member) may only bundle their own work — without this the
         # customer check below would still pass for another member's invoices.
         _require_invoice_access(name)
+        # Take the name back from the DB: invoice names match case-insensitively, so a caller's
+        # spelling would slip past the checks below that compare names in Python.
         si = frappe.db.get_value(
-            "Sales Invoice", name, ["customer", "company", "outstanding_amount", "posting_date"], as_dict=True
+            "Sales Invoice", name, ["name", "customer", "company", "outstanding_amount", "posting_date"], as_dict=True
         )
         if not si:
             continue
+        name = si.name
         if si.customer != customer:
             frappe.throw(f"Invoice {name} does not belong to {customer}.")
         if frappe.utils.flt(si.outstanding_amount) <= 0:
@@ -541,12 +549,17 @@ def create_bundle(customer, invoices):
         # Prepaid invoices settle automatically — never bundle them for collection.
         if is_sales_invoice_prepaid(name):
             continue
+        if frappe.utils.flt(awaiting_cheque.get(name)) > 0:
+            continue
         companies.add(si.company)
         rows.append((si.posting_date, name))
         total += frappe.utils.flt(si.outstanding_amount)
 
     if not rows:
-        frappe.throw("None of the selected invoices need collection (paid, prepaid, or zero balance).")
+        frappe.throw(
+            "None of the selected invoices need collection (paid, prepaid, awaiting a cheque, "
+            "or zero balance)."
+        )
     if len(companies) > 1:
         frappe.throw("All invoices in a bundle must belong to the same company.")
 

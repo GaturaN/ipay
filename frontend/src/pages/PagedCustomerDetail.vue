@@ -77,9 +77,18 @@ const { selected, isSelected, toggleSelect, clearSelection, dropSelected, select
   useInvoiceSelection()
 const selectable = computed(() => count.value > 2)
 
+// A cheque already in hand is not banked yet, so the invoice still shows its full balance —
+// but charging it again would take the money twice. It stays listed, it just cannot be collected.
+const collectable = computed(() => invoices.value.filter((inv) => !inv.awaiting_cheque))
+const collectableTotal = computed(() =>
+  collectable.value.reduce((sum, inv) => sum + Number(inv.outstanding_amount || 0), 0),
+)
+
 // Over the M-Pesa cap with no card fallback a bundle can't be paid (and hides its invoices
 // ~30 min) — block it and let the operator collect invoices individually.
-const bundleAmount = computed(() => (selected.value.length ? selectedTotal.value : total.value))
+const bundleAmount = computed(() =>
+  selected.value.length ? selectedTotal.value : collectableTotal.value,
+)
 const bundleBlocked = computed(
   () => !enableRedirect.value && mpesaMax.value > 0 && bundleAmount.value > mpesaMax.value,
 )
@@ -159,12 +168,12 @@ async function collect(names) {
 }
 // Ticked a subset → collect those; nothing ticked → the whole loaded balance.
 const collectNow = () =>
-  collect((selected.value.length ? selected.value : invoices.value).map((inv) => inv.name))
+  collect((selected.value.length ? selected.value : collectable.value).map((inv) => inv.name))
 
 // "Collect all" only when the whole balance is on screen: no more pages AND no active
 // search (a search narrows the loaded rows, so "all" would bundle just the matches).
 const canCollectAll = computed(
-  () => !hasMore.value && invoices.value.length > 1 && !search.value.trim(),
+  () => !hasMore.value && collectable.value.length > 1 && !search.value.trim(),
 )
 
 const toList = () => router.push({ name: mode.list, query: scopeQuery() })
@@ -233,7 +242,7 @@ onMounted(() => load(true))
         :show-bar="selected.length > 0 || canCollectAll"
         :selected-count="selected.length"
         :selected-total="selectedTotal"
-        :total="total"
+        :total="collectableTotal"
         :creating-bundle="creatingBundle"
         :bundle-blocked="bundleBlocked"
         :mpesa-max="mpesaMax"
@@ -273,7 +282,7 @@ onMounted(() => load(true))
             :invoice="inv"
             :enable-redirect="enableRedirect"
             :mpesa-max="mpesaMax"
-            :selectable="selectable"
+            :selectable="selectable && !inv.awaiting_cheque"
             :selected="isSelected(inv)"
             :actions-disabled="selected.length > 0"
             @prompt="promptInvoice(inv)"

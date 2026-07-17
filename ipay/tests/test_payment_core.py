@@ -4,7 +4,7 @@ import frappe
 import requests
 from frappe.tests.utils import FrappeTestCase
 
-from ipay.ipay.main.utils import make_payment_entry, reconcile_payments
+from ipay.ipay.main.utils import cheque, make_payment_entry, reconcile_payments
 from ipay.ipay.main.utils.constants import amounts_match, clean_oid
 from ipay.ipay.main.utils.finalize_payment import _resolve_status
 from ipay.ipay.main.utils.ipay_redirect import normalize_phone
@@ -149,6 +149,75 @@ class TestAllocateReferences(FrappeTestCase):
         _, refs, remaining = _allocate({"INV-1": 0.0}, {"INV-1": [("NET 15", 5000.0)]}, 700.0)
         self.assertEqual(refs, [])
         self.assertEqual(remaining, 700.0)
+
+
+def _awaiting(entries, ask=None):
+    """Run the cheque predicate against fake Payment Entries.
+
+    `entries` is [(parent, docstatus, mode, [(invoice, amount), ...]), ...]. The mock applies the
+    real filters, so dropping one in the code makes these tests fail rather than pass regardless."""
+    def get_all(doctype, **kwargs):
+        filters = kwargs["filters"]
+        if doctype == "Payment Entry Reference":
+            return [
+                frappe._dict(parent=parent, reference_name=inv, allocated_amount=amount)
+                for parent, docstatus, _mode, refs in entries
+                for inv, amount in refs
+                if docstatus == filters["docstatus"]
+                and filters["reference_doctype"] == "Sales Invoice"
+                and inv in filters["reference_name"][1]
+            ]
+        return [
+            parent
+            for parent, docstatus, mode, _refs in entries
+            if parent in filters["name"][1]
+            and docstatus == filters["docstatus"]
+            and mode == filters["mode_of_payment"]
+        ]
+
+    invoices = ask or [inv for _, _, _, refs in entries for inv, _ in refs]
+    with patch.object(cheque.frappe, "get_all", side_effect=get_all):
+        return cheque.awaiting_cheque_amounts(invoices)
+
+
+DRAFT, SUBMITTED = 0, 1
+
+
+class TestAwaitingChequeAmounts(FrappeTestCase):
+    """What this returns decides whether an invoice can be charged again. A false negative
+    collects the money twice; a false positive strands an invoice nobody can collect."""
+
+    def test_no_invoices_asks_nothing(self):
+        self.assertEqual(cheque.awaiting_cheque_amounts([]), {})
+        self.assertEqual(cheque.awaiting_cheque_amounts(None), {})
+
+    def test_draft_cheque_covers_its_invoice(self):
+        covered = _awaiting([("PE-1", DRAFT, "Cheque", [("INV-1", 700.0)])])
+        self.assertEqual(covered, {"INV-1": 700.0})
+
+    def test_a_draft_of_another_mode_does_not_count(self):
+        # Only the parent knows the mode; an M-Pesa draft must never strand an invoice.
+        covered = _awaiting([("PE-1", DRAFT, "MPESA", [("INV-1", 700.0)])], ask=["INV-1"])
+        self.assertEqual(covered, {})
+
+    def test_a_submitted_cheque_does_not_count(self):
+        # Once accounts submit it, outstanding drops on its own and the marker must let go.
+        covered = _awaiting([("PE-1", SUBMITTED, "Cheque", [("INV-1", 700.0)])], ask=["INV-1"])
+        self.assertEqual(covered, {})
+
+    def test_several_cheques_on_one_invoice_are_summed(self):
+        covered = _awaiting([
+            ("PE-1", DRAFT, "Cheque", [("INV-1", 700.0)]),
+            ("PE-2", DRAFT, "Cheque", [("INV-1", 300.0)]),
+        ])
+        self.assertEqual(covered, {"INV-1": 1000.0})
+
+    def test_only_the_covered_invoice_is_flagged(self):
+        covered = _awaiting([
+            ("PE-1", DRAFT, "Cheque", [("INV-1", 700.0)]),
+            ("PE-2", DRAFT, "MPESA", [("INV-2", 50.0)]),
+        ])
+        self.assertEqual(covered, {"INV-1": 700.0})
 
 
 def _fake_response(status_code, json_value=None, json_error=False):
