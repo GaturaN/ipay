@@ -225,6 +225,7 @@ def _customer_invoices(user, customer, driver=None):
     if driver:
         invoices = [inv for inv in invoices if driver in (inv.get("drivers") or [])]
     _annotate_customer_phone(invoices)
+    _annotate_sales_person(invoices)
     _annotate_notes(invoices)
     return invoices
 
@@ -244,6 +245,36 @@ def _annotate_customer_phone(invoices):
     }
     for inv in invoices:
         inv.customer_phone = phone_by_customer.get(inv.customer, "")
+
+
+def _annotate_sales_person(invoices):
+    """Attach the sales team member(s) behind each invoice in place (two batched queries) —
+    the invoice's own Sales Team plus its customer's, the same union the sales scoping matches,
+    so a card shows who owns it and why it sits in that member's book. Both are kept because
+    ERPNext snapshots the customer's team onto the invoice at creation and never refreshes it."""
+    if not invoices:
+        return
+    by_invoice, by_customer = {}, {}
+    for row in frappe.get_all(
+        "Sales Team",
+        filters={"parenttype": "Sales Invoice", "parent": ["in", [inv.name for inv in invoices]]},
+        fields=["parent", "sales_person"],
+    ):
+        by_invoice.setdefault(row.parent, set()).add(row.sales_person)
+
+    customers = list({inv.customer for inv in invoices if inv.customer})
+    if customers:
+        for row in frappe.get_all(
+            "Sales Team",
+            filters={"parenttype": "Customer", "parent": ["in", customers]},
+            fields=["parent", "sales_person"],
+        ):
+            by_customer.setdefault(row.parent, set()).add(row.sales_person)
+
+    for inv in invoices:
+        people = by_invoice.get(inv.name, set()) | by_customer.get(inv.customer, set())
+        inv.sales_persons = sorted(p for p in people if p)
+        inv.sales_person_name = ", ".join(inv.sales_persons)
 
 
 def _annotate_notes(invoices):
@@ -487,6 +518,7 @@ def _drill_down(invoices, customer, start, page_length, search):
     page = invoices[start : start + page_length]
     _annotate_delivery(page)
     _annotate_customer_phone(page)
+    _annotate_sales_person(page)
     _annotate_notes(page)
     return {
         "customer": customer,
