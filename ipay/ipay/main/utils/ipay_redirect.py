@@ -3,7 +3,9 @@ import hmac
 import hashlib
 
 import frappe
+from frappe.utils.file_manager import save_file
 
+from ipay.ipay.main.utils.make_payment_entry import allocate_references
 from ipay.ipay.main.utils.reconcile_payments import reconcile_request
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
 from ipay.ipay.main.utils.constants import (
@@ -33,6 +35,9 @@ ALL_OPERATOR_ROLES = OPERATOR_ROLES | {"iPay Collector", "Sales User", "Sales Ma
 # Bundling several invoices into one prompt: operators, sales users and sales managers
 # (who chase a customer's whole balance). Field collectors stay one invoice at a time.
 BUNDLER_ROLES = OPERATOR_ROLES | {"Sales User", "Sales Manager"}
+
+CHEQUE_MODE = "Cheque"
+CHEQUE_NO_MAX_LENGTH = 30
 
 
 def _require_full_operator():
@@ -870,6 +875,127 @@ def add_invoice_note(invoice, note):
             "content": note_content(text),
         }
     ).insert(ignore_permissions=True)
+
+
+def _require_customer_access(customer):
+    """A scoped actor may only act on a customer they hold an outstanding invoice for — an
+    on-account cheque names no invoice, so nothing else would scope it."""
+    from ipay.ipay.main.utils.collector import can_access_invoice
+
+    for invoice in frappe.get_all(
+        "Sales Invoice",
+        filters={"customer": customer, "docstatus": 1, "outstanding_amount": [">", 0]},
+        pluck="name",
+    ):
+        if can_access_invoice(invoice):
+            return
+    frappe.throw("You are not assigned to this customer.", frappe.PermissionError)
+
+
+def _cheque_account(company):
+    """Where collected cheques are booked — set once in iPay Settings, and never cash."""
+    account = frappe.db.get_single_value("iPay Settings", "cheque_account")
+    if not account:
+        frappe.throw("No cheque account is configured. Set iPay Settings → Cheque Account.")
+    if frappe.db.get_value("Account", account, "company") != company:
+        frappe.throw(f"The cheque account in iPay Settings does not belong to {company}.")
+    return account
+
+
+def _cheque_company(customer):
+    """On-account cheques name no invoice, so take the company from the customer's own book."""
+    company = frappe.db.get_value(
+        "Sales Invoice", {"customer": customer, "docstatus": 1}, "company", order_by="posting_date desc"
+    )
+    if not company:
+        frappe.throw("This customer has no invoices to book a cheque against.")
+    return company
+
+
+@frappe.whitelist(methods=["POST"])
+def record_cheque(customer, amount, cheque_no, photo, invoices=None, cheque_date=None):
+    """Record a collected cheque as a DRAFT Payment Entry — the accounts team submits it, never us.
+
+    Ticked invoices allocate against them; none means an on-account credit."""
+    _require_operator()
+
+    invoice_names = frappe.parse_json(invoices) if isinstance(invoices, str) else list(invoices or [])
+    for invoice in invoice_names:
+        _require_invoice_access(invoice)
+    if not invoice_names:
+        _require_customer_access(customer)
+
+    amount = frappe.utils.flt(amount)
+    if amount <= 0:
+        frappe.throw("Enter the cheque amount.")
+    number = (cheque_no or "").strip()
+    if not number:
+        frappe.throw("Enter the cheque number.")
+    if len(number) > CHEQUE_NO_MAX_LENGTH:
+        frappe.throw(f"Keep the cheque number under {CHEQUE_NO_MAX_LENGTH} characters.")
+    if not photo:
+        frappe.throw("Attach a photo of the cheque.")
+
+    if invoice_names:
+        invoices_data, references, remaining = allocate_references(invoice_names, amount)
+        if any(si.customer != customer for si in invoices_data):
+            frappe.throw("Those invoices do not all belong to this customer.")
+        company = invoices_data[0].company
+    else:
+        references, remaining = [], amount
+        company = _cheque_company(customer)
+
+    payment_entry = frappe.new_doc("Payment Entry")
+    payment_entry.payment_type = "Receive"
+    payment_entry.company = company
+    payment_entry.posting_date = frappe.utils.today()
+    payment_entry.mode_of_payment = CHEQUE_MODE
+    payment_entry.party_type = "Customer"
+    payment_entry.party = customer
+    payment_entry.paid_to = _cheque_account(company)
+    payment_entry.paid_amount = amount
+    payment_entry.received_amount = amount
+    payment_entry.source_exchange_rate = 1.0
+    payment_entry.target_exchange_rate = 1.0
+    payment_entry.unallocated_amount = remaining
+    # Namespaced by customer: two customers may share a cheque number, one customer may not reuse it.
+    payment_entry.reference_no = f"{number}-{customer}"
+    payment_entry.reference_date = cheque_date or frappe.utils.today()
+    payment_entry.custom_remarks = 1
+    allocated_to = ", ".join(r["reference_name"] for r in references) or "account"
+    payment_entry.remarks = (
+        f"Cheque {number} for KES {amount} collected from {customer} against {allocated_to}\n"
+        f"Recorded from iPay Collect by {frappe.session.user}"
+    )
+    for ref in references:
+        payment_entry.append("references", ref)
+
+    # ERPNext's own validation calls frappe.has_permission("Payment Entry"), which ignore_permissions
+    # cannot bypass and iPay roles never hold — the guards above are the authorisation instead.
+    collector = frappe.session.user
+    frappe.set_user("Administrator")
+    try:
+        payment_entry.insert(ignore_permissions=True)
+        # insert() always stamps the session user, so the collector is restored as owner after it.
+        payment_entry.db_set("owner", collector, update_modified=False)
+        # Attached after the insert, or a rejected Payment Entry strands the written file.
+        save_file(
+            f"cheque-{number}.jpg", photo, "Payment Entry", payment_entry.name,
+            decode=True, is_private=1,
+        )
+    except frappe.UniqueValidationError:
+        frappe.throw(f"Cheque {number} is already recorded for this customer.")
+    except OSError:
+        # A corrupt photo arrives as an unreadable image, not a validation error.
+        frappe.throw("That photo could not be read. Take it again.")
+    finally:
+        frappe.set_user(collector)
+
+    return {
+        "payment_entry": payment_entry.name,
+        "amount": amount,
+        "allocated": frappe.utils.flt(amount - remaining),
+    }
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
