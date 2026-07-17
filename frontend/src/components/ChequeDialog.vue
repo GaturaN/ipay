@@ -59,20 +59,30 @@ async function onPick(event) {
   }
 }
 
+// A record in flight must never be abandoned: closing here would strand the cheque with no
+// marker and the driver would re-prompt for money already collected.
+function onClose() {
+  if (saving.value) return
+  emit('close')
+}
+
 async function save() {
   if (saving.value) return
+  // Capture the target before awaiting: it is what we record and emit, and it must not change
+  // under us if the dialog is reopened for another invoice mid-save.
+  const target = props.target
   saving.value = true
   error.value = ''
   try {
     await recordCheque({
-      customer: props.target.customer,
+      customer: target.customer,
       amount: amountValue.value,
       chequeNo: number.value.trim(),
       photo: photo.value,
-      invoices: props.target.invoices || [],
+      invoices: target.invoices || [],
     })
     done.value = true
-    emit('recorded', { invoices: props.target.invoices || [], amount: amountValue.value })
+    emit('recorded', { invoices: target.invoices || [], amount: amountValue.value })
   } catch (e) {
     error.value = e?.messages?.[0] || "Couldn't record the cheque."
     reviewing.value = false // back to the form, with everything they typed still there
@@ -100,7 +110,7 @@ watch(
     :open="Boolean(target)"
     labelledby="cheque-title"
     focus="panel"
-    @close="$emit('close')"
+    @close="onClose"
   >
     <h2 id="cheque-title" class="font-display text-lg font-bold text-ink">
       {{ done ? 'Cheque recorded' : reviewing ? 'Check this is right' : 'Collect a cheque' }}
