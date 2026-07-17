@@ -1,7 +1,11 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createBundle, fetchInternalCustomerInvoices } from '@/data/collection'
+import {
+  createBundle,
+  fetchInternalCustomerInvoices,
+  fetchSalesCustomerInvoices,
+} from '@/data/collection'
 import { useResumeRefresh } from '@/composables/useResumeRefresh'
 import { useInvoiceSelection } from '@/composables/useInvoiceSelection'
 import InvoiceCard from '@/components/InvoiceCard.vue'
@@ -12,12 +16,34 @@ import ErrorRetry from '@/components/ErrorRetry.vue'
 
 const PAGE = 50
 
+// The paginated drill-down behind both big-book lists — internal (every customer) and sales
+// (a member's own). They differ only in where the invoices come from and which scope the URL
+// carries, so paging, selection, bundling and prompting stay in one place. The field app's
+// CustomerDetail is separate: it loads a driver's whole round unpaginated.
+const MODES = {
+  internal: {
+    fetch: fetchInternalCustomerInvoices,
+    list: 'Internal',
+    back: 'All customers',
+    scope: ['driver', 'payment_term', 'sales_person'],
+  },
+  sales: {
+    fetch: fetchSalesCustomerInvoices,
+    list: 'Sales',
+    back: 'My customers',
+    scope: ['payment_term', 'sales_person'],
+  },
+}
+
 const route = useRoute()
 const router = useRouter()
+const mode = MODES[route.meta.mode]
 const customer = route.params.customer
-const driver = route.query.driver || '' // scope the detail to the driver picked on the list
-const paymentTerm = route.query.payment_term || '' // and to the payment term picked on the list
-const salesPerson = route.query.sales_person || '' // and to the sales team member picked there
+const paymentTerm = route.query.payment_term || '' // shown in the header; the rest scope silently
+
+// The scope this mode carries in the URL, kept so every navigation away and back preserves it.
+const scopeQuery = () =>
+  Object.fromEntries(mode.scope.filter((k) => route.query[k]).map((k) => [k, route.query[k]]))
 
 const customerName = ref('')
 const invoices = ref([])
@@ -61,13 +87,14 @@ async function load(reset = true) {
     loadingMore.value = true
   }
   try {
-    const data = await fetchInternalCustomerInvoices(customer, {
+    // Each mode's fetch destructures only the scope its own endpoint accepts; extras are ignored.
+    const data = await mode.fetch(customer, {
       start: reset ? 0 : invoices.value.length,
       pageLength: PAGE,
       search: search.value.trim(),
-      driver,
+      driver: route.query.driver || '',
       paymentTerm,
-      salesPerson,
+      salesPerson: route.query.sales_person || '',
     })
     if (seq !== loadSeq) return // a newer load/search superseded this response — drop it
     customerName.value = data.customer_name || customer
@@ -114,13 +141,7 @@ async function collect(names) {
       router.push({
         name: 'Request',
         params: { name: res.request },
-        query: {
-          from: 'internal',
-          customer,
-          ...(driver ? { driver } : {}),
-          ...(paymentTerm ? { payment_term: paymentTerm } : {}),
-          ...(salesPerson ? { sales_person: salesPerson } : {}),
-        },
+        query: { from: route.meta.mode, customer, ...scopeQuery() },
       })
     else collectError.value = true
   } catch {
@@ -139,15 +160,7 @@ const canCollectAll = computed(
   () => !hasMore.value && invoices.value.length > 1 && !search.value.trim(),
 )
 
-const toList = () =>
-  router.push({
-    name: 'Internal',
-    query: {
-      ...(driver ? { driver } : {}),
-      ...(paymentTerm ? { payment_term: paymentTerm } : {}),
-      ...(salesPerson ? { sales_person: salesPerson } : {}),
-    },
-  })
+const toList = () => router.push({ name: mode.list, query: scopeQuery() })
 
 function onPaid(name) {
   prompting.value = null // dismiss the success screen
@@ -173,7 +186,7 @@ onMounted(() => load(true))
       class="flex items-center gap-1 self-start text-sm font-medium text-ink/70"
       @click="toList"
     >
-      ‹ All customers
+      ‹ {{ mode.back }}
     </button>
 
     <ErrorRetry v-if="loadError" @retry="load(true)" />

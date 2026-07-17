@@ -25,9 +25,9 @@ def get_context():
     # Operator/collector-only: a logged-in user without a collection role gets a
     # clear 403 instead of the empty SPA shell (the APIs already scope; this gates
     # the page itself, matching /collect_payments).
-    from ipay.www.collect_payments import ALLOWED_ROLES
+    from ipay.www.collect_payments import PAGE_ROLES
 
-    if not set(frappe.get_roles()) & ALLOWED_ROLES:
+    if not set(frappe.get_roles()) & PAGE_ROLES:
         raise frappe.PermissionError("You do not have access to iPay Collect.")
 
     # Freshness on resume/bfcache (e.g. returning from the hosted-checkout redirect) is
@@ -50,10 +50,16 @@ def get_context_for_dev():
 
 
 def get_boot():
+    from ipay.www.collect_payments import can_open_sales, lands_on_sales
+
     return frappe._dict(
         {
             "frappe_version": frappe.__version__,
             "default_route": "/collect",
+            # The sales team's home is the sales page; the driver page would only refuse them.
+            "sales_home": lands_on_sales(),
+            # Operators may open it too, they just land on internal.
+            "sales_access": can_open_sales(),
             "site_name": frappe.local.site,
             "csrf_token": frappe.sessions.get_csrf_token(),
             "timezone": {

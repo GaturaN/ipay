@@ -18,14 +18,26 @@ HASH_FIELD_ORDER = [
 ]
 
 OPERATOR_ROLES = {"System Manager", "iPay Manager", "iPay User"}
-# Collectors may prompt/collect, but only for their own work — guarded per
-# invoice/request by the access checks below.
-ALL_OPERATOR_ROLES = OPERATOR_ROLES | {"iPay Collector"}
+# Collectors and sales members may prompt/collect, but only for their own work — guarded
+# per invoice/request by the access checks below. A sales manager ranks above a member and
+# is never scoped, so they prompt for any of their team's work.
+ALL_OPERATOR_ROLES = OPERATOR_ROLES | {"iPay Collector", "Sales User", "Sales Manager"}
+# Bundling several invoices into one prompt: operators, sales users and sales managers
+# (who chase a customer's whole balance). Field collectors stay one invoice at a time.
+BUNDLER_ROLES = OPERATOR_ROLES | {"Sales User", "Sales Manager"}
 
 
 def _require_full_operator():
-    """Guard supervisor-only endpoints (bundling): full operators, not collectors."""
+    """Guard supervisor-only endpoints (splitting a bundle): full operators only."""
     if frappe.session.user == "Guest" or not (OPERATOR_ROLES & set(frappe.get_roles())):
+        frappe.throw("Not permitted.", frappe.PermissionError)
+
+
+def _require_bundler():
+    """Guard bundling endpoints. Row-level ownership is enforced separately, per invoice
+    (create_bundle) or per request (discard_bundle), so a sales member can only ever bundle
+    or discard their own work."""
+    if frappe.session.user == "Guest" or not (BUNDLER_ROLES & set(frappe.get_roles())):
         frappe.throw("Not permitted.", frappe.PermissionError)
 
 
@@ -481,7 +493,7 @@ def create_bundle(customer, invoices):
     """Create one submitted iPay Request covering several of a customer's
     invoices. amount = sum of their live outstanding; the oldest invoice is the
     primary. Payment is allocated oldest-first across them by make_payment_entry."""
-    _require_full_operator()
+    _require_bundler()
 
     if isinstance(invoices, str):
         invoices = frappe.parse_json(invoices)
@@ -493,6 +505,9 @@ def create_bundle(customer, invoices):
     total = 0.0
     companies = set()
     for name in invoices:
+        # A scoped caller (sales member) may only bundle their own work — without this the
+        # customer check below would still pass for another member's invoices.
+        _require_invoice_access(name)
         si = frappe.db.get_value(
             "Sales Invoice", name, ["customer", "company", "outstanding_amount", "posting_date"], as_dict=True
         )
@@ -600,7 +615,8 @@ def discard_bundle(request):
     not linger. Locked and re-checked against a concurrent payment (like
     split_bundle); a bundle that has been paid is kept. Only bundles (requests
     with invoice rows) are discarded."""
-    _require_full_operator()
+    _require_bundler()
+    _require_request_access(request)
     locked = frappe.db.get_value(
         "iPay Request", request, ["status", "payment_entry", "docstatus"], as_dict=True, for_update=True
     ) or {}

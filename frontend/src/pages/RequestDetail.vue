@@ -182,7 +182,17 @@ async function backToList() {
   // Return to where the bundle was started: the customer it was built from (internal or
   // field, preserving that page's scope), else the top list.
   const q = route.query
-  if (q.from === 'internal') {
+  if (q.from === 'sales') {
+    router.push(
+      q.customer
+        ? {
+            name: 'SalesCustomer',
+            params: { customer: q.customer },
+            query: { ...(q.payment_term ? { payment_term: q.payment_term } : {}) },
+          }
+        : { name: 'Sales' },
+    )
+  } else if (q.from === 'internal') {
     router.push(
       q.customer
         ? {
@@ -191,6 +201,7 @@ async function backToList() {
             query: {
               ...(q.driver ? { driver: q.driver } : {}),
               ...(q.payment_term ? { payment_term: q.payment_term } : {}),
+              ...(q.sales_person ? { sales_person: q.sales_person } : {}),
             },
           }
         : { name: 'Internal' },

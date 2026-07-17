@@ -1,11 +1,18 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useSession } from '@/stores/session'
 
+// The sales team's home is the sales page — the driver page's data would only refuse them.
+const salesHome = () => (window.sales_home ? { name: 'Sales' } : true)
+// ...and /sales is open to the sales team and the operators above them; a field collector
+// has no book there, so send them to their own page.
+const salesOnly = () => (window.sales_access ? true : { name: 'Collect' })
+
 const routes = [
   {
     path: '/',
     name: 'Collect',
     component: () => import('@/pages/Collect.vue'),
+    beforeEnter: salesHome,
   },
   {
     // (.*) so customer ids containing '/' (real in this data) match into one param.
@@ -21,7 +28,21 @@ const routes = [
   {
     path: '/internal/customer/:customer(.*)',
     name: 'InternalCustomer',
-    component: () => import('@/pages/InternalCustomerDetail.vue'),
+    component: () => import('@/pages/PagedCustomerDetail.vue'),
+    meta: { mode: 'internal' },
+  },
+  {
+    path: '/sales',
+    name: 'Sales',
+    component: () => import('@/pages/SalesCollect.vue'),
+    beforeEnter: salesOnly,
+  },
+  {
+    path: '/sales/customer/:customer(.*)',
+    name: 'SalesCustomer',
+    component: () => import('@/pages/PagedCustomerDetail.vue'),
+    meta: { mode: 'sales' },
+    beforeEnter: salesOnly,
   },
   {
     path: '/request/:name',
@@ -31,7 +52,7 @@ const routes = [
   // Unmatched URLs (typo, stale bookmark, mis-decoded path) land on the list, never blank.
   {
     path: '/:pathMatch(.*)*',
-    redirect: { name: 'Collect' },
+    redirect: () => (window.sales_home ? { name: 'Sales' } : { name: 'Collect' }),
   },
 ]
 
