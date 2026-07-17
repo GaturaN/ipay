@@ -17,3 +17,10 @@ export function formatDate(value) {
   if (!y || !m || !d) return String(value)
   return `${Number(d)} ${MONTHS[Number(m) - 1] || m} ${y}`
 }
+
+// "2026-05-25 09:14:22" -> "25 May 2026, 09:14". Same parts-not-Date rule as formatDate.
+export function formatDateTime(value) {
+  if (!value) return ''
+  const time = String(value).slice(11, 16)
+  return time ? `${formatDate(value)}, ${time}` : formatDate(value)
+}

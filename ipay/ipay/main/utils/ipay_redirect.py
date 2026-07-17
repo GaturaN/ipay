@@ -3,10 +3,17 @@ import hmac
 import hashlib
 
 import frappe
+from frappe.utils.html_utils import unescape_html
 
 from ipay.ipay.main.utils.reconcile_payments import reconcile_request
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
-from ipay.ipay.main.utils.constants import clean_oid, ACTIVE_BUNDLE_WINDOW_MIN
+from ipay.ipay.main.utils.constants import (
+    clean_oid,
+    note_filters,
+    ACTIVE_BUNDLE_WINDOW_MIN,
+    COLLECTION_NOTE_MAX_LENGTH,
+    COLLECTION_NOTE_SUBJECT,
+)
 from ipay.ipay.main.utils.prepaid import is_sales_invoice_prepaid
 
 # Hosted checkout (HTML form POST). NB: this flow uses HMAC-SHA1 over the
@@ -756,6 +763,55 @@ def save_customer_contact(request, phone=None, email=None):
     if request_updates:
         frappe.db.set_value("iPay Request", request, request_updates)
     return {"status": "ok", "saved_to_customer": saved}
+
+
+@frappe.whitelist()
+def invoice_notes(invoice):
+    """The collection notes left on an invoice, newest first."""
+    _require_operator()
+    _require_invoice_access(invoice)
+    rows = frappe.get_all(
+        "Comment",
+        filters=note_filters(invoice),
+        fields=["name", "content", "owner", "creation"],
+        order_by="creation desc",
+        limit_page_length=50,
+    )
+    for row in rows:
+        row["content"] = unescape_html(row["content"] or "")
+        row["author"] = frappe.db.get_value("User", row["owner"], "full_name") or row["owner"]
+    return rows
+
+
+@frappe.whitelist(methods=["POST"])
+def add_invoice_note(invoice, note):
+    """Leave a collection note on an invoice ("customer says pay tomorrow").
+
+    Stored as an ordinary Comment so it also lands in the invoice's desk timeline. Escaped
+    rather than stripped: escaping renders the note as literal text in both the timeline and
+    the app, so markup can't run, while stripping would silently eat "balance < 5000".
+
+    Uses a low-level insert because iPay operator/collector roles have no Comment permission
+    at all — _require_invoice_access is the gate, and the note is validated first."""
+    _require_operator()
+    _require_invoice_access(invoice)
+    text = (note or "").strip()
+    if not text:
+        frappe.throw("Write a note first.")
+    if len(text) > COLLECTION_NOTE_MAX_LENGTH:
+        frappe.throw(f"Keep the note under {COLLECTION_NOTE_MAX_LENGTH} characters.")
+
+    frappe.get_doc(
+        {
+            "doctype": "Comment",
+            "comment_type": "Comment",
+            "reference_doctype": "Sales Invoice",
+            "reference_name": invoice,
+            "subject": COLLECTION_NOTE_SUBJECT,
+            "content": frappe.utils.escape_html(text),
+        }
+    ).insert(ignore_permissions=True)
+    return {"status": "ok"}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

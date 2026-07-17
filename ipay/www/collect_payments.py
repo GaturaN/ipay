@@ -1,9 +1,10 @@
 import frappe
 from frappe.utils import add_to_date, cint, flt, now_datetime, today
+from frappe.utils.html_utils import unescape_html
 
 from ipay.ipay.main.utils.prepaid import all_prepaid_invoice_names, prepaid_invoice_names
 from ipay.ipay.main.utils.collector import OPERATOR_ROLES, collector_scope, is_collector_only
-from ipay.ipay.main.utils.constants import ACTIVE_BUNDLE_WINDOW_MIN
+from ipay.ipay.main.utils.constants import ACTIVE_BUNDLE_WINDOW_MIN, note_filters
 from ipay.ipay.main.utils.sales import (
     SALES_ROLE,
     is_sales_only,
@@ -208,12 +209,13 @@ def _group_customers(invoices):
 
 def _customer_invoices(user, customer, driver=None):
     """One customer's outstanding invoices, annotated for prompting (delivery, driver,
-    on-file phone). Optionally scoped to a single driver's deliveries."""
+    on-file phone, collection notes). Optionally scoped to a single driver's deliveries."""
     invoices = _outstanding_invoices(user, customer)
     _annotate_delivery(invoices)
     if driver:
         invoices = [inv for inv in invoices if driver in (inv.get("drivers") or [])]
     _annotate_customer_phone(invoices)
+    _annotate_notes(invoices)
     return invoices
 
 
@@ -232,6 +234,27 @@ def _annotate_customer_phone(invoices):
     }
     for inv in invoices:
         inv.customer_phone = phone_by_customer.get(inv.customer, "")
+
+
+def _annotate_notes(invoices):
+    """Attach each invoice's collection-note count and newest note (batched), so a card shows
+    what was said without opening anything — and one query serves the page, never one per card."""
+    names = [inv.name for inv in invoices]
+    if not names:
+        return
+    notes = frappe.get_all(
+        "Comment",
+        filters=note_filters(["in", names]),
+        fields=["reference_name", "content"],
+        order_by="creation asc",
+    )
+    latest, counts = {}, {}
+    for note in notes:
+        counts[note.reference_name] = counts.get(note.reference_name, 0) + 1
+        latest[note.reference_name] = note.content  # ascending, so the last seen is the newest
+    for inv in invoices:
+        inv.note_count = counts.get(inv.name, 0)
+        inv.note_latest = unescape_html(latest.get(inv.name) or "")
 
 
 def get_context(context):
@@ -455,6 +478,7 @@ def _drill_down(invoices, customer, start, page_length, search):
     page = invoices[start : start + page_length]
     _annotate_delivery(page)
     _annotate_customer_phone(page)
+    _annotate_notes(page)
     return {
         "customer": customer,
         "customer_name": frappe.db.get_value("Customer", customer, "customer_name") or customer,

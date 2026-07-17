@@ -23,6 +23,22 @@ UNWANTED_OID_CHARACTERS = r"[-/;:~`!%^*<&_]"
 # collect_payments._drop_bundled and ipay_redirect._active_bundle_for_invoice.
 ACTIVE_BUNDLE_WINDOW_MIN = 30
 
+# A collection note is an ordinary Comment on the Sales Invoice, so it reaches the desk
+# timeline for free; this marker in the (otherwise unused) subject is what keeps the collect
+# app's reads payment-only. Must stay identical everywhere, like the oid characters above.
+COLLECTION_NOTE_SUBJECT = "iPay Collection Note"
+COLLECTION_NOTE_MAX_LENGTH = 500
+
+
+def note_filters(reference_name):
+    """Comment filters for the collection notes on one invoice, or on a list of them."""
+    return {
+        "comment_type": "Comment",
+        "reference_doctype": "Sales Invoice",
+        "reference_name": reference_name,
+        "subject": COLLECTION_NOTE_SUBJECT,
+    }
+
 
 def clean_oid(name):
     """Derive an iPay-safe order id (or `inv`) from a document name."""

@@ -18,6 +18,8 @@ const API = {
   promptMpesa: 'ipay.ipay.main.utils.ipay_redirect.prompt_mpesa',
   promptRequest: 'ipay.ipay.main.utils.ipay_redirect.prompt_request_mpesa',
   saveContact: 'ipay.ipay.main.utils.ipay_redirect.save_customer_contact',
+  invoiceNotes: 'ipay.ipay.main.utils.ipay_redirect.invoice_notes',
+  addInvoiceNote: 'ipay.ipay.main.utils.ipay_redirect.add_invoice_note',
   paymentState: 'ipay.ipay.main.utils.ipay_redirect.payment_state',
   createBundle: 'ipay.ipay.main.utils.ipay_redirect.create_bundle',
   requestDetail: 'ipay.ipay.main.utils.ipay_redirect.request_detail',
@@ -91,6 +93,10 @@ export const promptRequestMpesa = (request, phone) =>
 
 export const saveCustomerContact = (request, phone) =>
   call(API.saveContact, { request, phone })
+
+// Collection notes on an invoice — plain text; the server escapes on write and unescapes here.
+export const fetchInvoiceNotes = (invoice) => call(API.invoiceNotes, { invoice }, 'GET')
+export const addInvoiceNote = (invoice, note) => call(API.addInvoiceNote, { invoice, note })
 
 export const paymentState = (request) => call(API.paymentState, { request }, 'GET')
 

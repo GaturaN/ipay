@@ -10,6 +10,7 @@ import { useResumeRefresh } from '@/composables/useResumeRefresh'
 import { useInvoiceSelection } from '@/composables/useInvoiceSelection'
 import InvoiceCard from '@/components/InvoiceCard.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
+import NotesDialog from '@/components/NotesDialog.vue'
 import CustomerMoneyHeader from '@/components/CustomerMoneyHeader.vue'
 import CollectBar from '@/components/CollectBar.vue'
 import ErrorRetry from '@/components/ErrorRetry.vue'
@@ -59,6 +60,7 @@ const loadingMore = ref(false)
 const creatingBundle = ref(false)
 const collectError = ref(false)
 const prompting = ref(null)
+const noting = ref(null)
 
 const search = ref('')
 let searchTimer = null
@@ -223,7 +225,7 @@ onMounted(() => load(true))
       />
 
       <div v-if="loading" class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-        <div v-for="n in 6" :key="n" class="h-28 animate-pulse rounded-xl bg-ink/5" />
+        <div v-for="n in 6" :key="n" class="h-44 animate-pulse rounded-xl bg-ink/5" />
       </div>
       <p v-else-if="!invoices.length" class="py-16 text-center font-display text-ink/70">
         No invoices match.
@@ -240,6 +242,7 @@ onMounted(() => load(true))
             :selected="isSelected(inv)"
             :actions-disabled="selected.length > 0"
             @prompt="promptInvoice(inv)"
+            @notes="noting = { invoice: inv.name, customer_name: inv.customer_name }"
             @toggle-select="toggleSelect(inv)"
           />
         </div>
@@ -256,6 +259,7 @@ onMounted(() => load(true))
       </template>
 
       <PromptDialog :target="prompting" @close="prompting = null" @paid="onPaid" @changed="load(true)" />
+      <NotesDialog :target="noting" @close="noting = null" @saved="load(true)" />
     </template>
   </main>
 </template>
