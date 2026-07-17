@@ -76,8 +76,12 @@ async function payViaIpay() {
         <p v-if="invoice.delivery_note" class="break-words text-xs text-ink/70">
           {{ invoice.delivery_note }}
         </p>
+        <!-- Both people are labelled: two bare names would be indistinguishable. -->
         <p v-if="invoice.driver_name" class="break-words text-xs text-ink/55">
-          {{ invoice.driver_name }}
+          Driver · {{ invoice.driver_name }}
+        </p>
+        <p v-if="invoice.sales_person_name" class="break-words text-xs text-ink/55">
+          Sales · {{ invoice.sales_person_name }}
         </p>
       </div>
 
