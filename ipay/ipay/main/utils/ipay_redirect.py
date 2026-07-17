@@ -805,6 +805,9 @@ def request_detail(request):
         # A single (non-bundle) request has no child rows; its one invoice carries the
         # whole request amount.
         invoices = [{"name": req.sales_invoice, "amount": frappe.utils.flt(req.amount)}]
+    # A cheque already collected against any of these invoices makes the request unchargeable,
+    # so the page hides its charge actions the same way an invoice card does.
+    awaiting_cheque = frappe.utils.flt(sum(awaiting_cheque_amounts([i["name"] for i in invoices]).values()))
     cancelled = req.docstatus == 2
     status = "Cancelled" if cancelled else (req.status or "Pending")
     is_bundle = len(invoices) > 1
@@ -825,6 +828,10 @@ def request_detail(request):
         "paid": req.status == "Success",
         # Drives whether the detail page shows the payment-link actions.
         "enable_redirect": _redirect_enabled(),
+        # Whether the cheque action is offered here, read fresh like enable_redirect.
+        "allow_cheque": _cheque_enabled(),
+        # Non-zero once a cheque covers these invoices — the page then hides its charge actions.
+        "awaiting_cheque": awaiting_cheque,
         # Above this the M-Pesa prompt is hidden (only hosted checkout can take it).
         "mpesa_max": _mpesa_max_amount(),
     }

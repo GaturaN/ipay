@@ -11,6 +11,7 @@ import {
 } from '@/data/collection'
 import { formatKES } from '@/utils/format'
 import PromptDialog from '@/components/PromptDialog.vue'
+import ChequeDialog from '@/components/ChequeDialog.vue'
 import ErrorRetry from '@/components/ErrorRetry.vue'
 
 // The transient home for a request or bundle: live status, the invoices it
@@ -30,10 +31,15 @@ const checkoutBusy = ref(false)
 const copied = ref(false)
 const linkExpiry = ref(null)
 const prompting = ref(null)
+const chequing = ref(null)
 let pollTimer = null
 
 const SETTLED = ['Success', 'Underpaid', 'Overpaid', 'Cancelled']
-const promptable = computed(() => detail.value && !SETTLED.includes(detail.value.status))
+// A cheque already collected here makes the request unchargeable (the server refuses every rail),
+// so it drops out of promptable exactly like a settled one.
+const promptable = computed(
+  () => detail.value && !SETTLED.includes(detail.value.status) && !detail.value.awaiting_cheque,
+)
 
 // M-Pesa can't process a charge over the ceiling — hide the prompt, steer to the link/iPay.
 const mpesaBlocked = computed(
@@ -110,6 +116,23 @@ function onPaid() {
   }
   stopPolling()
   prompting.value = null // dismiss the success screen
+}
+
+function chequeNow() {
+  chequing.value = {
+    customer: detail.value.customer,
+    customer_name: detail.value.customer_name,
+    invoices: detail.value.invoices.map((inv) => inv.name),
+    outstanding: Number(detail.value.amount || 0),
+  }
+}
+
+// A cheque covers the request's invoices, so the whole request is now awaiting one — mark it so
+// the charge actions give way to the notice, without a reload.
+function onChequeRecorded({ covered }) {
+  const total = Object.values(covered || {}).reduce((sum, v) => sum + Number(v || 0), 0)
+  if (detail.value) detail.value.awaiting_cheque = total
+  stopPolling()
 }
 
 async function payViaIpay() {
@@ -330,9 +353,28 @@ onMounted(load)
             </button>
           </div>
         </div>
+
+        <!-- Deliberately quiet: cheques are the exception, M-Pesa stays the obvious action. -->
+        <button
+          v-if="detail.allow_cheque"
+          type="button"
+          class="h-11 rounded-xl border border-hairline bg-white text-sm font-medium text-ink/70 transition active:bg-paper"
+          @click="chequeNow"
+        >
+          Collect a cheque
+        </button>
       </template>
 
+      <p
+        v-else-if="detail.awaiting_cheque"
+        class="rounded-xl bg-ink/5 px-3 py-2.5 text-sm font-medium text-ink/75"
+      >
+        Cheque for {{ formatKES(detail.awaiting_cheque) }} collected — with accounts to bank. This
+        request can't be charged until it clears.
+      </p>
+
       <PromptDialog :target="prompting" @close="prompting = null" @paid="onPaid" />
+      <ChequeDialog :target="chequing" @close="chequing = null" @recorded="onChequeRecorded" />
     </template>
   </main>
 </template>
