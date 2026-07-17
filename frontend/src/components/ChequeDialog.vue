@@ -7,6 +7,7 @@ import BaseDialog from '@/components/BaseDialog.vue'
 const MAX_DIMENSION = 1600 // a phone photo is 3-8 MB; the cheque only has to be readable
 const JPEG_QUALITY = 0.8
 const NUMBER_MAX = 30
+const SAVE_TIMEOUT_MS = 30000 // a stalled request must not trap the dialog, since close is blocked while saving
 
 // `target` is { customer, customer_name, invoices, outstanding } or null. An empty `invoices`
 // records the cheque on account, against no invoice.
@@ -91,13 +92,19 @@ async function save() {
   saving.value = true
   error.value = ''
   try {
-    const res = await recordCheque({
+    const record = recordCheque({
       customer: target.customer,
       amount: amountValue.value,
       chequeNo: number.value.trim(),
       photo: photo.value,
       invoices: target.invoices || [],
     })
+    // Bound the wait: a hung request would otherwise leave saving true forever, and close is
+    // blocked while saving. On timeout we cannot know the outcome, so tell them to check first.
+    const res = await Promise.race([
+      record,
+      new Promise((_, reject) => setTimeout(() => reject({ timedOut: true }), SAVE_TIMEOUT_MS)),
+    ])
     done.value = true
     // covered maps each invoice to the amount this cheque put against it, so the card shows the
     // real figure rather than a placeholder.
@@ -107,7 +114,9 @@ async function save() {
       covered: res?.covered || {},
     })
   } catch (e) {
-    error.value = e?.messages?.[0] || "Couldn't record the cheque."
+    error.value = e?.timedOut
+      ? 'That took too long. Check the invoice before recording it again.'
+      : e?.messages?.[0] || "Couldn't record the cheque."
     reviewing.value = false // back to the form, with everything they typed still there
   } finally {
     saving.value = false
