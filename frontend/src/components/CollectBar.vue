@@ -14,8 +14,9 @@ defineProps({
   mpesaMax: { type: Number, default: 0 },
   collectError: Boolean,
   showTickHint: Boolean,
+  showCheque: Boolean, // cheque collection is offered even where bundling is not
 })
-defineEmits(['collect', 'clear'])
+defineEmits(['collect', 'clear', 'cheque'])
 </script>
 
 <template>
@@ -53,4 +54,13 @@ defineEmits(['collect', 'clear'])
   <p v-if="showTickHint" class="-mt-2 px-1 text-xs text-ink/60">
     Tick invoices to collect only some.
   </p>
+  <!-- Deliberately quiet: cheques are the exception, and M-Pesa stays the obvious action. -->
+  <button
+    v-if="showCheque"
+    type="button"
+    class="h-11 rounded-xl border border-hairline bg-white text-sm font-medium text-ink/70 transition active:bg-paper"
+    @click="$emit('cheque')"
+  >
+    {{ selectedCount ? `Cheque for ${selectedCount} — ${formatKES(selectedTotal)}` : 'Collect a cheque' }}
+  </button>
 </template>

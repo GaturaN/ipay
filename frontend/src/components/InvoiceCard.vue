@@ -11,7 +11,7 @@ const props = defineProps({
   actionsDisabled: Boolean,
   mpesaMax: { type: Number, default: 0 }, // M-Pesa ceiling; 0 = no cap
 })
-defineEmits(['prompt', 'toggle-select', 'notes'])
+defineEmits(['prompt', 'toggle-select', 'notes', 'cheque'])
 
 const checkoutBusy = ref(false)
 
@@ -114,30 +114,53 @@ async function payViaIpay() {
       </span>
     </button>
 
-    <div class="mt-2 flex gap-2">
-      <button
-        v-if="!mpesaBlocked"
-        type="button"
-        class="h-12 flex-1 rounded-xl bg-mpesa font-semibold text-white transition active:scale-[.98] disabled:opacity-40"
-        :disabled="actionsDisabled"
-        @click="$emit('prompt')"
-      >
-        Prompt M-Pesa
-      </button>
-      <button
-        v-if="enableRedirect"
-        type="button"
-        class="h-12 flex-1 rounded-xl border border-hairline px-4 font-medium text-ink transition active:scale-[.98] disabled:opacity-40"
-        :disabled="actionsDisabled || checkoutBusy"
-        :aria-busy="checkoutBusy"
-        @click="payViaIpay"
-      >
-        {{ checkoutBusy ? 'Opening…' : 'Card / other' }}
-      </button>
-    </div>
-    <p v-if="mpesaBlocked" class="mt-2 text-xs text-owed">
-      M-Pesa isn't available over {{ formatKES(mpesaMax) }}.
-      {{ enableRedirect ? 'Use Card / other.' : 'Card checkout is off — contact the internal team.' }}
+    <!-- A cheque is recorded but not yet banked, so the invoice is still open. Charging it again
+         would take the money twice — the actions go away entirely until accounts clear it. -->
+    <p
+      v-if="invoice.awaiting_cheque"
+      class="mt-2 flex items-center gap-2 rounded-xl bg-ink/5 px-3 py-2.5 text-[13px] font-medium text-ink/75"
+    >
+      <svg viewBox="0 0 20 20" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.7">
+        <rect x="2.5" y="5" width="15" height="10" rx="1.5" />
+        <path d="M2.5 9h15" />
+      </svg>
+      Awaiting cheque — with accounts to bank.
     </p>
+
+    <template v-else>
+      <div class="mt-2 flex gap-2">
+        <button
+          v-if="!mpesaBlocked"
+          type="button"
+          class="h-12 flex-1 rounded-xl bg-mpesa font-semibold text-white transition active:scale-[.98] disabled:opacity-40"
+          :disabled="actionsDisabled"
+          @click="$emit('prompt')"
+        >
+          Prompt M-Pesa
+        </button>
+        <button
+          v-if="enableRedirect"
+          type="button"
+          class="h-12 flex-1 rounded-xl border border-hairline px-4 font-medium text-ink transition active:scale-[.98] disabled:opacity-40"
+          :disabled="actionsDisabled || checkoutBusy"
+          :aria-busy="checkoutBusy"
+          @click="payViaIpay"
+        >
+          {{ checkoutBusy ? 'Opening…' : 'Card / other' }}
+        </button>
+        <button
+          type="button"
+          class="h-12 shrink-0 rounded-xl border border-hairline px-4 text-sm font-medium text-ink/70 transition active:scale-[.98] disabled:opacity-40"
+          :disabled="actionsDisabled"
+          @click="$emit('cheque')"
+        >
+          Cheque
+        </button>
+      </div>
+      <p v-if="mpesaBlocked" class="mt-2 text-xs text-owed">
+        M-Pesa isn't available over {{ formatKES(mpesaMax) }}.
+        {{ enableRedirect ? 'Use Card / other.' : 'Card checkout is off — contact the internal team.' }}
+      </p>
+    </template>
   </article>
 </template>
