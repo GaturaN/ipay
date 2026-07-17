@@ -6,11 +6,13 @@ import {
   fetchInternalCustomerInvoices,
   fetchSalesCustomerInvoices,
 } from '@/data/collection'
+import { formatKES } from '@/utils/format'
 import { useResumeRefresh } from '@/composables/useResumeRefresh'
 import { useInvoiceSelection } from '@/composables/useInvoiceSelection'
 import InvoiceCard from '@/components/InvoiceCard.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
 import NotesDialog from '@/components/NotesDialog.vue'
+import ChequeDialog from '@/components/ChequeDialog.vue'
 import CustomerMoneyHeader from '@/components/CustomerMoneyHeader.vue'
 import CollectBar from '@/components/CollectBar.vue'
 import ErrorRetry from '@/components/ErrorRetry.vue'
@@ -49,6 +51,7 @@ const scopeQuery = () =>
 const customerName = ref('')
 const invoices = ref([])
 const total = ref(0)
+const chequeOnAccount = ref(0)
 const count = ref(0)
 const hasMore = ref(false)
 const enableRedirect = ref(false)
@@ -61,6 +64,7 @@ const creatingBundle = ref(false)
 const collectError = ref(false)
 const prompting = ref(null)
 const noting = ref(null)
+const chequing = ref(null)
 
 const search = ref('')
 let searchTimer = null
@@ -104,6 +108,7 @@ async function load(reset = true) {
     count.value = data.invoice_count
     enableRedirect.value = Boolean(data.enable_redirect)
     mpesaMax.value = data.mpesa_max || 0
+    chequeOnAccount.value = Number(data.cheque_on_account || 0)
     invoices.value = reset ? data.invoices || [] : [...invoices.value, ...(data.invoices || [])]
     hasMore.value = Boolean(data.has_more)
   } catch {
@@ -177,6 +182,20 @@ function onPaid(name) {
   else if (!invoices.value.length) load(true)
 }
 
+// A cheque covers the ticked invoices; nothing ticked records it against the customer instead.
+function chequeFor(names, outstanding) {
+  chequing.value = { customer, customer_name: customerName.value, invoices: names, outstanding }
+}
+
+// Mark the cards in place rather than reloading, which would clear the ticked set underneath.
+function onChequeRecorded({ invoices: names, amount }) {
+  if (!names.length) chequeOnAccount.value += amount
+  invoices.value.forEach((inv) => {
+    if (names.includes(inv.name)) inv.awaiting_cheque = true
+  })
+  clearSelection()
+}
+
 // Patch the card in place: reloading the list would clear a ticked bundle and reset paging.
 function onNoteSaved({ invoice, count, latest }) {
   const inv = invoices.value.find((i) => i.name === invoice)
@@ -220,9 +239,16 @@ onMounted(() => load(true))
         :mpesa-max="mpesaMax"
         :collect-error="collectError"
         :show-tick-hint="selectable && !selected.length"
+        :show-cheque="count > 0"
         @collect="collectNow"
         @clear="clearSelection"
+        @cheque="chequeFor(selected.map((i) => i.name), selected.length ? selectedTotal : total)"
       />
+
+      <p v-if="chequeOnAccount" class="-mt-2 rounded-xl bg-ink/5 px-3 py-2.5 text-[13px] text-ink/75">
+        {{ formatKES(chequeOnAccount) }} already collected by cheque, with accounts to bank. It is
+        not tied to an invoice, so check before collecting again.
+      </p>
 
       <input
         v-model="search"
@@ -252,6 +278,7 @@ onMounted(() => load(true))
             :actions-disabled="selected.length > 0"
             @prompt="promptInvoice(inv)"
             @notes="noting = { invoice: inv.name, customer_name: inv.customer_name }"
+            @cheque="chequeFor([inv.name], Number(inv.outstanding_amount || 0))"
             @toggle-select="toggleSelect(inv)"
           />
         </div>
@@ -269,6 +296,7 @@ onMounted(() => load(true))
 
       <PromptDialog :target="prompting" @close="prompting = null" @paid="onPaid" @changed="load(true)" />
       <NotesDialog :target="noting" @close="noting = null" @saved="onNoteSaved" />
+      <ChequeDialog :target="chequing" @close="chequing = null" @recorded="onChequeRecorded" />
     </template>
   </main>
 </template>

@@ -3,7 +3,12 @@ from frappe.utils import add_to_date, cint, flt, now_datetime, today
 
 from ipay.ipay.main.utils.prepaid import all_prepaid_invoice_names, prepaid_invoice_names
 from ipay.ipay.main.utils.collector import OPERATOR_ROLES, collector_scope, is_collector_only
-from ipay.ipay.main.utils.constants import ACTIVE_BUNDLE_WINDOW_MIN, note_filters, note_text
+from ipay.ipay.main.utils.constants import (
+    ACTIVE_BUNDLE_WINDOW_MIN,
+    CHEQUE_MODE,
+    note_filters,
+    note_text,
+)
 from ipay.ipay.main.utils.sales import (
     SALES_MANAGER_ROLES,
     SALES_ROLE,
@@ -227,6 +232,7 @@ def _customer_invoices(user, customer, driver=None):
     _annotate_customer_phone(invoices)
     _annotate_sales_person(invoices)
     _annotate_notes(invoices)
+    _annotate_awaiting_cheque(invoices)
     return invoices
 
 
@@ -296,6 +302,58 @@ def _annotate_notes(invoices):
     for inv in invoices:
         inv.note_count = counts.get(inv.name, 0)
         inv.note_latest = note_text(latest.get(inv.name) or "")
+
+
+def _annotate_awaiting_cheque(invoices):
+    """Flag invoices a collected cheque already covers, batched. A cheque sits as a DRAFT Payment
+    Entry until accounts submit it, and a draft does not reduce outstanding — so without this the
+    invoice still looks unpaid and would be charged a second time."""
+    names = [inv.name for inv in invoices]
+    if not names:
+        return
+    rows = frappe.get_all(
+        "Payment Entry Reference",
+        filters={"reference_doctype": "Sales Invoice", "reference_name": ["in", names], "docstatus": 0},
+        fields=["parent", "reference_name", "allocated_amount"],
+    )
+    covered = {}
+    if rows:
+        cheques = set(
+            frappe.get_all(
+                "Payment Entry",
+                filters={
+                    "name": ["in", list({r.parent for r in rows})],
+                    "docstatus": 0,
+                    "mode_of_payment": CHEQUE_MODE,
+                },
+                pluck="name",
+            )
+        )
+        for row in rows:
+            if row.parent in cheques:
+                covered[row.reference_name] = covered.get(row.reference_name, 0) + flt(row.allocated_amount)
+    # The amount rides along: a cheque may cover only part of the invoice, and "awaiting" without
+    # a figure would read as though the whole balance were settled.
+    for inv in invoices:
+        inv.awaiting_cheque = flt(covered.get(inv.name, 0))
+
+
+def _cheque_on_account(customer):
+    """What a customer has handed over in cheques that name no invoice. Nothing marks those
+    invoices, so this is the only thing standing between an on-account cheque and collecting
+    the same money twice."""
+    amounts = frappe.get_all(
+        "Payment Entry",
+        filters={
+            "party_type": "Customer",
+            "party": customer,
+            "docstatus": 0,
+            "mode_of_payment": CHEQUE_MODE,
+            "total_allocated_amount": 0,
+        },
+        pluck="unallocated_amount",
+    )
+    return flt(sum(amounts))
 
 
 def get_context(context):
@@ -437,6 +495,7 @@ def customer_collection(customer, driver=None):
         "customer": customer,
         "customer_name": invoices[0].customer_name if invoices else customer,
         "invoices": invoices,
+        "cheque_on_account": _cheque_on_account(customer),
         **_settings_flags(),
         "can_bundle": not is_collector_only(frappe.session.user),
     }
@@ -520,9 +579,11 @@ def _drill_down(invoices, customer, start, page_length, search):
     _annotate_customer_phone(page)
     _annotate_sales_person(page)
     _annotate_notes(page)
+    _annotate_awaiting_cheque(page)
     return {
         "customer": customer,
         "customer_name": frappe.db.get_value("Customer", customer, "customer_name") or customer,
+        "cheque_on_account": _cheque_on_account(customer),
         "invoices": page,
         "invoice_count": count,
         "total_outstanding": total,
