@@ -17,6 +17,7 @@ const router = useRouter()
 const customer = route.params.customer
 const driver = route.query.driver || '' // scope the detail to the driver picked on the list
 const paymentTerm = route.query.payment_term || '' // and to the payment term picked on the list
+const salesPerson = route.query.sales_person || '' // and to the sales team member picked there
 
 const customerName = ref('')
 const invoices = ref([])
@@ -66,6 +67,7 @@ async function load(reset = true) {
       search: search.value.trim(),
       driver,
       paymentTerm,
+      salesPerson,
     })
     if (seq !== loadSeq) return // a newer load/search superseded this response — drop it
     customerName.value = data.customer_name || customer
@@ -117,6 +119,7 @@ async function collect(names) {
           customer,
           ...(driver ? { driver } : {}),
           ...(paymentTerm ? { payment_term: paymentTerm } : {}),
+          ...(salesPerson ? { sales_person: salesPerson } : {}),
         },
       })
     else collectError.value = true
@@ -139,7 +142,11 @@ const canCollectAll = computed(
 const toList = () =>
   router.push({
     name: 'Internal',
-    query: { ...(driver ? { driver } : {}), ...(paymentTerm ? { payment_term: paymentTerm } : {}) },
+    query: {
+      ...(driver ? { driver } : {}),
+      ...(paymentTerm ? { payment_term: paymentTerm } : {}),
+      ...(salesPerson ? { sales_person: salesPerson } : {}),
+    },
   })
 
 function onPaid(name) {

@@ -23,6 +23,7 @@ defineProps({
   cardRouteName: { type: String, default: 'Customer' },
   cardDriver: { type: String, default: '' },
   cardPaymentTerm: { type: String, default: '' },
+  cardSalesPerson: { type: String, default: '' },
 })
 defineEmits(['retry'])
 </script>
@@ -67,6 +68,7 @@ defineEmits(['retry'])
         :route-name="cardRouteName"
         :driver="cardDriver"
         :payment-term="cardPaymentTerm"
+        :sales-person="cardSalesPerson"
       />
     </div>
   </main>
