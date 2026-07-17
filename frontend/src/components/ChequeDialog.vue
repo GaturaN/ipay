@@ -14,6 +14,7 @@ const props = defineProps({ target: { type: Object, default: null } })
 const emit = defineEmits(['close', 'recorded'])
 
 const photo = ref('') // downscaled data URL, exactly what the server stores
+const fileInput = ref(null)
 const amount = ref('')
 const number = ref('')
 const reviewing = ref(false)
@@ -48,8 +49,24 @@ function downscale(file) {
   })
 }
 
+function pickPhoto() {
+  fileInput.value?.click()
+}
+
+function clearFileInput() {
+  // Reset the input so choosing the same file again still fires change.
+  if (fileInput.value) fileInput.value.value = ''
+}
+
+function removePhoto() {
+  photo.value = ''
+  error.value = ''
+  clearFileInput()
+}
+
 async function onPick(event) {
   const file = event.target.files?.[0]
+  clearFileInput()
   if (!file) return
   error.value = ''
   try {
@@ -101,6 +118,7 @@ watch(
   () => props.target,
   () => {
     photo.value = ''
+    clearFileInput()
     amount.value = ''
     number.value = ''
     reviewing.value = false
@@ -180,19 +198,40 @@ watch(
     </template>
 
     <template v-else>
-      <label
-        class="mt-4 grid h-32 w-full cursor-pointer place-items-center overflow-hidden rounded-xl border border-dashed border-hairline bg-paper text-sm font-medium text-ink/60"
+      <button
+        v-if="!photo"
+        type="button"
+        class="mt-4 grid h-32 w-full place-items-center rounded-xl border border-dashed border-hairline bg-paper text-sm font-medium text-ink/60"
+        @click="pickPhoto"
       >
-        <img v-if="photo" :src="photo" alt="The cheque photo" class="h-full w-full object-contain" />
-        <span v-else class="flex flex-col items-center gap-1">
+        <span class="flex flex-col items-center gap-1">
           <svg viewBox="0 0 24 24" class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.6">
             <path d="M3 8.5h4L8.5 6h7L17 8.5h4v10H3z" stroke-linejoin="round" />
             <circle cx="12" cy="13" r="3.2" />
           </svg>
           Photograph the cheque
         </span>
-        <input type="file" accept="image/*" capture="environment" class="sr-only" @change="onPick" />
-      </label>
+      </button>
+      <div v-else class="mt-4">
+        <img :src="photo" alt="The cheque photo" class="h-32 w-full rounded-xl border border-hairline bg-paper object-contain" />
+        <div class="mt-2 flex gap-2">
+          <button
+            type="button"
+            class="h-10 flex-1 rounded-xl border border-hairline text-sm font-medium text-ink"
+            @click="pickPhoto"
+          >
+            Retake
+          </button>
+          <button
+            type="button"
+            class="h-10 flex-1 rounded-xl border border-hairline text-sm font-medium text-danger"
+            @click="removePhoto"
+          >
+            Remove
+          </button>
+        </div>
+      </div>
+      <input ref="fileInput" type="file" accept="image/*" capture="environment" class="sr-only" @change="onPick" />
 
       <label class="mt-3 block text-xs font-semibold text-ink/60" for="cheque-amount">
         Amount on the cheque
