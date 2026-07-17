@@ -17,6 +17,7 @@
   "mpesa_max_amount",
   "payment_link_ttl_days",
   "cash_account",
+  "allow_cheque_collection",
   "cheque_account",
   "alert_email",
   "last_reconcile_run",
@@ -93,6 +94,13 @@
    "fieldtype": "Link",
    "label": "Cash Account (fallback)",
    "options": "Account"
+  },
+  {
+   "default": "0",
+   "description": "Let collectors record a cheque from the collect app. Off by default; a Cheque Account must also be set before a cheque can be recorded.",
+   "fieldname": "allow_cheque_collection",
+   "fieldtype": "Check",
+   "label": "Allow Cheque Collection"
   },
   {
    "description": "Account collected cheques are booked to, as undeposited funds. Required before a cheque can be recorded — cheques must never book to cash.",

@@ -55,6 +55,7 @@ const chequeOnAccount = ref(0)
 const count = ref(0)
 const hasMore = ref(false)
 const enableRedirect = ref(false)
+const allowCheque = ref(false)
 const mpesaMax = ref(0)
 
 const loading = ref(true)
@@ -116,6 +117,7 @@ async function load(reset = true) {
     total.value = data.total_outstanding
     count.value = data.invoice_count
     enableRedirect.value = Boolean(data.enable_redirect)
+    allowCheque.value = Boolean(data.allow_cheque)
     mpesaMax.value = data.mpesa_max || 0
     chequeOnAccount.value = Number(data.cheque_on_account || 0)
     invoices.value = reset ? data.invoices || [] : [...invoices.value, ...(data.invoices || [])]
@@ -248,7 +250,7 @@ onMounted(() => load(true))
         :mpesa-max="mpesaMax"
         :collect-error="collectError"
         :show-tick-hint="selectable && !selected.length"
-        :show-cheque="count > 0"
+        :show-cheque="allowCheque && count > 0"
         @collect="collectNow"
         @clear="clearSelection"
         @cheque="chequeFor(selected.map((i) => i.name), selected.length ? selectedTotal : total)"
@@ -285,6 +287,7 @@ onMounted(() => load(true))
             :selectable="selectable && !inv.awaiting_cheque"
             :selected="isSelected(inv)"
             :actions-disabled="selected.length > 0"
+            :allow-cheque="allowCheque"
             @prompt="promptInvoice(inv)"
             @notes="noting = { invoice: inv.name, customer_name: inv.customer_name }"
             @cheque="chequeFor([inv.name], Number(inv.outstanding_amount || 0))"

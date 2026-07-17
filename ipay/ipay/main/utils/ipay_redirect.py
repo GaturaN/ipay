@@ -70,6 +70,11 @@ def _redirect_enabled():
     return bool(frappe.db.get_single_value("iPay Settings", "enable_redirect"))
 
 
+def _cheque_enabled():
+    """True when "Allow Cheque Collection" is on in iPay Settings."""
+    return bool(frappe.db.get_single_value("iPay Settings", "allow_cheque_collection"))
+
+
 def _require_redirect_enabled():
     """Hard gate for the payment-link / hosted-checkout endpoints: they exist only
     when "Use Hosted Checkout Redirect" is on. With it off the org collects by
@@ -962,6 +967,8 @@ def record_cheque(customer, amount, cheque_no, photo, invoices=None, cheque_date
 
     Ticked invoices allocate against them; none means an on-account credit."""
     _require_operator()
+    if not _cheque_enabled():
+        frappe.throw("Cheque collection is turned off (enable it in iPay Settings).")
 
     invoice_names = frappe.parse_json(invoices) if isinstance(invoices, str) else list(invoices or [])
     for invoice in invoice_names:
