@@ -16,31 +16,38 @@ const draft = ref('')
 const loading = ref(false)
 const saving = ref(false)
 const error = ref('')
+let loadSeq = 0 // guards against out-of-order responses when invoices are opened in quick succession
 
-const tooLong = computed(() => draft.value.length > MAX)
-const canSave = computed(() => Boolean(draft.value.trim()) && !tooLong.value && !saving.value)
+const canSave = computed(() => Boolean(draft.value.trim()) && !saving.value)
 
 async function load() {
+  const seq = ++loadSeq
+  const invoice = props.target.invoice
   loading.value = true
   error.value = ''
   try {
-    notes.value = await fetchInvoiceNotes(props.target.invoice)
+    const rows = await fetchInvoiceNotes(invoice)
+    if (seq !== loadSeq) return // a newer open superseded this response — drop it
+    notes.value = rows
   } catch {
-    error.value = "Couldn't load the notes."
+    if (seq === loadSeq) error.value = "Couldn't load the notes."
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 
 async function save() {
   if (!canSave.value) return
+  const invoice = props.target.invoice
   saving.value = true
   error.value = ''
   try {
-    await addInvoiceNote(props.target.invoice, draft.value.trim())
+    await addInvoiceNote(invoice, draft.value.trim())
     draft.value = ''
     await load()
-    emit('saved') // the card's count/preview came from the list — refresh it
+    // Hand the card its new count/preview rather than making the page refetch: a reload would
+    // clear the operator's ticked bundle and reset paging behind this dialog.
+    emit('saved', { invoice, count: notes.value.length, latest: notes.value[0]?.content || '' })
   } catch (e) {
     error.value = e?.messages?.[0] || "Couldn't save the note."
   } finally {
@@ -53,11 +60,16 @@ async function save() {
 function onKeydown(e) {
   if (e.key === 'Escape') return emit('close')
   if (e.key !== 'Tab') return
-  const items = Array.from(
-    dialogRef.value?.querySelectorAll(
-      'textarea, input, button, [href], [tabindex]:not([tabindex="-1"])',
-    ) || [],
-  ).filter((el) => !el.disabled)
+  // The dialog itself leads the list: it holds focus on open, and querySelectorAll would
+  // only see its descendants — so Shift+Tab would otherwise land on the page behind.
+  const items = [
+    dialogRef.value,
+    ...Array.from(
+      dialogRef.value?.querySelectorAll(
+        'textarea, input, button, [href], [tabindex]:not([tabindex="-1"])',
+      ) || [],
+    ),
+  ].filter((el) => el && !el.disabled)
   if (!items.length) return
   const first = items[0]
   const last = items[items.length - 1]

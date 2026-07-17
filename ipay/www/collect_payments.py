@@ -1,10 +1,9 @@
 import frappe
 from frappe.utils import add_to_date, cint, flt, now_datetime, today
-from frappe.utils.html_utils import unescape_html
 
 from ipay.ipay.main.utils.prepaid import all_prepaid_invoice_names, prepaid_invoice_names
 from ipay.ipay.main.utils.collector import OPERATOR_ROLES, collector_scope, is_collector_only
-from ipay.ipay.main.utils.constants import ACTIVE_BUNDLE_WINDOW_MIN, note_filters
+from ipay.ipay.main.utils.constants import ACTIVE_BUNDLE_WINDOW_MIN, note_filters, note_text
 from ipay.ipay.main.utils.sales import (
     SALES_ROLE,
     is_sales_only,
@@ -254,7 +253,7 @@ def _annotate_notes(invoices):
         latest[note.reference_name] = note.content  # ascending, so the last seen is the newest
     for inv in invoices:
         inv.note_count = counts.get(inv.name, 0)
-        inv.note_latest = unescape_html(latest.get(inv.name) or "")
+        inv.note_latest = note_text(latest.get(inv.name) or "")
 
 
 def get_context(context):

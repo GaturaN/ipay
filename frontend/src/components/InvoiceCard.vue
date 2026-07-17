@@ -20,6 +20,13 @@ const mpesaBlocked = computed(
   () => props.mpesaMax > 0 && Number(props.invoice.outstanding_amount || 0) > props.mpesaMax,
 )
 
+// The row truncates the note visually; a screen reader gets the count and the note itself.
+const noteLabel = computed(() => {
+  const count = props.invoice.note_count || 0
+  if (!count) return 'Add a note'
+  return `${count} note${count === 1 ? '' : 's'}. Latest: ${props.invoice.note_latest}`
+})
+
 async function payViaIpay() {
   checkoutBusy.value = true
   try {
@@ -88,7 +95,7 @@ async function payViaIpay() {
           ? 'bg-paper text-ink/80'
           : 'border border-hairline text-ink/50 active:bg-paper'
       "
-      :aria-label="invoice.note_count ? `${invoice.note_count} notes on this invoice` : 'Add a note'"
+      :aria-label="noteLabel"
       @click="$emit('notes')"
     >
       <svg viewBox="0 0 20 20" class="h-[15px] w-[15px] shrink-0" fill="none" stroke="currentColor" stroke-width="1.7">

@@ -3,13 +3,14 @@ import hmac
 import hashlib
 
 import frappe
-from frappe.utils.html_utils import unescape_html
 
 from ipay.ipay.main.utils.reconcile_payments import reconcile_request
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
 from ipay.ipay.main.utils.constants import (
     clean_oid,
+    note_content,
     note_filters,
+    note_text,
     ACTIVE_BUNDLE_WINDOW_MIN,
     COLLECTION_NOTE_MAX_LENGTH,
     COLLECTION_NOTE_SUBJECT,
@@ -777,22 +778,31 @@ def invoice_notes(invoice):
         order_by="creation desc",
         limit_page_length=50,
     )
+    authors = _full_names([row["owner"] for row in rows])
     for row in rows:
-        row["content"] = unescape_html(row["content"] or "")
-        row["author"] = frappe.db.get_value("User", row["owner"], "full_name") or row["owner"]
+        row["content"] = note_text(row["content"])
+        row["author"] = authors.get(row["owner"]) or row["owner"]
     return rows
+
+
+def _full_names(users):
+    """Display names for a set of logins, batched."""
+    names = list({user for user in users if user})
+    if not names:
+        return {}
+    return {
+        u.name: u.full_name
+        for u in frappe.get_all("User", filters={"name": ["in", names]}, fields=["name", "full_name"])
+    }
 
 
 @frappe.whitelist(methods=["POST"])
 def add_invoice_note(invoice, note):
     """Leave a collection note on an invoice ("customer says pay tomorrow").
 
-    Stored as an ordinary Comment so it also lands in the invoice's desk timeline. Escaped
-    rather than stripped: escaping renders the note as literal text in both the timeline and
-    the app, so markup can't run, while stripping would silently eat "balance < 5000".
-
-    Uses a low-level insert because iPay operator/collector roles have no Comment permission
-    at all — _require_invoice_access is the gate, and the note is validated first."""
+    Stored as an ordinary Comment so it also reaches the invoice's desk timeline. Uses a
+    low-level insert because iPay roles have no Comment permission at all —
+    _require_invoice_access is the gate, and the note is validated first."""
     _require_operator()
     _require_invoice_access(invoice)
     text = (note or "").strip()
@@ -808,10 +818,9 @@ def add_invoice_note(invoice, note):
             "reference_doctype": "Sales Invoice",
             "reference_name": invoice,
             "subject": COLLECTION_NOTE_SUBJECT,
-            "content": frappe.utils.escape_html(text),
+            "content": note_content(text),
         }
     ).insert(ignore_permissions=True)
-    return {"status": "ok"}
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

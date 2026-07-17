@@ -177,6 +177,15 @@ function onPaid(name) {
   else if (!invoices.value.length) load(true)
 }
 
+// Patch the card in place: reloading the list would clear a ticked bundle and reset paging.
+function onNoteSaved({ invoice, count, latest }) {
+  const inv = invoices.value.find((i) => i.name === invoice)
+  if (inv) {
+    inv.note_count = count
+    inv.note_latest = latest
+  }
+}
+
 useResumeRefresh(() => load(true)) // re-pull when the PWA returns to the foreground
 onMounted(() => load(true))
 </script>
@@ -259,7 +268,7 @@ onMounted(() => load(true))
       </template>
 
       <PromptDialog :target="prompting" @close="prompting = null" @paid="onPaid" @changed="load(true)" />
-      <NotesDialog :target="noting" @close="noting = null" @saved="load(true)" />
+      <NotesDialog :target="noting" @close="noting = null" @saved="onNoteSaved" />
     </template>
   </main>
 </template>
