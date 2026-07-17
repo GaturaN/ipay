@@ -13,6 +13,7 @@ def get_context(context):
     if not request_name:
         context.invalid = True
         context.expired = status == "expired"
+        context.held = status == "held"
         return
 
     req = frappe.db.get_value(

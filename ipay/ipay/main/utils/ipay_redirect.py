@@ -38,6 +38,8 @@ ALL_OPERATOR_ROLES = OPERATOR_ROLES | {"iPay Collector", "Sales User", "Sales Ma
 # Bundling several invoices into one prompt: operators, sales users and sales managers
 # (who chase a customer's whole balance). Field collectors stay one invoice at a time.
 BUNDLER_ROLES = OPERATOR_ROLES | {"Sales User", "Sales Manager"}
+# Shown wherever a rail refuses an invoice a cheque has already been collected for.
+CHEQUE_HELD = "A cheque has already been collected for this — accounts will bank it."
 
 
 def _require_full_operator():
@@ -231,6 +233,10 @@ def _ensure_request(invoice):
     # _ensure_request for the same invoice blocks here until we commit, then sees
     # the request we created and reuses it instead of inserting a second one.
     frappe.db.get_value("Sales Invoice", invoice, "name", for_update=True)
+    # A cheque already collected leaves the invoice outstanding until accounts bank it, so it
+    # still looks chargeable — every rail creates its request here, so one refusal covers them.
+    if awaiting_cheque_amounts([invoice]):
+        frappe.throw(CHEQUE_HELD)
     # If this invoice is a member of an active bundle, collect through that bundle —
     # never spin up a duplicate request for a bundled invoice (it would double-charge
     # it). A non-primary member's lookup below would otherwise miss the bundle.
@@ -316,6 +322,10 @@ def resolve_pay_token(token):
         return None, "invalid"
     if row.pay_token_expiry and frappe.utils.get_datetime(row.pay_token_expiry) < frappe.utils.now_datetime():
         return None, "expired"
+    # The token outlives the moment it was minted (days), so a cheque collected after it was
+    # shared must still stop it here — this is the one gate every token rail passes through.
+    if _request_awaits_cheque(row.name):
+        return None, "held"
     return row.name, "ok"
 
 
@@ -344,13 +354,23 @@ def _payment_state(request_name, include_detail=False):
     return state
 
 
+def _request_invoices(request_name, sales_invoice=None):
+    """The Sales Invoices a request covers: a bundle's child rows, else its single invoice."""
+    return frappe.get_all(
+        "iPay Request Invoice", filters={"parent": request_name}, pluck="sales_invoice"
+    ) or [sales_invoice or frappe.db.get_value("iPay Request", request_name, "sales_invoice")]
+
+
+def _request_awaits_cheque(request_name, sales_invoice=None):
+    """True when a draft cheque already covers any invoice this request would charge."""
+    return bool(awaiting_cheque_amounts(_request_invoices(request_name, sales_invoice)))
+
+
 def _live_request_amount(request_name, sales_invoice):
     """Sum the live outstanding of a request's invoices (a bundle's child rows, or
     the single sales invoice) so an STK charges what is actually owed now — not a
     stored amount that goes stale when a member invoice is paid separately."""
-    invoices = frappe.get_all(
-        "iPay Request Invoice", filters={"parent": request_name}, pluck="sales_invoice"
-    ) or [sales_invoice]
+    invoices = _request_invoices(request_name, sales_invoice)
     total = 0.0
     for invoice in invoices:
         if invoice:
@@ -382,6 +402,10 @@ def _enqueue_stk(request_name, phone):
         return {"status": "error", "message": "This request is no longer chargeable."}
     if req.status in ("Success", "Underpaid", "Overpaid"):
         return {"status": "error", "message": "This request has already been paid."}
+    # A request raised before the cheque was collected is still chargeable on its own — the
+    # invoice's outstanding does not move until accounts bank it.
+    if _request_awaits_cheque(request_name, req.sales_invoice):
+        return {"status": "error", "message": CHEQUE_HELD}
 
     phone = normalize_phone(phone or req.customer_phone)
     if not phone:
@@ -465,6 +489,8 @@ def start_request_checkout(request):
     _require_operator()
     _require_redirect_enabled()
     _require_request_access(request)
+    if _request_awaits_cheque(request):
+        frappe.throw(CHEQUE_HELD)
     token = _ensure_pay_token(request)
     return {"url": f"/ipay_checkout?token={token}"}
 
@@ -481,6 +507,10 @@ def get_payment_link(invoice=None, request=None):
     request_name = request or (_ensure_request(invoice) if invoice else None)
     if not request_name:
         frappe.throw("An invoice or iPay Request is required.")
+    # The invoice path is already refused inside _ensure_request; this covers the request path,
+    # so an operator is never handed a link the checkout page would then refuse.
+    if _request_awaits_cheque(request_name):
+        frappe.throw(CHEQUE_HELD)
     token = _ensure_pay_token(request_name)
     return {
         "url": frappe.utils.get_url("/pay?token=" + token),
@@ -502,6 +532,8 @@ def regenerate_payment_link(request):
     status = frappe.db.get_value("iPay Request", request, "status")
     if status in ("Success", "Overpaid"):
         frappe.throw("This request is already paid; a new payment link is not needed.")
+    if _request_awaits_cheque(request):
+        frappe.throw(CHEQUE_HELD)
     token = _new_pay_token(request)
     frappe.db.commit()
     return {

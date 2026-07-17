@@ -23,7 +23,10 @@
 <div class="ipay-pay">
   <div class="card">
     <div class="card-body p-4 text-center">
-      {% if invalid %}
+      {% if held %}
+        <h4>Cheque received</h4>
+        <p class="muted">A cheque has already been collected for this. There is nothing to pay here.</p>
+      {% elif invalid %}
         <h4>Invalid payment link</h4>
         <p class="muted">This payment link is invalid or has expired. Please request a new one.</p>
       {% elif paid %}

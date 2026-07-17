@@ -5,7 +5,9 @@
   {% if disabled %}
     <p>Hosted checkout is not enabled.</p>
   {% elif not_found %}
-    {% if expired %}
+    {% if held %}
+    <p>A cheque has already been collected for this. There is nothing to pay here.</p>
+    {% elif expired %}
     <p>This payment link has expired. Please request a new one.</p>
     {% else %}
     <p>Payment request not found.</p>

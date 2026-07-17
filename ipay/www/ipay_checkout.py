@@ -22,6 +22,7 @@ def get_context(context):
     if not request_name:
         context.not_found = True
         context.expired = status == "expired"
+        context.held = status == "held"
         return
 
     entered_phone = frappe.form_dict.get("phone")

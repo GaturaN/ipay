@@ -20,8 +20,8 @@ const mpesaBlocked = computed(
   () => props.mpesaMax > 0 && Number(props.invoice.outstanding_amount || 0) > props.mpesaMax,
 )
 
-// A cheque can cover part of an invoice. Prompting is still suppressed — charging the whole
-// balance would take the cheque's share twice — so the shortfall is named instead of hidden.
+// A cheque can cover part of an invoice; the whole invoice is held until accounts bank it, so
+// the notice names the balance that reopens then rather than implying it is collectable now.
 const chequeIsPartial = computed(
   () => Number(props.invoice.awaiting_cheque || 0) < Number(props.invoice.outstanding_amount || 0),
 )
@@ -133,8 +133,8 @@ async function payViaIpay() {
       <span>
         Cheque for {{ formatKES(invoice.awaiting_cheque) }} with accounts to bank.
         <template v-if="chequeIsPartial">
-          {{ formatKES(Number(invoice.outstanding_amount) - invoice.awaiting_cheque) }} of this
-          invoice is still owed — collect it with the rest of the round.
+          The {{ formatKES(Number(invoice.outstanding_amount) - invoice.awaiting_cheque) }} balance
+          reopens once they bank it.
         </template>
       </span>
     </p>
