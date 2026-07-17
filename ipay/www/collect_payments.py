@@ -154,13 +154,12 @@ def _collectable_terms():
 
 def _settings_flags():
     """The iPay Settings every collection response carries: hosted-checkout availability, the
-    M-Pesa STK ceiling, and whether cheque collection is usable — on AND a cheque account set,
-    so the app never offers a journey that would only fail at the final step."""
-    settings = frappe.get_cached_doc("iPay Settings")
+    M-Pesa STK ceiling, and whether cheque collection is on. Read fresh, exactly like
+    enable_redirect — a cached read would keep showing the old value after the setting is toggled."""
     return {
-        "enable_redirect": bool(settings.enable_redirect),
-        "mpesa_max": flt(settings.mpesa_max_amount),
-        "allow_cheque": bool(settings.allow_cheque_collection and settings.cheque_account),
+        "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
+        "mpesa_max": flt(frappe.db.get_single_value("iPay Settings", "mpesa_max_amount")),
+        "allow_cheque": bool(frappe.db.get_single_value("iPay Settings", "allow_cheque_collection")),
     }
 
 
