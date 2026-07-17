@@ -7,6 +7,7 @@ import {
   saveCustomerContact,
 } from '@/data/collection'
 import { formatKES } from '@/utils/format'
+import BaseDialog from '@/components/BaseDialog.vue'
 
 // One M-Pesa STK prompt for a target (a single invoice or a bundle request). The number and
 // the amount are shown so the operator confirms both before charging. On success a "money
@@ -24,7 +25,7 @@ const busy = ref(false)
 const message = ref(null) // { tone, text }
 const paid = ref(false)
 const receipt = ref('')
-const dialogRef = ref(null)
+const doneRef = ref(null)
 let pollTimer = null
 let returnTimer = null
 
@@ -36,38 +37,19 @@ const toneBox = {
 }
 const waiting = computed(() => busy.value && message.value?.tone === 'info')
 
-// Close on Escape and trap Tab within the dialog (keyboard/AT users can't wander to the
-// page behind the modal). On the success screen, Escape acknowledges rather than abandons.
-function onKeydown(e) {
-  if (e.key === 'Escape') return paid.value ? finishPaid() : emit('close')
-  if (e.key !== 'Tab') return
-  const items = Array.from(
-    dialogRef.value?.querySelectorAll('input, button, [href], [tabindex]:not([tabindex="-1"])') || [],
-  ).filter((el) => !el.disabled)
-  if (!items.length) return
-  const first = items[0]
-  const last = items[items.length - 1]
-  if (e.shiftKey && document.activeElement === first) {
-    e.preventDefault()
-    last.focus()
-  } else if (!e.shiftKey && document.activeElement === last) {
-    e.preventDefault()
-    first.focus()
-  }
-}
+// On the success screen a dismiss acknowledges the payment rather than abandoning it.
+const onDismiss = () => (paid.value ? finishPaid() : emit('close'))
 
 watch(
   () => props.target,
-  (target) => {
-    phone.value = target?.phone || ''
+  () => {
+    phone.value = props.target?.phone || ''
     busy.value = false
     message.value = null
     paid.value = false
     receipt.value = ''
     stopPolling()
     clearReturn()
-    window[target ? 'addEventListener' : 'removeEventListener']('keydown', onKeydown)
-    if (target) nextTick(() => dialogRef.value?.querySelector('input')?.focus())
   },
 )
 
@@ -121,7 +103,7 @@ function startPolling(request) {
         receipt.value = state.detail || ''
         paid.value = true
         returnTimer = setTimeout(finishPaid, RETURN_AFTER_MS)
-        nextTick(() => dialogRef.value?.querySelector('button')?.focus())
+        nextTick(() => doneRef.value?.focus())
       } else if (state.partial) {
         settle('warn', state.detail || 'Paid, but the amount differs — the team will reconcile it.')
         emit('changed')
@@ -169,23 +151,11 @@ function clearReturn() {
 onUnmounted(() => {
   stopPolling()
   clearReturn()
-  window.removeEventListener('keydown', onKeydown)
 })
 </script>
 
 <template>
-  <div
-    v-if="target"
-    class="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 p-4 sm:items-center"
-    @click.self="paid ? finishPaid() : $emit('close')"
-  >
-    <div
-      ref="dialogRef"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="prompt-title"
-      class="w-full max-w-md rounded-3xl bg-paper p-6"
-    >
+  <BaseDialog :open="Boolean(target)" labelledby="prompt-title" @close="onDismiss">
       <!-- Success: money received -->
       <div v-if="paid" class="text-center">
         <div class="mx-auto grid h-16 w-16 place-items-center rounded-full bg-landed/15">
@@ -207,6 +177,7 @@ onUnmounted(() => {
         </p>
         <p v-if="receipt" class="mx-auto mt-3 max-w-xs text-xs text-ink/60">{{ receipt }}</p>
         <button
+          ref="doneRef"
           type="button"
           class="mt-6 h-12 w-full rounded-xl bg-ink font-semibold text-paper transition active:scale-[.98]"
           @click="finishPaid"
@@ -266,7 +237,6 @@ onUnmounted(() => {
             {{ busy ? 'Waiting…' : 'Send prompt' }}
           </button>
         </div>
-      </template>
-    </div>
-  </div>
+    </template>
+  </BaseDialog>
 </template>
