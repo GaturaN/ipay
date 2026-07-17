@@ -1,12 +1,14 @@
 from unittest.mock import MagicMock, patch
 
+import frappe
 import requests
 from frappe.tests.utils import FrappeTestCase
 
-from ipay.ipay.main.utils import reconcile_payments
+from ipay.ipay.main.utils import make_payment_entry, reconcile_payments
 from ipay.ipay.main.utils.constants import amounts_match, clean_oid
 from ipay.ipay.main.utils.finalize_payment import _resolve_status
 from ipay.ipay.main.utils.ipay_redirect import normalize_phone
+from ipay.ipay.main.utils.make_payment_entry import allocate_references
 
 
 class TestNormalizePhone(FrappeTestCase):
@@ -79,6 +81,74 @@ class TestCleanOid(FrappeTestCase):
 
     def test_empty_name_is_empty(self):
         self.assertEqual(clean_oid(None), "")
+
+
+def _allocate(invoices, terms, amount):
+    """Run the allocator against fake invoices/terms. `invoices` maps name -> outstanding,
+    `terms` maps invoice name -> [(payment_term, term_outstanding), ...]."""
+    rows = {
+        name: frappe._dict(
+            name=name, outstanding_amount=out, posting_date="2026-01-01",
+            customer="C", customer_name="C", company="Co",
+        )
+        for name, out in invoices.items()
+    }
+    with patch.object(make_payment_entry.frappe.db, "get_value", side_effect=lambda dt, n, f, **k: rows[n]):
+        with patch.object(
+            make_payment_entry.frappe,
+            "get_all",
+            side_effect=lambda dt, **k: [
+                frappe._dict(payment_term=t, outstanding=o)
+                for t, o in terms.get(k["filters"]["parent"], [])
+            ],
+        ):
+            return allocate_references(list(invoices), amount)
+
+
+class TestAllocateReferences(FrappeTestCase):
+    """Allocation decides which invoice a payment clears. Over-allocate and ERPNext rejects the
+    whole entry — the customer's money is taken and no Payment Entry exists."""
+
+    def test_term_outstanding_never_exceeds_the_invoice(self):
+        # ERPNext only decrements a term row when the payment names its payment_term, so the row
+        # can claim far more than the invoice still owes. The invoice is the truth.
+        _, refs, remaining = _allocate({"INV-1": 3229.8}, {"INV-1": [("NET 15", 249952.0)]}, 53229.8)
+        self.assertEqual(sum(r["allocated_amount"] for r in refs), 3229.8)
+        self.assertEqual(remaining, 50000.0)
+
+    def test_exact_bundle_total_reaches_every_invoice(self):
+        # A stale first term used to swallow the whole payment, leaving the rest unpaid.
+        _, refs, remaining = _allocate(
+            {"INV-1": 3229.8, "INV-2": 22088.0},
+            {"INV-1": [("NET 15", 249952.0)], "INV-2": [("NET 15", 22088.0)]},
+            25317.8,
+        )
+        allocated = {r["reference_name"]: r["allocated_amount"] for r in refs}
+        self.assertEqual(allocated, {"INV-1": 3229.8, "INV-2": 22088.0})
+        self.assertEqual(remaining, 0.0)
+
+    def test_partial_payment_fills_each_term_before_the_next(self):
+        # Due-date order is the DB's job (order_by on the query), so it is not asserted here.
+        _, refs, remaining = _allocate(
+            {"INV-1": 1000.0}, {"INV-1": [("First", 400.0), ("Second", 600.0)]}, 500.0
+        )
+        self.assertEqual(
+            [(r["payment_term"], r["allocated_amount"]) for r in refs],
+            [("First", 400.0), ("Second", 100.0)],
+        )
+        self.assertEqual(remaining, 0.0)
+
+    def test_invoice_without_terms_takes_one_reference(self):
+        _, refs, remaining = _allocate({"INV-1": 800.0}, {}, 1000.0)
+        self.assertEqual(refs, [
+            {"reference_doctype": "Sales Invoice", "reference_name": "INV-1", "allocated_amount": 800.0}
+        ])
+        self.assertEqual(remaining, 200.0)
+
+    def test_settled_invoice_is_skipped_and_money_stays_credit(self):
+        _, refs, remaining = _allocate({"INV-1": 0.0}, {"INV-1": [("NET 15", 5000.0)]}, 700.0)
+        self.assertEqual(refs, [])
+        self.assertEqual(remaining, 700.0)
 
 
 def _fake_response(status_code, json_value=None, json_error=False):

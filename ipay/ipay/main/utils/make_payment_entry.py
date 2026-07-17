@@ -31,7 +31,10 @@ def allocate_references(invoice_names, amount):
     for si in invoices:
         if remaining <= 0:
             break
-        if flt(si.outstanding_amount) <= 0:
+        # Live outstanding caps the terms below: ERPNext leaves a term row stale unless the
+        # payment that cleared it named its payment_term, and most do not.
+        payable = flt(si.outstanding_amount)
+        if payable <= 0:
             continue
 
         # Invoices with payment terms must allocate per term (oldest due first) and carry the
@@ -48,9 +51,9 @@ def allocate_references(invoice_names, amount):
         ]
         if terms:
             for term in terms:
-                if remaining <= 0:
+                if remaining <= 0 or payable <= 0:
                     break
-                allocated = min(remaining, flt(term.outstanding))
+                allocated = min(remaining, flt(term.outstanding), payable)
                 references.append(
                     {
                         "reference_doctype": "Sales Invoice",
@@ -60,8 +63,9 @@ def allocate_references(invoice_names, amount):
                     }
                 )
                 remaining = flt(remaining - allocated)
+                payable = flt(payable - allocated)
         else:
-            allocated = min(remaining, flt(si.outstanding_amount))
+            allocated = min(remaining, payable)
             references.append(
                 {
                     "reference_doctype": "Sales Invoice",
