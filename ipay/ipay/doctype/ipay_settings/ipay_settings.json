@@ -17,6 +17,7 @@
   "mpesa_max_amount",
   "payment_link_ttl_days",
   "cash_account",
+  "cheque_account",
   "alert_email",
   "last_reconcile_run",
   "restrict_sales_managers"
@@ -91,6 +92,13 @@
    "fieldname": "cash_account",
    "fieldtype": "Link",
    "label": "Cash Account (fallback)",
+   "options": "Account"
+  },
+  {
+   "description": "Fallback account for collected cheques, used only when the Cheque Mode of Payment has no account set for the company. Cheques must never book to cash.",
+   "fieldname": "cheque_account",
+   "fieldtype": "Link",
+   "label": "Cheque Account (fallback)",
    "options": "Account"
   },
   {
