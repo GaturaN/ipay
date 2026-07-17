@@ -14,6 +14,8 @@ from ipay.ipay.main.utils.constants import (
     note_filters,
     note_text,
     ACTIVE_BUNDLE_WINDOW_MIN,
+    CHEQUE_MODE,
+    CHEQUE_NO_MAX_LENGTH,
     COLLECTION_NOTE_MAX_LENGTH,
     COLLECTION_NOTE_SUBJECT,
 )
@@ -35,9 +37,6 @@ ALL_OPERATOR_ROLES = OPERATOR_ROLES | {"iPay Collector", "Sales User", "Sales Ma
 # Bundling several invoices into one prompt: operators, sales users and sales managers
 # (who chase a customer's whole balance). Field collectors stay one invoice at a time.
 BUNDLER_ROLES = OPERATOR_ROLES | {"Sales User", "Sales Manager"}
-
-CHEQUE_MODE = "Cheque"
-CHEQUE_NO_MAX_LENGTH = 30
 
 
 def _require_full_operator():
