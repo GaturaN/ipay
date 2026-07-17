@@ -6,7 +6,15 @@ import frappe
 
 from ipay.ipay.main.utils.reconcile_payments import reconcile_request
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
-from ipay.ipay.main.utils.constants import clean_oid, ACTIVE_BUNDLE_WINDOW_MIN
+from ipay.ipay.main.utils.constants import (
+    clean_oid,
+    note_content,
+    note_filters,
+    note_text,
+    ACTIVE_BUNDLE_WINDOW_MIN,
+    COLLECTION_NOTE_MAX_LENGTH,
+    COLLECTION_NOTE_SUBJECT,
+)
 from ipay.ipay.main.utils.prepaid import is_sales_invoice_prepaid
 
 # Hosted checkout (HTML form POST). NB: this flow uses HMAC-SHA1 over the
@@ -756,6 +764,63 @@ def save_customer_contact(request, phone=None, email=None):
     if request_updates:
         frappe.db.set_value("iPay Request", request, request_updates)
     return {"status": "ok", "saved_to_customer": saved}
+
+
+@frappe.whitelist()
+def invoice_notes(invoice):
+    """The collection notes left on an invoice, newest first."""
+    _require_operator()
+    _require_invoice_access(invoice)
+    rows = frappe.get_all(
+        "Comment",
+        filters=note_filters(invoice),
+        fields=["name", "content", "owner", "creation"],
+        order_by="creation desc",
+        limit_page_length=50,
+    )
+    authors = _full_names([row["owner"] for row in rows])
+    for row in rows:
+        row["content"] = note_text(row["content"])
+        row["author"] = authors.get(row["owner"]) or row["owner"]
+    return rows
+
+
+def _full_names(users):
+    """Display names for a set of logins, batched."""
+    names = list({user for user in users if user})
+    if not names:
+        return {}
+    return {
+        u.name: u.full_name
+        for u in frappe.get_all("User", filters={"name": ["in", names]}, fields=["name", "full_name"])
+    }
+
+
+@frappe.whitelist(methods=["POST"])
+def add_invoice_note(invoice, note):
+    """Leave a collection note on an invoice ("customer says pay tomorrow").
+
+    Stored as an ordinary Comment so it also reaches the invoice's desk timeline. Uses a
+    low-level insert because iPay roles have no Comment permission at all —
+    _require_invoice_access is the gate, and the note is validated first."""
+    _require_operator()
+    _require_invoice_access(invoice)
+    text = (note or "").strip()
+    if not text:
+        frappe.throw("Write a note first.")
+    if len(text) > COLLECTION_NOTE_MAX_LENGTH:
+        frappe.throw(f"Keep the note under {COLLECTION_NOTE_MAX_LENGTH} characters.")
+
+    frappe.get_doc(
+        {
+            "doctype": "Comment",
+            "comment_type": "Comment",
+            "reference_doctype": "Sales Invoice",
+            "reference_name": invoice,
+            "subject": COLLECTION_NOTE_SUBJECT,
+            "content": note_content(text),
+        }
+    ).insert(ignore_permissions=True)
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
