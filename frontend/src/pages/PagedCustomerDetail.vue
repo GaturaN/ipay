@@ -199,10 +199,10 @@ function chequeFor(names, outstanding) {
 }
 
 // Mark the cards in place rather than reloading, which would clear the ticked set underneath.
-function onChequeRecorded({ invoices: names, amount }) {
+function onChequeRecorded({ invoices: names, amount, covered }) {
   if (!names.length) chequeOnAccount.value += amount
   invoices.value.forEach((inv) => {
-    if (names.includes(inv.name)) inv.awaiting_cheque = true
+    if (covered[inv.name]) inv.awaiting_cheque = covered[inv.name]
   })
   clearSelection()
 }

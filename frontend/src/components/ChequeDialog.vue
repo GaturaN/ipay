@@ -74,7 +74,7 @@ async function save() {
   saving.value = true
   error.value = ''
   try {
-    await recordCheque({
+    const res = await recordCheque({
       customer: target.customer,
       amount: amountValue.value,
       chequeNo: number.value.trim(),
@@ -82,7 +82,13 @@ async function save() {
       invoices: target.invoices || [],
     })
     done.value = true
-    emit('recorded', { invoices: target.invoices || [], amount: amountValue.value })
+    // covered maps each invoice to the amount this cheque put against it, so the card shows the
+    // real figure rather than a placeholder.
+    emit('recorded', {
+      invoices: target.invoices || [],
+      amount: amountValue.value,
+      covered: res?.covered || {},
+    })
   } catch (e) {
     error.value = e?.messages?.[0] || "Couldn't record the cheque."
     reviewing.value = false // back to the form, with everything they typed still there

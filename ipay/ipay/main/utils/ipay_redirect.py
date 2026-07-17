@@ -1042,10 +1042,17 @@ def record_cheque(customer, amount, cheque_no, photo, invoices=None, cheque_date
     finally:
         frappe.set_user(collector)
 
+    # Per-invoice cover, so the caller can flag each card with the real amount instead of
+    # refetching — the same shape awaiting_cheque_amounts returns on the next load.
+    covered = {}
+    for ref in references:
+        covered[ref["reference_name"]] = covered.get(ref["reference_name"], 0) + ref["allocated_amount"]
+
     return {
         "payment_entry": payment_entry.name,
         "amount": amount,
         "allocated": frappe.utils.flt(amount - remaining),
+        "covered": covered,
     }
 
 
