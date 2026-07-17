@@ -9,6 +9,9 @@ import re
 import hmac
 import hashlib
 
+from frappe.utils import escape_html, strip_html_tags
+from frappe.utils.html_utils import unescape_html
+
 # Characters iPay rejects in an order id. Order ids (and the `inv` field) are
 # derived from Frappe document names, which can contain these, so strip them
 # wherever an oid/inv is built. Must stay identical everywhere or the
@@ -22,6 +25,39 @@ UNWANTED_OID_CHARACTERS = r"[-/;:~`!%^*<&_]"
 # own link still works; live-amount charging keeps that safe). Shared by
 # collect_payments._drop_bundled and ipay_redirect._active_bundle_for_invoice.
 ACTIVE_BUNDLE_WINDOW_MIN = 30
+
+# A collection note is an ordinary Comment on the Sales Invoice, so it reaches the desk
+# timeline for free; this marker in the (otherwise unused) subject is what keeps the collect
+# app's reads payment-only. Must stay identical everywhere, like the oid characters above.
+COLLECTION_NOTE_SUBJECT = "iPay Collection Note"
+COLLECTION_NOTE_MAX_LENGTH = 500
+
+
+def note_filters(reference_name):
+    """Comment filters for the collection notes on one invoice, or on a list of them."""
+    return {
+        "comment_type": "Comment",
+        "reference_doctype": "Sales Invoice",
+        "reference_name": reference_name,
+        "subject": COLLECTION_NOTE_SUBJECT,
+    }
+
+
+def note_content(text):
+    """Store a note as escaped text wrapped in a paragraph.
+
+    Escaping alone is not enough: the desk timeline runs every comment through
+    frappe.utils.markdown, which only skips the markdown pass when is_html() is true — and
+    escaping makes that false, so "![x](http://evil/p.png)" would be rendered into a live
+    image. The wrapper makes is_html() true, so the note is never re-parsed."""
+    return f"<p>{escape_html(text)}</p>"
+
+
+def note_text(content):
+    """The plain text of a stored note. Stripping is safe here (unlike on raw input, where it
+    would eat "balance < 5000") because what is stored is already escaped — the only real tags
+    are the wrapper, or markup a desk edit introduced."""
+    return unescape_html(strip_html_tags(content or ""))
 
 
 def clean_oid(name):

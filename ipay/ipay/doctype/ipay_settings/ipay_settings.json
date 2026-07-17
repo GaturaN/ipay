@@ -18,7 +18,8 @@
   "payment_link_ttl_days",
   "cash_account",
   "alert_email",
-  "last_reconcile_run"
+  "last_reconcile_run",
+  "restrict_sales_managers"
  ],
  "fields": [
   {
@@ -105,6 +106,13 @@
    "fieldtype": "Datetime",
    "label": "Last Reconcile Run",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "description": "Tick to give a Sales Manager only the customers their own Sales Person is named on, exactly like a Sales User. Left off, they see every member's book on the sales page and can filter to one.",
+   "fieldname": "restrict_sales_managers",
+   "fieldtype": "Check",
+   "label": "Restrict Sales Managers to Their Own Book"
   }
  ],
  "index_web_pages_for_search": 1,

@@ -11,7 +11,7 @@ const props = defineProps({
   actionsDisabled: Boolean,
   mpesaMax: { type: Number, default: 0 }, // M-Pesa ceiling; 0 = no cap
 })
-defineEmits(['prompt', 'toggle-select'])
+defineEmits(['prompt', 'toggle-select', 'notes'])
 
 const checkoutBusy = ref(false)
 
@@ -19,6 +19,13 @@ const checkoutBusy = ref(false)
 const mpesaBlocked = computed(
   () => props.mpesaMax > 0 && Number(props.invoice.outstanding_amount || 0) > props.mpesaMax,
 )
+
+// The row truncates the note visually; a screen reader gets the count and the note itself.
+const noteLabel = computed(() => {
+  const count = props.invoice.note_count || 0
+  if (!count) return 'Add a note'
+  return `${count} note${count === 1 ? '' : 's'}. Latest: ${props.invoice.note_latest}`
+})
 
 async function payViaIpay() {
   checkoutBusy.value = true
@@ -79,7 +86,31 @@ async function payViaIpay() {
       </p>
     </div>
 
-    <div class="mt-3 flex gap-2">
+    <!-- Above the actions: a note is context for the decision to charge, not a footnote to it. -->
+    <button
+      type="button"
+      class="mt-3 flex h-11 w-full items-center gap-2 rounded-xl px-3 text-left text-[13px] font-medium transition-colors"
+      :class="
+        invoice.note_count
+          ? 'bg-paper text-ink/80'
+          : 'border border-hairline text-ink/50 active:bg-paper'
+      "
+      :aria-label="noteLabel"
+      @click="$emit('notes')"
+    >
+      <svg viewBox="0 0 20 20" class="h-[15px] w-[15px] shrink-0" fill="none" stroke="currentColor" stroke-width="1.7">
+        <path d="M4 4.5h12v8H8l-4 3.5z" stroke-linejoin="round" />
+      </svg>
+      <span class="min-w-0 flex-1 truncate">{{ invoice.note_latest || 'Add note' }}</span>
+      <span
+        v-if="invoice.note_count > 1"
+        class="grid h-[18px] min-w-[18px] shrink-0 place-items-center rounded-full bg-ink/10 px-1.5 text-[11px] font-bold tabular-nums text-ink/75"
+      >
+        {{ invoice.note_count }}
+      </span>
+    </button>
+
+    <div class="mt-2 flex gap-2">
       <button
         v-if="!mpesaBlocked"
         type="button"

@@ -1,23 +1,50 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { createBundle, fetchInternalCustomerInvoices } from '@/data/collection'
+import {
+  createBundle,
+  fetchInternalCustomerInvoices,
+  fetchSalesCustomerInvoices,
+} from '@/data/collection'
 import { useResumeRefresh } from '@/composables/useResumeRefresh'
 import { useInvoiceSelection } from '@/composables/useInvoiceSelection'
 import InvoiceCard from '@/components/InvoiceCard.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
+import NotesDialog from '@/components/NotesDialog.vue'
 import CustomerMoneyHeader from '@/components/CustomerMoneyHeader.vue'
 import CollectBar from '@/components/CollectBar.vue'
 import ErrorRetry from '@/components/ErrorRetry.vue'
 
 const PAGE = 50
 
+// The paginated drill-down behind both big-book lists — internal (every customer) and sales
+// (a member's own). They differ only in where the invoices come from and which scope the URL
+// carries, so paging, selection, bundling and prompting stay in one place. The field app's
+// CustomerDetail is separate: it loads a driver's whole round unpaginated.
+const MODES = {
+  internal: {
+    fetch: fetchInternalCustomerInvoices,
+    list: 'Internal',
+    back: 'All customers',
+    scope: ['driver', 'payment_term', 'sales_person'],
+  },
+  sales: {
+    fetch: fetchSalesCustomerInvoices,
+    list: 'Sales',
+    back: 'My customers',
+    scope: ['payment_term', 'sales_person'],
+  },
+}
+
 const route = useRoute()
 const router = useRouter()
+const mode = MODES[route.meta.mode]
 const customer = route.params.customer
-const driver = route.query.driver || '' // scope the detail to the driver picked on the list
-const paymentTerm = route.query.payment_term || '' // and to the payment term picked on the list
-const salesPerson = route.query.sales_person || '' // and to the sales team member picked there
+const paymentTerm = route.query.payment_term || '' // shown in the header; the rest scope silently
+
+// The scope this mode carries in the URL, kept so every navigation away and back preserves it.
+const scopeQuery = () =>
+  Object.fromEntries(mode.scope.filter((k) => route.query[k]).map((k) => [k, route.query[k]]))
 
 const customerName = ref('')
 const invoices = ref([])
@@ -33,6 +60,7 @@ const loadingMore = ref(false)
 const creatingBundle = ref(false)
 const collectError = ref(false)
 const prompting = ref(null)
+const noting = ref(null)
 
 const search = ref('')
 let searchTimer = null
@@ -61,13 +89,14 @@ async function load(reset = true) {
     loadingMore.value = true
   }
   try {
-    const data = await fetchInternalCustomerInvoices(customer, {
+    // Each mode's fetch destructures only the scope its own endpoint accepts; extras are ignored.
+    const data = await mode.fetch(customer, {
       start: reset ? 0 : invoices.value.length,
       pageLength: PAGE,
       search: search.value.trim(),
-      driver,
+      driver: route.query.driver || '',
       paymentTerm,
-      salesPerson,
+      salesPerson: route.query.sales_person || '',
     })
     if (seq !== loadSeq) return // a newer load/search superseded this response — drop it
     customerName.value = data.customer_name || customer
@@ -114,13 +143,7 @@ async function collect(names) {
       router.push({
         name: 'Request',
         params: { name: res.request },
-        query: {
-          from: 'internal',
-          customer,
-          ...(driver ? { driver } : {}),
-          ...(paymentTerm ? { payment_term: paymentTerm } : {}),
-          ...(salesPerson ? { sales_person: salesPerson } : {}),
-        },
+        query: { from: route.meta.mode, customer, ...scopeQuery() },
       })
     else collectError.value = true
   } catch {
@@ -139,15 +162,7 @@ const canCollectAll = computed(
   () => !hasMore.value && invoices.value.length > 1 && !search.value.trim(),
 )
 
-const toList = () =>
-  router.push({
-    name: 'Internal',
-    query: {
-      ...(driver ? { driver } : {}),
-      ...(paymentTerm ? { payment_term: paymentTerm } : {}),
-      ...(salesPerson ? { sales_person: salesPerson } : {}),
-    },
-  })
+const toList = () => router.push({ name: mode.list, query: scopeQuery() })
 
 function onPaid(name) {
   prompting.value = null // dismiss the success screen
@@ -162,6 +177,15 @@ function onPaid(name) {
   else if (!invoices.value.length) load(true)
 }
 
+// Patch the card in place: reloading the list would clear a ticked bundle and reset paging.
+function onNoteSaved({ invoice, count, latest }) {
+  const inv = invoices.value.find((i) => i.name === invoice)
+  if (inv) {
+    inv.note_count = count
+    inv.note_latest = latest
+  }
+}
+
 useResumeRefresh(() => load(true)) // re-pull when the PWA returns to the foreground
 onMounted(() => load(true))
 </script>
@@ -173,7 +197,7 @@ onMounted(() => load(true))
       class="flex items-center gap-1 self-start text-sm font-medium text-ink/70"
       @click="toList"
     >
-      ‹ All customers
+      ‹ {{ mode.back }}
     </button>
 
     <ErrorRetry v-if="loadError" @retry="load(true)" />
@@ -210,7 +234,7 @@ onMounted(() => load(true))
       />
 
       <div v-if="loading" class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-        <div v-for="n in 6" :key="n" class="h-28 animate-pulse rounded-xl bg-ink/5" />
+        <div v-for="n in 6" :key="n" class="h-44 animate-pulse rounded-xl bg-ink/5" />
       </div>
       <p v-else-if="!invoices.length" class="py-16 text-center font-display text-ink/70">
         No invoices match.
@@ -227,6 +251,7 @@ onMounted(() => load(true))
             :selected="isSelected(inv)"
             :actions-disabled="selected.length > 0"
             @prompt="promptInvoice(inv)"
+            @notes="noting = { invoice: inv.name, customer_name: inv.customer_name }"
             @toggle-select="toggleSelect(inv)"
           />
         </div>
@@ -243,6 +268,7 @@ onMounted(() => load(true))
       </template>
 
       <PromptDialog :target="prompting" @close="prompting = null" @paid="onPaid" @changed="load(true)" />
+      <NotesDialog :target="noting" @close="noting = null" @saved="onNoteSaved" />
     </template>
   </main>
 </template>

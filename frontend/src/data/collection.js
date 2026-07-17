@@ -12,10 +12,14 @@ const API = {
   customerCollection: 'ipay.www.collect_payments.customer_collection',
   internalCustomers: 'ipay.www.collect_payments.internal_customers',
   internalCustomerInvoices: 'ipay.www.collect_payments.internal_customer_invoices',
+  salesCustomers: 'ipay.www.collect_payments.sales_customers',
+  salesCustomerInvoices: 'ipay.www.collect_payments.sales_customer_invoices',
   collectionStats: 'ipay.www.collect_payments.collection_stats',
   promptMpesa: 'ipay.ipay.main.utils.ipay_redirect.prompt_mpesa',
   promptRequest: 'ipay.ipay.main.utils.ipay_redirect.prompt_request_mpesa',
   saveContact: 'ipay.ipay.main.utils.ipay_redirect.save_customer_contact',
+  invoiceNotes: 'ipay.ipay.main.utils.ipay_redirect.invoice_notes',
+  addInvoiceNote: 'ipay.ipay.main.utils.ipay_redirect.add_invoice_note',
   paymentState: 'ipay.ipay.main.utils.ipay_redirect.payment_state',
   createBundle: 'ipay.ipay.main.utils.ipay_redirect.create_bundle',
   requestDetail: 'ipay.ipay.main.utils.ipay_redirect.request_detail',
@@ -65,6 +69,33 @@ export const fetchInternalCustomerInvoices = (
     'GET',
   )
 
+// Sales mode (all terms): a sales user's OWN book, or every book for their manager. The
+// server resolves a locked caller from their login and ignores salesPerson for them, so it
+// only ever filters a manager's view.
+export const fetchSalesCustomers = (paymentTerm, salesPerson) =>
+  call(
+    API.salesCustomers,
+    { payment_term: paymentTerm || '', sales_person: salesPerson || '' },
+    'GET',
+  )
+
+export const fetchSalesCustomerInvoices = (
+  customer,
+  { start = 0, pageLength = 50, search = '', paymentTerm = '', salesPerson = '' } = {},
+) =>
+  call(
+    API.salesCustomerInvoices,
+    {
+      customer,
+      start,
+      page_length: pageLength,
+      search,
+      payment_term: paymentTerm,
+      sales_person: salesPerson,
+    },
+    'GET',
+  )
+
 export const promptMpesa = (invoice, phone) =>
   call(API.promptMpesa, { invoice, phone: phone || '' })
 
@@ -74,6 +105,10 @@ export const promptRequestMpesa = (request, phone) =>
 
 export const saveCustomerContact = (request, phone) =>
   call(API.saveContact, { request, phone })
+
+// Collection notes on an invoice — plain text; the server escapes on write and unescapes here.
+export const fetchInvoiceNotes = (invoice) => call(API.invoiceNotes, { invoice }, 'GET')
+export const addInvoiceNote = (invoice, note) => call(API.addInvoiceNote, { invoice, note })
 
 export const paymentState = (request) => call(API.paymentState, { request }, 'GET')
 
