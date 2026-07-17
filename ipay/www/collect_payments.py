@@ -314,9 +314,9 @@ def _annotate_awaiting_cheque(invoices):
     rows = frappe.get_all(
         "Payment Entry Reference",
         filters={"reference_doctype": "Sales Invoice", "reference_name": ["in", names], "docstatus": 0},
-        fields=["parent", "reference_name"],
+        fields=["parent", "reference_name", "allocated_amount"],
     )
-    drafts = set()
+    covered = {}
     if rows:
         cheques = set(
             frappe.get_all(
@@ -329,9 +329,13 @@ def _annotate_awaiting_cheque(invoices):
                 pluck="name",
             )
         )
-        drafts = {r.reference_name for r in rows if r.parent in cheques}
+        for row in rows:
+            if row.parent in cheques:
+                covered[row.reference_name] = covered.get(row.reference_name, 0) + flt(row.allocated_amount)
+    # The amount rides along: a cheque may cover only part of the invoice, and "awaiting" without
+    # a figure would read as though the whole balance were settled.
     for inv in invoices:
-        inv.awaiting_cheque = inv.name in drafts
+        inv.awaiting_cheque = flt(covered.get(inv.name, 0))
 
 
 def _cheque_on_account(customer):
