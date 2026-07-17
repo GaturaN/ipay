@@ -5,10 +5,15 @@ from ipay.ipay.main.utils.finalize_payment import finalize_payment
 from ipay.ipay.main.utils.send_callback import deliver_callback
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
 from ipay.ipay.main.utils.constants import clean_oid, search_hash
+from ipay.ipay.main.utils.alerts import notify_money_at_risk
 
 # Only reconcile requests created within this window; older unconfirmed requests
 # are assumed abandoned (marked terminal below) so we don't poll them forever.
 RECONCILE_WINDOW_HOURS = 24
+
+# The backstop runs every 5 minutes; a heartbeat older than this means it has
+# stopped (dead scheduler / erroring job) and payments may be piling up unrecovered.
+HEARTBEAT_STALE_SECONDS = 900
 
 SEARCH_URL = "https://apis.ipayafrica.com/payments/v2/transaction/search"
 
@@ -102,6 +107,29 @@ def reconcile_pending_payments():
             frappe.db.rollback()
             create_log_entry("ERR", f"Reconcile (stale) failed for {req.name}: {error}")
 
+    # Stamp liveness even on an empty run, so a stopped backstop is detectable
+    # externally (reconcile_heartbeat) rather than failing silently.
+    frappe.db.set_value(
+        "iPay Settings", "iPay Settings", "last_reconcile_run", frappe.utils.now_datetime()
+    )
+    frappe.db.commit()
+
+
+@frappe.whitelist()
+def reconcile_heartbeat():
+    """Liveness of the reconcile backstop, for an external monitor: when it last ran
+    and whether that is stale. A stale heartbeat means payments may be piling up
+    unrecovered, so an operator should check the scheduler."""
+    last = frappe.db.get_single_value("iPay Settings", "last_reconcile_run")
+    seconds_since = (
+        frappe.utils.time_diff_in_seconds(frappe.utils.now_datetime(), last) if last else None
+    )
+    return {
+        "last_run": last,
+        "seconds_since": seconds_since,
+        "stale": seconds_since is None or seconds_since > HEARTBEAT_STALE_SECONDS,
+    }
+
 
 def reconcile_request(request_name):
     """Finalise a single iPay Request on demand (used by the redirect return
@@ -149,11 +177,13 @@ def _reconcile_one(req, vid, secret_key):
         customer_email=req.customer_email,
     )
     if result.get("status") not in ("success", "duplicate"):
-        # Payment Entry creation failed; leave undelivered to retry next run.
-        create_log_entry(
-            "ERR",
-            f"Reconcile could not create Payment Entry for {req.name}: {result.get('message')}",
+        # Payment confirmed at iPay but the Payment Entry would not save — money is
+        # collected yet unrecorded. Alert a human; leave undelivered to retry next run.
+        message = (
+            f"Reconcile could not create Payment Entry for {req.name}: {result.get('message')}"
         )
+        create_log_entry("ERR", message)
+        notify_money_at_risk(f"Payment Entry failed for {req.name}", message)
         return
 
     request_status = result.get("request_status")

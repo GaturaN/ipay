@@ -6,6 +6,7 @@ from ipay.ipay.main.utils.verify_mpesa_payment import verify_mpesa_payment
 from ipay.ipay.main.utils.finalize_payment import finalize_payment
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
 from ipay.ipay.main.utils.constants import clean_oid
+from ipay.ipay.main.utils.alerts import iPayDeclined
 
 logger = logging.getLogger(__name__)
 
@@ -218,6 +219,15 @@ def lipana_mpesa(
                 frappe.db.set_value("iPay Request", docid, "status", "Failed")
                 frappe.db.commit()
                 frappe.throw("Failed to initiate Payment")
+
+        except iPayDeclined as decline:
+            # The payer cancelled / entered a wrong PIN / had no balance — expected,
+            # not an error. Record the reason for the operator, log it at INF.
+            create_log_entry("INF", f"STK declined for {docid}: {decline}")
+            frappe.db.set_value(
+                "iPay Request", docid, {"status": "Failed", "result_detail": str(decline)}
+            )
+            frappe.db.commit()
 
         except Exception as error:
             logger.error("An error occurred during the payment process: %s", error)

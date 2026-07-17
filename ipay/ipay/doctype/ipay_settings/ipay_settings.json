@@ -17,6 +17,8 @@
   "mpesa_max_amount",
   "payment_link_ttl_days",
   "cash_account",
+  "alert_email",
+  "last_reconcile_run",
   "restrict_sales_managers"
  ],
  "fields": [
@@ -90,6 +92,20 @@
    "fieldtype": "Link",
    "label": "Cash Account (fallback)",
    "options": "Account"
+  },
+  {
+   "description": "Where money-at-risk alerts (a payment confirmed at iPay but not recorded) are emailed. Leave blank to log to Error Log only.",
+   "fieldname": "alert_email",
+   "fieldtype": "Data",
+   "label": "Alert Email",
+   "options": "Email"
+  },
+  {
+   "description": "When the reconcile backstop last ran. A stale value (see reconcile_heartbeat) means it has stopped and payments may be unrecovered.",
+   "fieldname": "last_reconcile_run",
+   "fieldtype": "Datetime",
+   "label": "Last Reconcile Run",
+   "read_only": 1
   },
   {
    "default": "0",

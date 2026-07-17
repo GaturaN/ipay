@@ -235,11 +235,20 @@ def _ensure_request(invoice):
     # Reuse an existing SINGLE request for this invoice. Skip bundles (which carry
     # iPay Request Invoice child rows) so collecting a released invoice individually
     # charges only that invoice, not the whole old bundle.
-    for name in frappe.get_all(
-        "iPay Request", filters={"sales_invoice": invoice, "docstatus": 1}, pluck="name"
+    for req in frappe.get_all(
+        "iPay Request",
+        filters={"sales_invoice": invoice, "docstatus": 1},
+        fields=["name", "status"],
+        order_by="creation desc",
     ):
-        if not frappe.db.exists("iPay Request Invoice", {"parent": name}):
-            return name
+        # A settled request (Success/Underpaid/Overpaid) is the permanent record of
+        # that payment — never reuse it. Collect any remaining balance (an Underpaid
+        # invoice reappears in the list) through a FRESH request, so each collection
+        # keeps its own Payment Entry and callback.
+        if req.status in ("Success", "Underpaid", "Overpaid"):
+            continue
+        if not frappe.db.exists("iPay Request Invoice", {"parent": req.name}):
+            return req.name
 
     invoice_doc = frappe.get_doc("Sales Invoice", invoice)
     request = frappe.get_doc(
@@ -642,11 +651,48 @@ def discard_bundle(request):
     return {"cancelled": True}
 
 
+def _throttle(scope, *, cooldown_sec, window_sec, max_in_window, cooldown_msg, cap_msg):
+    """Sliding-window throttle keyed on `scope` (a token or a user). The optional
+    cooldown stops rapid re-fires; the window cap stops sustained abuse. Returns an
+    error dict when blocked, else None — a blocked call never counts against the cap."""
+    cache = frappe.cache()
+    cooldown_key = f"ipay_stk_cooldown:{scope}"
+    count_key = f"ipay_stk_count:{scope}"
+    # expires=True so a miss is read from redis every time, not cached process-locally
+    # — otherwise a second check in one request would see a stale value.
+    if cooldown_sec and cache.get_value(cooldown_key, expires=True):
+        return {"status": "error", "message": cooldown_msg}
+    count = int(cache.get_value(count_key, expires=True) or 0)
+    if count >= max_in_window:
+        return {"status": "error", "message": cap_msg}
+    if cooldown_sec:
+        cache.set_value(cooldown_key, 1, expires_in_sec=cooldown_sec)
+    cache.set_value(count_key, count + 1, expires_in_sec=window_sec)
+    return None
+
+
+def _operator_throttle():
+    """Per-operator cap so a runaway UI loop or a compromised session can't fire
+    unbounded STK pushes. Generous enough for real door-to-door collection — the
+    per-request dedup already blocks re-prompting the same request."""
+    return _throttle(
+        f"user:{frappe.session.user}",
+        cooldown_sec=0,
+        window_sec=60,
+        max_in_window=30,
+        cooldown_msg="",
+        cap_msg="Too many prompts in a short time — please wait a minute and try again.",
+    )
+
+
 @frappe.whitelist(methods=["POST"])
 def prompt_mpesa(invoice, phone=None):
     """Operator action (collection page): send an M-Pesa STK push for an invoice."""
     _require_operator()
     _require_invoice_access(invoice)
+    blocked = _operator_throttle()
+    if blocked:
+        return blocked
     request_name = _ensure_request(invoice)
     result = _enqueue_stk(request_name, phone)
     result["request"] = request_name
@@ -660,6 +706,9 @@ def prompt_request_mpesa(request, phone=None):
     across all the request's invoices. Single invoices use prompt_mpesa."""
     _require_operator()
     _require_request_access(request)
+    blocked = _operator_throttle()
+    if blocked:
+        return blocked
     result = _enqueue_stk(request, phone)
     result["request"] = request
     return result
@@ -834,15 +883,16 @@ def pay_prompt_mpesa(token, phone):
     if _payment_state(request_name)["paid"]:
         return {"status": "error", "message": "This invoice has already been paid."}
 
-    cache = frappe.cache()
-    cooldown_key = f"ipay_stk_cooldown:{token}"
-    count_key = f"ipay_stk_count:{token}"
-    if cache.get_value(cooldown_key):
-        return {"status": "error", "message": "Please wait a moment before requesting another prompt."}
-    if int(cache.get_value(count_key) or 0) >= 5:
-        return {"status": "error", "message": "Too many attempts. Please try again later."}
-    cache.set_value(cooldown_key, 1, expires_in_sec=30)
-    cache.set_value(count_key, int(cache.get_value(count_key) or 0) + 1, expires_in_sec=3600)
+    blocked = _throttle(
+        token,
+        cooldown_sec=30,
+        window_sec=3600,
+        max_in_window=5,
+        cooldown_msg="Please wait a moment before requesting another prompt.",
+        cap_msg="Too many attempts. Please try again later.",
+    )
+    if blocked:
+        return blocked
 
     return _enqueue_stk(request_name, phone)
 
