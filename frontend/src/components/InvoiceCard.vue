@@ -20,6 +20,12 @@ const mpesaBlocked = computed(
   () => props.mpesaMax > 0 && Number(props.invoice.outstanding_amount || 0) > props.mpesaMax,
 )
 
+// A cheque can cover part of an invoice. Prompting is still suppressed — charging the whole
+// balance would take the cheque's share twice — so the shortfall is named instead of hidden.
+const chequeIsPartial = computed(
+  () => Number(props.invoice.awaiting_cheque || 0) < Number(props.invoice.outstanding_amount || 0),
+)
+
 // The row truncates the note visually; a screen reader gets the count and the note itself.
 const noteLabel = computed(() => {
   const count = props.invoice.note_count || 0
@@ -124,7 +130,13 @@ async function payViaIpay() {
         <rect x="2.5" y="5" width="15" height="10" rx="1.5" />
         <path d="M2.5 9h15" />
       </svg>
-      Awaiting cheque — with accounts to bank.
+      <span>
+        Cheque for {{ formatKES(invoice.awaiting_cheque) }} with accounts to bank.
+        <template v-if="chequeIsPartial">
+          {{ formatKES(Number(invoice.outstanding_amount) - invoice.awaiting_cheque) }} of this
+          invoice is still owed — collect it with the rest of the round.
+        </template>
+      </span>
     </p>
 
     <template v-else>
