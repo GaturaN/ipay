@@ -64,20 +64,10 @@ def allocate_references(invoice_names, amount):
                 )
                 remaining = flt(remaining - allocated)
                 payable = flt(payable - allocated)
-            # The term rows can sum to less than the invoice still owes (a stale schedule). Money
-            # left over then clears the rest against the invoice itself — with no payment_term, the
-            # bucket ERPNext allocates a term-less payment to — so the invoice is settled in full
-            # instead of leaving a shortfall that reads as still-owing and gets collected again.
-            if remaining > 0 and payable > 0:
-                shortfall = min(remaining, payable)
-                references.append(
-                    {
-                        "reference_doctype": "Sales Invoice",
-                        "reference_name": si.name,
-                        "allocated_amount": shortfall,
-                    }
-                )
-                remaining = flt(remaining - shortfall)
+            # If the term rows sum to less than the invoice still owes (a stale schedule), the
+            # rest cannot be allocated: a Collect invoice's template allocates by payment term, and
+            # ERPNext rejects a term-less reference on it. So the shortfall stays as customer credit
+            # rather than being forced onto the invoice — the payment is still recorded.
         else:
             allocated = min(remaining, payable)
             references.append(
