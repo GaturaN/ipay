@@ -37,7 +37,13 @@ def lipana_mpesa(
     # cancelled request; this closes the operator/worker path too.
     state = frappe.db.get_value(
         "iPay Request", docid, ["docstatus", "status"], as_dict=True
-    ) or {}
+    )
+    # No request at all: it was deleted or split, or the transaction that created it rolled back
+    # after the job was already enqueued. An empty state used to pass the checks below and push
+    # an STK for a request that does not exist — never charge in that case.
+    if not state:
+        create_log_entry("INF", f"Skipping STK for {docid}: request no longer exists")
+        return {"status": "skipped", "message": "This request is no longer chargeable."}
     if state.get("docstatus") == 2 or state.get("status") in ("Success", "Underpaid", "Overpaid"):
         create_log_entry(
             "INF",
