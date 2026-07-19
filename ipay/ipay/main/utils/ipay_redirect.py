@@ -1042,13 +1042,14 @@ def record_cheque(customer, amount, cheque_no, photo, invoices=None, cheque_date
     # ERPNext's own validation calls frappe.has_permission("Payment Entry"), which ignore_permissions
     # cannot bypass and iPay roles never hold — the guards above are the authorisation instead.
     collector = frappe.session.user
+    cheque_file = None
     frappe.set_user("Administrator")
     try:
         payment_entry.insert(ignore_permissions=True)
         # insert() always stamps the session user, so the collector is restored as owner after it.
         payment_entry.db_set("owner", collector, update_modified=False)
         # Attached after the insert, or a rejected Payment Entry strands the written file.
-        save_file(
+        cheque_file = save_file(
             f"cheque-{number}.jpg", photo, "Payment Entry", payment_entry.name,
             decode=True, is_private=1,
         )
@@ -1057,6 +1058,22 @@ def record_cheque(customer, amount, cheque_no, photo, invoices=None, cheque_date
     except OSError:
         # A corrupt photo arrives as an unreadable image, not a validation error.
         frappe.throw("That photo could not be read. Take it again.")
+    finally:
+        frappe.set_user(collector)
+
+    # Track the collected cheque so accounts can follow the physical copy from the field to the
+    # banking desk — completing a scheduled pickup or opening a fresh one, then handing it over.
+    # The money is already saved: a tracking failure must never undo it, so swallow and log.
+    frappe.set_user("Administrator")
+    try:
+        from ipay.ipay.main.utils.cheque_due import advance_or_create_on_collect
+
+        advance_or_create_on_collect(
+            customer, payment_entry.name, number, amount,
+            cheque_file.file_url if cheque_file else None, collector,
+        )
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "iPay cheque pickup tracking failed")
     finally:
         frappe.set_user(collector)
 
