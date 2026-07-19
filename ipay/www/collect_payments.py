@@ -147,9 +147,15 @@ def _annotate_delivery(invoices):
 def _collectable_terms():
     """Payment Terms Templates the Collect app is scoped to (iPay Settings → Collect
     Payment Terms) — the terms drivers settle on delivery. Empty means no term filter,
-    so every outstanding invoice is collectable (behaviour before the setting existed)."""
-    settings = frappe.get_cached_doc("iPay Settings")
-    return [row.payment_terms_template for row in (settings.get("collect_payment_terms") or [])]
+    so every outstanding invoice is collectable (behaviour before the setting existed).
+
+    Read fresh from the child rows, not the doc cache — a cached read would keep the old terms
+    after the setting changes (same reason _settings_flags reads the flags fresh)."""
+    return frappe.get_all(
+        "iPay Collection Payment Term",
+        filters={"parenttype": "iPay Settings", "parentfield": "collect_payment_terms"},
+        pluck="payment_terms_template",
+    )
 
 
 def _settings_flags():
