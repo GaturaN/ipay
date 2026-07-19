@@ -15,6 +15,7 @@ defineProps({
   collectError: Boolean,
   showTickHint: Boolean,
   showCheque: Boolean, // cheque collection is offered even where bundling is not
+  chequePerInvoice: Boolean, // off: the cheque is customer-level, so the label never names invoices
 })
 defineEmits(['collect', 'clear', 'cheque'])
 </script>
@@ -61,6 +62,6 @@ defineEmits(['collect', 'clear', 'cheque'])
     class="h-11 rounded-xl border border-hairline bg-white text-sm font-medium text-ink/70 transition active:bg-paper"
     @click="$emit('cheque')"
   >
-    {{ selectedCount ? `Cheque for ${selectedCount} — ${formatKES(selectedTotal)}` : 'Collect a cheque' }}
+    {{ selectedCount && chequePerInvoice ? `Cheque for ${selectedCount} — ${formatKES(selectedTotal)}` : 'Collect a cheque' }}
   </button>
 </template>

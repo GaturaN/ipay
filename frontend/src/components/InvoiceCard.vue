@@ -7,6 +7,7 @@ const props = defineProps({
   invoice: { type: Object, required: true },
   enableRedirect: Boolean,
   allowCheque: Boolean,
+  chequePerInvoice: Boolean,
   selectable: Boolean,
   selected: Boolean,
   actionsDisabled: Boolean,
@@ -162,7 +163,7 @@ async function payViaIpay() {
           {{ checkoutBusy ? 'Opening…' : 'Card / other' }}
         </button>
         <button
-          v-if="allowCheque"
+          v-if="allowCheque && chequePerInvoice"
           type="button"
           class="h-12 shrink-0 rounded-xl border border-hairline px-4 text-sm font-medium text-ink/70 transition active:scale-[.98] disabled:opacity-40"
           :disabled="actionsDisabled"

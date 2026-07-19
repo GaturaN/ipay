@@ -166,6 +166,7 @@ def _settings_flags():
         "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
         "mpesa_max": flt(frappe.db.get_single_value("iPay Settings", "mpesa_max_amount")),
         "allow_cheque": bool(frappe.db.get_single_value("iPay Settings", "allow_cheque_collection")),
+        "cheque_per_invoice": bool(frappe.db.get_single_value("iPay Settings", "cheque_per_invoice")),
     }
 
 

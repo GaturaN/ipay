@@ -23,6 +23,7 @@ const invoices = ref([])
 const chequeOnAccount = ref(0)
 const enableRedirect = ref(false)
 const allowCheque = ref(false)
+const chequePerInvoice = ref(true)
 const canBundle = ref(false)
 const mpesaMax = ref(0)
 const loading = ref(true)
@@ -78,6 +79,7 @@ async function load() {
     invoices.value = data.invoices || []
     enableRedirect.value = Boolean(data.enable_redirect)
     allowCheque.value = Boolean(data.allow_cheque)
+    chequePerInvoice.value = data.cheque_per_invoice !== false
     canBundle.value = Boolean(data.can_bundle)
     mpesaMax.value = data.mpesa_max || 0
     chequeOnAccount.value = Number(data.cheque_on_account || 0)
@@ -134,6 +136,14 @@ function onPaid(name) {
 }
 
 // A cheque covers the ticked invoices; nothing ticked records it against the customer instead.
+function chequeFromBar() {
+  // Per-invoice off -> the bar records a customer-level cheque, so no invoice rows go with it.
+  const rows = chequePerInvoice.value
+    ? selected.value.map((i) => ({ name: i.name, amount: Number(i.outstanding_amount || 0) }))
+    : []
+  chequeFor(rows, rows.length ? selectedTotal.value : total.value)
+}
+
 function chequeFor(rows, outstanding) {
   chequing.value = { customer, customer_name: customerName.value, invoices: rows, outstanding }
 }
@@ -186,9 +196,10 @@ onMounted(load)
         :collect-error="collectError"
         :show-tick-hint="selectable && !selected.length"
         :show-cheque="allowCheque && invoices.length > 0"
+        :cheque-per-invoice="chequePerInvoice"
         @collect="collectNow"
         @clear="clearSelection"
-        @cheque="chequeFor(selected.map((i) => ({ name: i.name, amount: Number(i.outstanding_amount || 0) })), selected.length ? selectedTotal : total)"
+        @cheque="chequeFromBar"
       />
 
       <p v-if="chequeOnAccount" class="-mt-2 rounded-xl bg-owed/10 px-3 py-2.5 text-[13px] font-medium text-owed">
@@ -222,6 +233,7 @@ onMounted(load)
           :selected="isSelected(inv)"
           :actions-disabled="selected.length > 0"
           :allow-cheque="allowCheque"
+          :cheque-per-invoice="chequePerInvoice"
           @prompt="promptInvoice(inv)"
           @notes="noting = { invoice: inv.name, customer_name: inv.customer_name }"
           @cheque="chequeFor([{ name: inv.name, amount: Number(inv.outstanding_amount || 0) }], Number(inv.outstanding_amount || 0))"

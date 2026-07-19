@@ -119,10 +119,15 @@ function onPaid() {
 }
 
 function chequeNow() {
+  // Per-invoice off -> record at the customer level, not against this request's invoices.
+  const invoices =
+    detail.value.cheque_per_invoice !== false
+      ? detail.value.invoices.map((inv) => ({ name: inv.name, amount: Number(inv.amount || 0) }))
+      : []
   chequing.value = {
     customer: detail.value.customer,
     customer_name: detail.value.customer_name,
-    invoices: detail.value.invoices.map((inv) => ({ name: inv.name, amount: Number(inv.amount || 0) })),
+    invoices,
     outstanding: Number(detail.value.amount || 0),
   }
 }

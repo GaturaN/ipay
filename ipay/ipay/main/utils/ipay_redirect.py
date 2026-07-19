@@ -75,6 +75,11 @@ def _cheque_enabled():
     return bool(frappe.db.get_single_value("iPay Settings", "allow_cheque_collection"))
 
 
+def _cheque_per_invoice_enabled():
+    """True when a cheque may attach to specific invoices; off means customer-level only."""
+    return bool(frappe.db.get_single_value("iPay Settings", "cheque_per_invoice"))
+
+
 def _require_redirect_enabled():
     """Hard gate for the payment-link / hosted-checkout endpoints: they exist only
     when "Use Hosted Checkout Redirect" is on. With it off the org collects by
@@ -836,6 +841,8 @@ def request_detail(request):
         "enable_redirect": _redirect_enabled(),
         # Whether the cheque action is offered here, read fresh like enable_redirect.
         "allow_cheque": _cheque_enabled(),
+        # Off means the cheque here records on account, not against this request's invoices.
+        "cheque_per_invoice": _cheque_per_invoice_enabled(),
         # Non-zero once a cheque covers these invoices — the page then hides its charge actions.
         "awaiting_cheque": awaiting_cheque,
         # Above this the M-Pesa prompt is hidden (only hosted checkout can take it).
@@ -978,6 +985,10 @@ def record_cheque(customer, amount, cheque_no, photo, invoices=None, cheque_date
         frappe.throw("Cheque collection is turned off (enable it in iPay Settings).")
 
     invoice_names = frappe.parse_json(invoices) if isinstance(invoices, str) else list(invoices or [])
+    # When per-invoice cheques are off, every cheque is customer-level — drop any invoices a client
+    # sent so it can never attach to one, whatever the UI offered.
+    if not _cheque_per_invoice_enabled():
+        invoice_names = []
     for invoice in invoice_names:
         _require_invoice_access(invoice)
     if not invoice_names:
