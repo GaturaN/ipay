@@ -9,8 +9,8 @@ const JPEG_QUALITY = 0.8
 const NUMBER_MAX = 30
 const SAVE_TIMEOUT_MS = 30000 // a stalled request must not trap the dialog, since close is blocked while saving
 
-// `target` is { customer, customer_name, invoices, outstanding } or null. An empty `invoices`
-// records the cheque on account, against no invoice.
+// `target` is { customer, customer_name, invoices: [{name, amount}], outstanding } or null. An
+// empty `invoices` records the cheque on account, against no invoice.
 const props = defineProps({ target: { type: Object, default: null } })
 const emit = defineEmits(['close', 'recorded'])
 
@@ -23,11 +23,17 @@ const saving = ref(false)
 const done = ref(false)
 const error = ref('')
 
-const invoiceCount = computed(() => props.target?.invoices?.length || 0)
+const invoices = computed(() => props.target?.invoices || [])
+const onAccount = computed(() => invoices.value.length === 0)
+// Nothing ticked means "attach nothing", never "the whole balance" — the confirm screen spells
+// this out, so the wording here stays neutral about what it settles.
 const covers = computed(() =>
-  invoiceCount.value
-    ? `${invoiceCount.value} invoice${invoiceCount.value === 1 ? '' : 's'}`
-    : 'On account',
+  onAccount.value
+    ? 'On account'
+    : `${invoices.value.length} invoice${invoices.value.length === 1 ? '' : 's'} selected`,
+)
+const settles = computed(() =>
+  onAccount.value ? 'No invoice' : `${invoices.value.length} invoice${invoices.value.length === 1 ? '' : 's'}`,
 )
 const amountValue = computed(() => Number(amount.value) || 0)
 const canReview = computed(() => Boolean(photo.value) && amountValue.value > 0 && Boolean(number.value.trim()))
@@ -89,6 +95,7 @@ async function save() {
   // Capture the target before awaiting: it is what we record and emit, and it must not change
   // under us if the dialog is reopened for another invoice mid-save.
   const target = props.target
+  const names = (target.invoices || []).map((inv) => inv.name)
   saving.value = true
   error.value = ''
   try {
@@ -97,7 +104,7 @@ async function save() {
       amount: amountValue.value,
       chequeNo: number.value.trim(),
       photo: photo.value,
-      invoices: target.invoices || [],
+      invoices: names,
     })
     // Bound the wait: a hung request would otherwise leave saving true forever, and close is
     // blocked while saving. On timeout we cannot know the outcome, so tell them to check first.
@@ -108,11 +115,7 @@ async function save() {
     done.value = true
     // covered maps each invoice to the amount this cheque put against it, so the card shows the
     // real figure rather than a placeholder.
-    emit('recorded', {
-      invoices: target.invoices || [],
-      amount: amountValue.value,
-      covered: res?.covered || {},
-    })
+    emit('recorded', { invoices: names, amount: amountValue.value, covered: res?.covered || {} })
   } catch (e) {
     error.value = e?.timedOut
       ? 'That took too long. Check the invoice before recording it again.'
@@ -139,50 +142,76 @@ watch(
 </script>
 
 <template>
-  <BaseDialog
-    :open="Boolean(target)"
-    labelledby="cheque-title"
-    focus="panel"
-    @close="onClose"
-  >
-    <h2 id="cheque-title" class="font-display text-lg font-bold text-ink">
-      {{ done ? 'Cheque recorded' : reviewing ? 'Check this is right' : 'Collect a cheque' }}
-    </h2>
-    <p class="mt-0.5 truncate text-sm text-ink/60">{{ target?.customer_name }} · {{ covers }}</p>
-
-    <!-- Recorded: say plainly that no money has moved yet, so nobody treats it as paid. -->
+  <BaseDialog :open="Boolean(target)" labelledby="cheque-title" focus="panel" @close="onClose">
+    <!-- Recorded: the app's success screen, reworded — it says recorded, never paid. -->
     <template v-if="done">
-      <p class="mt-4 rounded-xl bg-paper p-4 text-sm text-ink/80">
-        {{ formatKES(amountValue) }} — cheque {{ number }}. Accounts will bank it and confirm the
-        payment. The invoice stays open until it clears.
+      <div class="mx-auto grid h-14 w-14 place-items-center rounded-full bg-landed/15 text-2xl text-landed">
+        ✓
+      </div>
+      <h2 id="cheque-title" class="mt-3 text-center font-display text-lg font-bold text-ink">
+        Cheque recorded
+      </h2>
+      <p class="text-center text-sm text-ink/60">Sent to accounts to bank and submit</p>
+      <p class="mt-2 text-center font-mono text-3xl font-semibold tabular-nums text-landed">
+        {{ formatKES(amountValue) }}
+      </p>
+      <p class="mt-1 text-center text-sm text-ink/60">
+        Cheque {{ number }} · {{ target?.customer_name }}
       </p>
       <button
         type="button"
-        class="mt-4 h-12 w-full rounded-xl bg-ink font-semibold text-white"
+        class="mt-5 h-12 w-full rounded-xl bg-ink font-semibold text-white"
         @click="$emit('close')"
       >
         Done
       </button>
     </template>
 
+    <!-- Confirm: the only irreversible step, and it reads differently for each mode. -->
     <template v-else-if="reviewing">
-      <img :src="photo" alt="The cheque photo" class="mt-4 max-h-40 w-full rounded-xl object-contain" />
-      <dl class="mt-3 divide-y divide-hairline rounded-xl bg-paper px-3">
-        <div class="flex justify-between gap-3 py-2.5">
-          <dt class="text-sm text-ink/60">Amount</dt>
-          <dd class="font-mono text-base font-semibold tabular-nums text-ink">
-            {{ formatKES(amountValue) }}
-          </dd>
+      <p class="text-[11px] font-bold uppercase tracking-wider text-ink/50">Confirm</p>
+      <h2 id="cheque-title" class="mt-0.5 truncate font-display text-lg font-bold text-ink">
+        {{ target?.customer_name }}
+      </h2>
+      <p class="mt-1 font-mono text-2xl font-semibold tabular-nums text-ink">{{ formatKES(amountValue) }}</p>
+
+      <dl class="mt-4 rounded-xl bg-white px-3">
+        <div class="flex justify-between gap-3 border-b border-hairline py-2.5 text-sm">
+          <dt class="text-ink/60">Cheque number</dt>
+          <dd class="font-mono font-semibold text-ink">{{ number }}</dd>
         </div>
-        <div class="flex justify-between gap-3 py-2.5">
-          <dt class="text-sm text-ink/60">Cheque number</dt>
-          <dd class="font-mono text-sm font-semibold text-ink">{{ number }}</dd>
+        <div class="flex justify-between gap-3 border-b border-hairline py-2.5 text-sm">
+          <dt class="text-ink/60">Banked to</dt>
+          <dd class="font-medium text-ink">Undeposited Cheque</dd>
         </div>
-        <div class="flex justify-between gap-3 py-2.5">
-          <dt class="text-sm text-ink/60">Covers</dt>
-          <dd class="text-sm font-medium text-ink">{{ covers }}</dd>
+        <div class="flex justify-between gap-3 py-2.5 text-sm">
+          <dt class="text-ink/60">Settles</dt>
+          <dd class="font-medium text-ink">{{ settles }}</dd>
         </div>
       </dl>
+
+      <div v-if="!onAccount" class="mt-2 rounded-xl bg-white px-3">
+        <div
+          v-for="inv in invoices"
+          :key="inv.name"
+          class="flex justify-between gap-3 border-b border-hairline py-2 text-sm last:border-0"
+        >
+          <span class="truncate font-mono text-ink/70">{{ inv.name }}</span>
+          <span class="shrink-0 font-mono font-semibold tabular-nums text-ink">{{ formatKES(inv.amount) }}</span>
+        </div>
+      </div>
+
+      <p v-if="onAccount" class="mt-3 rounded-xl bg-ink/5 px-3 py-2.5 text-xs text-ink/70">
+        Recorded against the customer only. Accounts will decide which invoices it settles.
+      </p>
+      <p class="mt-2 rounded-xl bg-owed/10 px-3 py-2.5 text-xs font-medium text-owed">
+        {{
+          onAccount
+            ? 'Saved as a draft. Nothing is marked paid until accounts submits it.'
+            : 'Saved as a draft. These invoices stay outstanding until accounts submits it.'
+        }}
+      </p>
+
       <p v-if="error" class="mt-2 text-sm text-danger">{{ error }}</p>
       <div class="mt-4 flex gap-2">
         <button
@@ -201,12 +230,21 @@ watch(
           :aria-busy="saving"
           @click="save"
         >
-          {{ saving ? 'Recording…' : 'Record cheque' }}
+          {{ saving ? 'Saving…' : 'Save for accounts' }}
         </button>
       </div>
     </template>
 
+    <!-- Capture: photo, amount and number on one screen — no branching or server call between. -->
     <template v-else>
+      <p class="text-[11px] font-bold uppercase tracking-wider text-ink/50">Cheque collection</p>
+      <h2 id="cheque-title" class="mt-0.5 truncate font-display text-lg font-bold text-ink">
+        {{ target?.customer_name }}
+      </h2>
+      <p class="mt-0.5 truncate text-sm text-ink/60">
+        {{ covers }}<template v-if="target?.outstanding"> · {{ formatKES(target.outstanding) }}</template>
+      </p>
+
       <button
         v-if="!photo"
         type="button"
@@ -243,7 +281,7 @@ watch(
       <input ref="fileInput" type="file" accept="image/*" capture="environment" class="sr-only" @change="onPick" />
 
       <label class="mt-3 block text-xs font-semibold text-ink/60" for="cheque-amount">
-        Amount on the cheque
+        Cheque amount
       </label>
       <input
         id="cheque-amount"
@@ -254,7 +292,10 @@ watch(
         placeholder="0"
         class="mt-1 h-12 w-full rounded-xl border border-hairline bg-white px-3 font-mono text-base tabular-nums text-ink focus:border-ink focus:outline-none focus:ring-2 focus:ring-ink/20"
       />
-      <p v-if="target?.outstanding" class="mt-1 text-xs text-ink/50">
+      <p v-if="amountValue > 0" class="mt-1 font-mono text-xs tabular-nums text-ink/50">
+        {{ formatKES(amountValue) }}
+      </p>
+      <p v-else-if="target?.outstanding" class="mt-1 text-xs text-ink/50">
         Outstanding {{ formatKES(target.outstanding) }} — enter what the cheque says.
       </p>
 
@@ -272,14 +313,13 @@ watch(
       />
 
       <p v-if="error" class="mt-2 text-sm text-danger">{{ error }}</p>
-
       <div class="mt-4 flex gap-2">
         <button
           type="button"
           class="h-12 shrink-0 rounded-xl border border-hairline px-5 font-medium text-ink"
           @click="$emit('close')"
         >
-          Cancel
+          Close
         </button>
         <button
           type="button"
@@ -287,7 +327,7 @@ watch(
           :disabled="!canReview"
           @click="reviewing = true"
         >
-          Review
+          Continue
         </button>
       </div>
     </template>

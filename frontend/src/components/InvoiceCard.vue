@@ -125,7 +125,7 @@ async function payViaIpay() {
          would take the money twice — the actions go away entirely until accounts clear it. -->
     <p
       v-if="invoice.awaiting_cheque"
-      class="mt-2 flex items-center gap-2 rounded-xl bg-ink/5 px-3 py-2.5 text-[13px] font-medium text-ink/75"
+      class="mt-2 flex items-center gap-2 rounded-xl bg-owed/10 px-3 py-2.5 text-[13px] font-medium text-owed"
     >
       <svg viewBox="0 0 20 20" class="h-4 w-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.7">
         <rect x="2.5" y="5" width="15" height="10" rx="1.5" />

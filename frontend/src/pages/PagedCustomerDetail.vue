@@ -194,8 +194,8 @@ function onPaid(name) {
 }
 
 // A cheque covers the ticked invoices; nothing ticked records it against the customer instead.
-function chequeFor(names, outstanding) {
-  chequing.value = { customer, customer_name: customerName.value, invoices: names, outstanding }
+function chequeFor(rows, outstanding) {
+  chequing.value = { customer, customer_name: customerName.value, invoices: rows, outstanding }
 }
 
 // Mark the cards in place rather than reloading, which would clear the ticked set underneath.
@@ -253,10 +253,10 @@ onMounted(() => load(true))
         :show-cheque="allowCheque && count > 0"
         @collect="collectNow"
         @clear="clearSelection"
-        @cheque="chequeFor(selected.map((i) => i.name), selected.length ? selectedTotal : total)"
+        @cheque="chequeFor(selected.map((i) => ({ name: i.name, amount: Number(i.outstanding_amount || 0) })), selected.length ? selectedTotal : total)"
       />
 
-      <p v-if="chequeOnAccount" class="-mt-2 rounded-xl bg-ink/5 px-3 py-2.5 text-[13px] text-ink/75">
+      <p v-if="chequeOnAccount" class="-mt-2 rounded-xl bg-owed/10 px-3 py-2.5 text-[13px] font-medium text-owed">
         {{ formatKES(chequeOnAccount) }} already collected by cheque, with accounts to bank. It is
         not tied to an invoice, so check before collecting again.
       </p>
@@ -290,7 +290,7 @@ onMounted(() => load(true))
             :allow-cheque="allowCheque"
             @prompt="promptInvoice(inv)"
             @notes="noting = { invoice: inv.name, customer_name: inv.customer_name }"
-            @cheque="chequeFor([inv.name], Number(inv.outstanding_amount || 0))"
+            @cheque="chequeFor([{ name: inv.name, amount: Number(inv.outstanding_amount || 0) }], Number(inv.outstanding_amount || 0))"
             @toggle-select="toggleSelect(inv)"
           />
         </div>

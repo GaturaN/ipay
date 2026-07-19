@@ -122,7 +122,7 @@ function chequeNow() {
   chequing.value = {
     customer: detail.value.customer,
     customer_name: detail.value.customer_name,
-    invoices: detail.value.invoices.map((inv) => inv.name),
+    invoices: detail.value.invoices.map((inv) => ({ name: inv.name, amount: Number(inv.amount || 0) })),
     outstanding: Number(detail.value.amount || 0),
   }
 }
@@ -367,7 +367,7 @@ onMounted(load)
 
       <p
         v-else-if="detail.awaiting_cheque"
-        class="rounded-xl bg-ink/5 px-3 py-2.5 text-sm font-medium text-ink/75"
+        class="rounded-xl bg-owed/10 px-3 py-2.5 text-sm font-medium text-owed"
       >
         Cheque for {{ formatKES(detail.awaiting_cheque) }} collected — with accounts to bank. This
         request can't be charged until it clears.
