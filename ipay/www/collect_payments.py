@@ -322,7 +322,10 @@ def _cheque_on_account(customer):
     the same money twice.
 
     Scoped to the caller: the invoices in the same response are already scoped, so this figure
-    must be too — a collector or sales member never sees it for a customer they cannot access."""
+    must be too — a collector or sales member never sees it for a customer they cannot access.
+
+    Any unallocated amount counts, not only fully-on-account cheques: a cheque that partly covers
+    ticked invoices leaves the rest as customer credit, and that surplus is on account too."""
     from ipay.ipay.main.utils.collector import can_access_customer
 
     if not can_access_customer(customer):
@@ -334,7 +337,7 @@ def _cheque_on_account(customer):
             "party": customer,
             "docstatus": 0,
             "mode_of_payment": CHEQUE_MODE,
-            "total_allocated_amount": 0,
+            "unallocated_amount": [">", 0],
         },
         pluck="unallocated_amount",
     )
