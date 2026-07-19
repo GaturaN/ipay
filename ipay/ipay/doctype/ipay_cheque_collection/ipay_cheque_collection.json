@@ -157,7 +157,7 @@
  "links": [],
  "modified": "2026-07-19 08:30:00.000000",
  "modified_by": "Administrator",
- "module": "iPay",
+ "module": "Ipay",
  "name": "iPay Cheque Collection",
  "naming_rule": "Expression (old style)",
  "owner": "Administrator",
