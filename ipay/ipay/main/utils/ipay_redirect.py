@@ -567,6 +567,7 @@ def create_bundle(customer, invoices):
     rows = []
     total = 0.0
     companies = set()
+    seen = set()
     for name in invoices:
         # A scoped caller (sales member) may only bundle their own work — without this the
         # customer check below would still pass for another member's invoices.
@@ -579,6 +580,11 @@ def create_bundle(customer, invoices):
         if not si:
             continue
         name = si.name
+        # The same invoice sent twice (or in a different case) must not be bundled — and charged —
+        # twice; dedup on the canonical name the DB returned.
+        if name in seen:
+            continue
+        seen.add(name)
         if si.customer != customer:
             frappe.throw(f"Invoice {name} does not belong to {customer}.")
         if frappe.utils.flt(si.outstanding_amount) <= 0:
