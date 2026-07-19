@@ -8,3 +8,4 @@ ipay.patches.v1_0.seed_cod_payment_terms
 ipay.patches.v1_0.seed_mpesa_mode_of_payment
 ipay.patches.v1_0.seed_collection_payment_terms
 ipay.patches.v1_0.set_default_mpesa_max
+ipay.patches.v1_0.set_cheque_per_invoice_default
