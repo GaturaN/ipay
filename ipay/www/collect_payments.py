@@ -319,7 +319,14 @@ def _annotate_awaiting_cheque(invoices):
 def _cheque_on_account(customer):
     """What a customer has handed over in cheques that name no invoice. Nothing marks those
     invoices, so this is the only thing standing between an on-account cheque and collecting
-    the same money twice."""
+    the same money twice.
+
+    Scoped to the caller: the invoices in the same response are already scoped, so this figure
+    must be too — a collector or sales member never sees it for a customer they cannot access."""
+    from ipay.ipay.main.utils.collector import can_access_customer
+
+    if not can_access_customer(customer):
+        return 0.0
     amounts = frappe.get_all(
         "Payment Entry",
         filters={
