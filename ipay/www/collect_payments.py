@@ -2,8 +2,13 @@ import frappe
 from frappe.utils import add_to_date, cint, flt, now_datetime, today
 
 from ipay.ipay.main.utils.prepaid import all_prepaid_invoice_names, prepaid_invoice_names
-from ipay.ipay.main.utils.collector import OPERATOR_ROLES, collector_scope, is_collector_only
+from ipay.ipay.main.utils.collector import OPERATOR_ROLES, collector_scope, is_collector_only, my_driver_ids
 from ipay.ipay.main.utils.cheque import awaiting_cheque_amounts
+from ipay.ipay.main.utils.cheque_due import (
+    all_open_dues,
+    open_due_for_customer,
+    open_dues_for_driver,
+)
 from ipay.ipay.main.utils.constants import (
     ACTIVE_BUNDLE_WINDOW_MIN,
     CHEQUE_MODE,
@@ -476,6 +481,8 @@ def collection_customers(driver=None):
         "drivers": drivers,
         "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
         "can_bundle": not is_collector_only(frappe.session.user),
+        # Cheques accounts have flagged for this collector to pick up — only their own driver's.
+        "cheque_dues": open_dues_for_driver(frappe.session.user),
     }
 
 
@@ -486,13 +493,17 @@ def customer_collection(customer, driver=None):
     collector only ever sees their own book here even if another customer's id is passed."""
     _require_collection_access()
     invoices = _customer_invoices(frappe.session.user, customer, driver=driver)
+    user = frappe.session.user
+    # A collector only ever sees a cheque routed to their own driver; an operator here sees any.
+    driver_ids = my_driver_ids(user) if is_collector_only(user) else None
     return {
         "customer": customer,
         "customer_name": invoices[0].customer_name if invoices else customer,
         "invoices": invoices,
         "cheque_on_account": _cheque_on_account(customer),
+        "cheque_due": open_due_for_customer(customer, driver_ids),
         **_settings_flags(),
-        "can_bundle": not is_collector_only(frappe.session.user),
+        "can_bundle": not is_collector_only(user),
     }
 
 
@@ -579,6 +590,9 @@ def _drill_down(invoices, customer, start, page_length, search):
         "customer": customer,
         "customer_name": frappe.db.get_value("Customer", customer, "customer_name") or customer,
         "cheque_on_account": _cheque_on_account(customer),
+        # The caller (internal/sales) has already scoped access to this customer, so any open
+        # cheque for them is fair to surface here.
+        "cheque_due": open_due_for_customer(customer),
         "invoices": page,
         "invoice_count": count,
         "total_outstanding": total,
@@ -621,6 +635,8 @@ def internal_customers(driver=None, payment_term=None, sales_person=None):
         "drivers": _internal_driver_names(),
         "payment_terms": _internal_payment_terms(),
         "sales_persons": sales_person_options(),
+        # Operators see every flagged cheque — full awareness across all drivers.
+        "cheque_dues": all_open_dues(),
     }
 
 
@@ -677,6 +693,17 @@ def _sales_view_person(sales_person):
     return sales_person or None
 
 
+def _sales_cheque_dues(own_book):
+    """Flagged cheques for the sales banner: a locked member sees only those for customers in
+    their own book, a manager sees every one. Reuses the same customer access the page enforces."""
+    from ipay.ipay.main.utils import sales
+
+    dues = all_open_dues()
+    if not own_book:
+        return dues
+    return [d for d in dues if sales.can_access_customer(d.customer)]
+
+
 @frappe.whitelist()
 def sales_customers(payment_term=None, sales_person=None):
     """Customers with a collectable balance for the sales page, newest-invoice customer first,
@@ -699,6 +726,8 @@ def sales_customers(payment_term=None, sales_person=None):
         "sales_persons": [] if own_book else sales_person_options(),
         "sales_person": person or "",
         "is_manager": not own_book,
+        # Flagged cheques for awareness: a locked member sees only their own book's, a manager all.
+        "cheque_dues": _sales_cheque_dues(own_book),
         "unmapped": False,
     }
 
