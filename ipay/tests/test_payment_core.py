@@ -4,7 +4,8 @@ import frappe
 import requests
 from frappe.tests.utils import FrappeTestCase
 
-from ipay.ipay.main.utils import cheque, make_payment_entry, reconcile_payments
+from ipay.ipay.main.utils import cheque, collector, make_payment_entry, reconcile_payments
+from ipay.ipay.main.utils import sales
 from ipay.ipay.main.utils.constants import amounts_match, clean_oid
 from ipay.ipay.main.utils.finalize_payment import _resolve_status
 from ipay.ipay.main.utils.ipay_redirect import normalize_phone
@@ -218,6 +219,71 @@ class TestAwaitingChequeAmounts(FrappeTestCase):
             ("PE-2", DRAFT, "MPESA", [("INV-2", 50.0)]),
         ])
         self.assertEqual(covered, {"INV-1": 700.0})
+
+
+def _sales_access(person, named, customers, exists):
+    """Run sales.can_access_customer with a mocked book. `exists` is what frappe.db.exists
+    returns for the outstanding-invoice lookup — no live sales user exists to test against."""
+    with patch.object(sales, "my_sales_person", return_value=person), \
+         patch.object(sales, "_cached_scope", return_value=(named, customers)), \
+         patch.object(sales.frappe.db, "exists", return_value=exists):
+        return sales.can_access_customer("CUST", user="u")
+
+
+class TestSalesCanAccessCustomer(FrappeTestCase):
+    """The on-account cheque guard for a sales member. A false positive lets them record against
+    a customer outside their book; a false negative blocks their own customer."""
+
+    def test_no_sales_person_is_refused(self):
+        self.assertFalse(_sales_access(None, [], set(), True))
+
+    def test_customer_in_book_with_an_outstanding_invoice(self):
+        self.assertTrue(_sales_access("P", [], {"CUST"}, exists=True))
+
+    def test_customer_in_book_but_nothing_outstanding_is_refused(self):
+        # Mirrors the old loop: no outstanding invoice for the customer means no access.
+        self.assertFalse(_sales_access("P", [], {"CUST"}, exists=False))
+
+    def test_customer_not_in_book_but_a_named_invoice_is_theirs(self):
+        self.assertTrue(_sales_access("P", ["INV-1"], set(), exists=True))
+
+    def test_customer_outside_the_book_is_refused(self):
+        self.assertFalse(_sales_access("P", ["INV-1"], {"OTHER"}, exists=False))
+
+    def test_no_named_and_not_in_book_is_refused_without_a_query(self):
+        # Empty named + customer not in book short-circuits, so exists is never consulted.
+        with patch.object(sales, "my_sales_person", return_value="P"), \
+             patch.object(sales, "_cached_scope", return_value=([], {"OTHER"})), \
+             patch.object(sales.frappe.db, "exists", side_effect=AssertionError("should not query")):
+            self.assertFalse(sales.can_access_customer("CUST", user="u"))
+
+
+class TestCollectorCanAccessCustomer(FrappeTestCase):
+    """The union guard for an on-account cheque. A scoped actor needs the customer in their own
+    book; an unscoped operator still needs the customer to have an outstanding invoice — the old
+    loop had nothing to grant on otherwise."""
+
+    def _run(self, is_col, is_sal, has_outstanding, in_scope=False, sales_grants=False):
+        with patch.object(collector, "is_collector_only", return_value=is_col), \
+             patch.object(sales, "is_sales_only", return_value=is_sal), \
+             patch.object(collector, "collector_scope", return_value={"invoices": set(), "requests": set()}), \
+             patch.object(collector, "_customer_has_scoped_invoice", return_value=in_scope), \
+             patch.object(sales, "can_access_customer", return_value=sales_grants), \
+             patch.object(collector, "_customer_has_outstanding", return_value=has_outstanding):
+            return collector.can_access_customer("CUST", user="u")
+
+    def test_unscoped_operator_needs_an_outstanding_invoice(self):
+        self.assertTrue(self._run(is_col=False, is_sal=False, has_outstanding=True))
+        self.assertFalse(self._run(is_col=False, is_sal=False, has_outstanding=False))
+
+    def test_collector_only_uses_only_their_scope(self):
+        # A customer they hold is granted; one they do not is refused even if it has outstanding.
+        self.assertTrue(self._run(is_col=True, is_sal=False, has_outstanding=False, in_scope=True))
+        self.assertFalse(self._run(is_col=True, is_sal=False, has_outstanding=True, in_scope=False))
+
+    def test_sales_only_delegates_to_the_sales_book(self):
+        self.assertTrue(self._run(is_col=False, is_sal=True, has_outstanding=False, sales_grants=True))
+        self.assertFalse(self._run(is_col=False, is_sal=True, has_outstanding=True, sales_grants=False))
 
 
 def _fake_response(status_code, json_value=None, json_error=False):

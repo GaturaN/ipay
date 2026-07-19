@@ -936,16 +936,10 @@ def add_invoice_note(invoice, note):
 def _require_customer_access(customer):
     """A scoped actor may only act on a customer they hold an outstanding invoice for — an
     on-account cheque names no invoice, so nothing else would scope it."""
-    from ipay.ipay.main.utils.collector import can_access_invoice
+    from ipay.ipay.main.utils.collector import can_access_customer
 
-    for invoice in frappe.get_all(
-        "Sales Invoice",
-        filters={"customer": customer, "docstatus": 1, "outstanding_amount": [">", 0]},
-        pluck="name",
-    ):
-        if can_access_invoice(invoice):
-            return
-    frappe.throw("You are not assigned to this customer.", frappe.PermissionError)
+    if not can_access_customer(customer):
+        frappe.throw("You are not assigned to this customer.", frappe.PermissionError)
 
 
 def _cheque_account(company):
