@@ -22,6 +22,7 @@ Without an iPay account, this application cannot process mobile money transactio
 -  **Automatic STK Push to Customer's Mobile Phone**: Instantly send a payment request directly to the customer's mobile device, minimizing errors and reducing the steps required to complete a transaction.
 -  **Real-Time Payment Verification**: Verify payments as they happen, ensuring immediate confirmation and reducing delays in processing.
 -  **Secure Transaction Logging**: Maintain a tamper-proof, detailed record of all payment transactions, including timestamps, amounts, and statuses, for compliance and auditing purposes.
+-  **Cheque Collection**: Collectors record a customer's cheque as a draft Payment Entry for the accounts team to submit — see [docs/cheque-collection.md](docs/cheque-collection.md) for how it works, the settings, and the operational notes.
 
 ## Payment Workflow
 
