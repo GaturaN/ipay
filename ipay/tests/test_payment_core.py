@@ -151,6 +151,23 @@ class TestAllocateReferences(FrappeTestCase):
         self.assertEqual(refs, [])
         self.assertEqual(remaining, 700.0)
 
+    def test_stale_low_schedule_clears_the_invoice_with_a_termless_reference(self):
+        # The term rows sum to less than the invoice owes (a stale schedule). A full payment must
+        # still clear it — the shortfall goes on a termless reference — not leave a balance that
+        # reads as owing and gets collected again.
+        _, refs, remaining = _allocate({"INV-1": 4163.0}, {"INV-1": [("NET 15", 3747.0)]}, 4163.0)
+        self.assertEqual(
+            [(r.get("payment_term"), r["allocated_amount"]) for r in refs],
+            [("NET 15", 3747.0), (None, 416.0)],
+        )
+        self.assertEqual(remaining, 0.0)
+
+    def test_stale_low_shortfall_never_exceeds_the_money_received(self):
+        # Underpayment: only the money in hand is allocated, no invented shortfall.
+        _, refs, remaining = _allocate({"INV-1": 4163.0}, {"INV-1": [("NET 15", 3747.0)]}, 3900.0)
+        self.assertEqual(sum(r["allocated_amount"] for r in refs), 3900.0)
+        self.assertEqual(remaining, 0.0)
+
 
 def _awaiting(entries, ask=None):
     """Run the cheque predicate against fake Payment Entries.
