@@ -32,13 +32,19 @@ const copied = ref(false)
 const linkExpiry = ref(null)
 const prompting = ref(null)
 const chequing = ref(null)
+const chequeRecorded = ref(false) // a cheque was just taken here — even on-account, don't also charge it
 let pollTimer = null
 
 const SETTLED = ['Success', 'Underpaid', 'Overpaid', 'Cancelled']
-// A cheque already collected here makes the request unchargeable (the server refuses every rail),
-// so it drops out of promptable exactly like a settled one.
+// A cheque already collected here makes the request unchargeable (the server refuses every rail for
+// a per-invoice cheque), so it drops out of promptable like a settled one. A cheque just taken on
+// this page also drops out, so an on-account one can't be double-charged from the same screen.
 const promptable = computed(
-  () => detail.value && !SETTLED.includes(detail.value.status) && !detail.value.awaiting_cheque,
+  () =>
+    detail.value &&
+    !SETTLED.includes(detail.value.status) &&
+    !detail.value.awaiting_cheque &&
+    !chequeRecorded.value,
 )
 
 // M-Pesa can't process a charge over the ceiling — hide the prompt, steer to the link/iPay.
@@ -132,11 +138,13 @@ function chequeNow() {
   }
 }
 
-// A cheque covers the request's invoices, so the whole request is now awaiting one — mark it so
-// the charge actions give way to the notice, without a reload.
+// A cheque was taken here — mark it so the charge actions give way to the notice, without a
+// reload. A per-invoice cheque also carries its covered amount; an on-account one covers nothing
+// specific, but it must still stop an immediate M-Pesa charge for the same request.
 function onChequeRecorded({ covered }) {
   const total = Object.values(covered || {}).reduce((sum, v) => sum + Number(v || 0), 0)
   if (detail.value) detail.value.awaiting_cheque = total
+  chequeRecorded.value = true
   stopPolling()
 }
 
@@ -376,6 +384,12 @@ onMounted(load)
       >
         Cheque for {{ formatKES(detail.awaiting_cheque) }} collected — with accounts to bank. This
         request can't be charged until it clears.
+      </p>
+      <p
+        v-else-if="chequeRecorded"
+        class="rounded-xl bg-owed/10 px-3 py-2.5 text-sm font-medium text-owed"
+      >
+        Cheque recorded against the customer — with accounts to bank. Don't also charge this request.
       </p>
 
       <PromptDialog :target="prompting" @close="prompting = null" @paid="onPaid" />
