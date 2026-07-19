@@ -34,6 +34,7 @@
    "in_standard_filter": 1,
    "label": "Customer",
    "options": "Customer",
+   "read_only_depends_on": "eval:doc.status != 'Due'",
    "reqd": 1
   },
   {
@@ -48,7 +49,8 @@
    "description": "What accounts expect the cheque to be for. A hint to the driver only — the actual amount is whatever is recorded.",
    "fieldname": "expected_amount",
    "fieldtype": "Currency",
-   "label": "Expected Amount"
+   "label": "Expected Amount",
+   "read_only_depends_on": "eval:doc.status != 'Due'"
   },
   {
    "description": "The driver this cheque is routed to. They see it on their collect app; no one else's app does.",
@@ -57,13 +59,15 @@
    "in_standard_filter": 1,
    "label": "Assigned Driver",
    "options": "Driver",
+   "read_only_depends_on": "eval:doc.status != 'Due'",
    "reqd": 1
   },
   {
    "description": "Instruction shown to the driver on the customer page — e.g. \"MD signs cheques on Fridays\".",
    "fieldname": "notes",
    "fieldtype": "Small Text",
-   "label": "Notes for the Driver"
+   "label": "Notes for the Driver",
+   "read_only_depends_on": "eval:doc.status != 'Due'"
   },
   {
    "fieldname": "column_break_head",
