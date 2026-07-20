@@ -570,9 +570,12 @@ def _customers_by_latest(invoices):
     )
 
 
-def _drill_down(invoices, customer, start, page_length, search):
+def _drill_down(invoices, customer, start, page_length, search, cheque_due=None):
     """One customer's invoices for a drill-down: totals over the whole scoped balance, then
-    an optionally-searched page of it. Shared by the internal and sales detail views."""
+    an optionally-searched page of it. Shared by the internal and sales detail views.
+
+    `cheque_due` is the caller's to resolve: scoping here is on invoices, so a caller restricted
+    to its own book can be handed a customer outside it and must not leak that customer's cheque."""
     start, page_length = cint(start), cint(page_length) or 50
     total = sum(flt(inv.outstanding_amount) for inv in invoices)
     count = len(invoices)
@@ -590,9 +593,7 @@ def _drill_down(invoices, customer, start, page_length, search):
         "customer": customer,
         "customer_name": frappe.db.get_value("Customer", customer, "customer_name") or customer,
         "cheque_on_account": _cheque_on_account(customer),
-        # The caller (internal/sales) has already scoped access to this customer, so any open
-        # cheque for them is fair to surface here.
-        "cheque_due": open_due_for_customer(customer),
+        "cheque_due": cheque_due,
         "invoices": page,
         "invoice_count": count,
         "total_outstanding": total,
@@ -652,7 +653,8 @@ def internal_customer_invoices(customer, start=0, page_length=50, search=None, d
         _scope_to_driver(_internal_outstanding(customer, payment_term=payment_term), driver),
         sales_person,
     )
-    return _drill_down(invoices, customer, start, page_length, search)
+    # An operator sees every book, so any flagged cheque for this customer is theirs to see.
+    return _drill_down(invoices, customer, start, page_length, search, open_due_for_customer(customer))
 
 
 # --- Sales mode (/collect/sales) --------------------------------------------------------
@@ -743,4 +745,10 @@ def sales_customer_invoices(customer, start=0, page_length=50, search=None, paym
         _internal_outstanding(customer, payment_term=payment_term),
         _sales_view_person(sales_person),
     )
-    return _drill_down(invoices, customer, start, page_length, search)
+    # Same rule as the list banner: a member locked to their own book sees only its cheques.
+    from ipay.ipay.main.utils import sales
+
+    due = open_due_for_customer(customer)
+    if _own_book_only() and not sales.can_access_customer(customer):
+        due = None
+    return _drill_down(invoices, customer, start, page_length, search, due)
