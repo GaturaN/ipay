@@ -765,10 +765,10 @@ def sales_customer_invoices(customer, start=0, page_length=50, search=None, paym
         _internal_outstanding(customer, payment_term=payment_term),
         _sales_view_person(sales_person),
     )
-    # Same rule as the list banner: a member locked to their own book sees only its cheques.
-    from ipay.ipay.main.utils import sales
-
+    # Book membership, the same test the list banner uses — can_access_customer would deny the
+    # drill-down the very cheque the banner just linked the member to.
+    person = _sales_view_person(sales_person)
     due = open_due_for_customer(customer)
-    if _own_book_only() and not sales.can_access_customer(customer):
+    if person and customer not in customers_in_book(person):
         due = None
     return _drill_down(invoices, customer, start, page_length, search, due)

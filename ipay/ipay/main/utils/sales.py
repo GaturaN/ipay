@@ -110,8 +110,13 @@ def customers_in_book(sales_person):
     named, customers = _cached_scope(sales_person)
     if not named:
         return set(customers)
+    # Submitted only: a Sales Team row survives on a draft or cancelled invoice, and counting
+    # those would put customers in the book that the customer list can never show.
     return set(customers) | set(frappe.get_all(
-        "Sales Invoice", filters={"name": ["in", list(named)]}, pluck="customer", distinct=True
+        "Sales Invoice",
+        filters={"name": ["in", list(named)], "docstatus": 1},
+        pluck="customer",
+        distinct=True,
     ))
 
 
