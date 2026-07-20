@@ -58,9 +58,9 @@
    "fieldtype": "Link",
    "in_standard_filter": 1,
    "label": "Assigned Driver",
+   "mandatory_depends_on": "eval:doc.status=='Due'",
    "options": "Driver",
-   "read_only_depends_on": "eval:doc.status != 'Due'",
-   "reqd": 1
+   "read_only_depends_on": "eval:doc.status != 'Due'"
   },
   {
    "description": "Instruction shown to the driver on the customer page — e.g. \"MD signs cheques on Fridays\".",

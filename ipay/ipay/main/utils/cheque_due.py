@@ -21,19 +21,26 @@ RECEIPT_ROLES = {"Accounts Manager", "Accounts User", "iPay Manager", "System Ma
 DUE_FIELDS = ["name", "customer", "customer_name", "expected_amount", "notes"]
 
 
-def _oldest_open_due(customer, driver_ids):
-	"""The oldest Due pickup for this customer routed to one of `driver_ids` — the one a
-	collection completes. None when accounts scheduled nothing (an ad-hoc collection)."""
-	if not driver_ids:
-		return None
+def _oldest_open_due(customer):
+	"""The oldest Due pickup for this customer — the one a collection completes, whoever brought
+	the cheque in. Deliberately not scoped to the recorder's driver: operators and sales users map
+	to no Driver at all, and the cheque is in the office however it arrived, so scoping here would
+	leave the pickup open and send someone after a cheque already collected.
+	None when accounts scheduled nothing (an ad-hoc collection)."""
 	rows = frappe.get_all(
 		DOCTYPE,
-		filters={"customer": customer, "status": "Due", "driver": ["in", list(driver_ids)]},
+		filters={"customer": customer, "status": "Due"},
 		pluck="name",
 		order_by="creation asc",
 		limit=1,
 	)
 	return rows[0] if rows else None
+
+
+def has_open_pickup(customer):
+	"""Has accounts flagged a cheque to collect from this customer? A grant to act on that
+	customer, not to see them — keep it to the collect action, never a display scope."""
+	return bool(frappe.db.exists(DOCTYPE, {"customer": customer, "status": "Due"}))
 
 
 def advance_or_create_on_collect(customer, payment_entry, cheque_no, amount, image_url, collector):
@@ -53,7 +60,7 @@ def advance_or_create_on_collect(customer, payment_entry, cheque_no, amount, ima
 		"collected_by": collector,
 		"collected_on": now_datetime(),
 	}
-	name = _oldest_open_due(customer, driver_ids)
+	name = _oldest_open_due(customer)
 	if name:
 		doc = frappe.get_doc(DOCTYPE, name)
 		doc.update(proof)
@@ -62,14 +69,12 @@ def advance_or_create_on_collect(customer, payment_entry, cheque_no, amount, ima
 		doc = frappe.get_doc({
 			"doctype": DOCTYPE,
 			"customer": customer,
-			# Ad-hoc collection has no scheduled driver: use the collector's own. A driver is
-			# mandatory for a human scheduling a pickup, so only the system record — created for
-			# a collector who maps to no Driver (an operator) — skips it.
+			# Ad-hoc collection has no scheduled driver: record the collector's own when they map
+			# to one. Operators and sales users map to none, and a record that is already Collected
+			# needs no driver — it is the receipt trail, not a dispatch.
 			"driver": driver_ids[0] if driver_ids else None,
 			**proof,
 		})
-		if not driver_ids:
-			doc.flags.ignore_mandatory = True
 		doc.insert(ignore_permissions=True)
 	reassign_to_accounts(doc)
 	return doc.name
