@@ -7,6 +7,7 @@ from ipay.ipay.main.utils.cheque import awaiting_cheque_amounts
 from ipay.ipay.main.utils.cheque_due import (
     all_open_dues,
     open_due_for_customer,
+    open_dues_for_customers,
     open_dues_for_driver,
 )
 from ipay.ipay.main.utils.constants import (
@@ -18,6 +19,7 @@ from ipay.ipay.main.utils.constants import (
 from ipay.ipay.main.utils.sales import (
     SALES_MANAGER_ROLES,
     SALES_ROLE,
+    customers_in_book,
     is_sales_only,
     my_sales_person,
     sales_person_options,
@@ -481,9 +483,14 @@ def collection_customers(driver=None):
         "drivers": drivers,
         "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
         "can_bundle": not is_collector_only(frappe.session.user),
-        # Cheques accounts have flagged for this collector to pick up — only their own driver's,
-        # and following the same driver filter as the customers beneath them.
-        "cheque_dues": open_dues_for_driver(frappe.session.user, driver),
+        # Flagged cheques under the same scope as the customers beneath them: a collector sees
+        # only their own driver's, anyone who sees every customer sees every cheque. Both follow
+        # the page's driver filter.
+        "cheque_dues": (
+            open_dues_for_driver(frappe.session.user, driver)
+            if is_collector_only(frappe.session.user)
+            else all_open_dues(driver)
+        ),
     }
 
 
@@ -542,6 +549,17 @@ def _internal_outstanding(customer=None, payment_term=None):
     if prepaid:
         invoices = [inv for inv in invoices if inv.name not in prepaid]
     return _drop_bundled(invoices)
+
+
+def _banner_dues(driver=None, sales_person=None):
+    """Flagged cheques for a banner above an unrestricted customer list, under the page's own
+    filters. The sales-member filter matches on the customer's book rather than their invoices,
+    so a customer flagged with nothing outstanding is still their cheque to collect."""
+    dues = all_open_dues(driver)
+    if sales_person and dues:
+        book = customers_in_book(sales_person)
+        dues = [d for d in dues if d.customer in book]
+    return dues
 
 
 def _internal_driver_names():
@@ -637,10 +655,8 @@ def internal_customers(driver=None, payment_term=None, sales_person=None):
         "drivers": _internal_driver_names(),
         "payment_terms": _internal_payment_terms(),
         "sales_persons": sales_person_options(),
-        # Operators see every flagged cheque, narrowed by the driver filter like the list below.
-        # Not by payment term or sales person: a pickup has neither, and deriving them from the
-        # customer's invoices would hide the flagged customers that have no invoice at all.
-        "cheque_dues": all_open_dues(driver),
+        # Every flagged cheque, under the same driver and sales-member filters as the list below.
+        "cheque_dues": _banner_dues(driver, sales_person),
     }
 
 
@@ -698,15 +714,16 @@ def _sales_view_person(sales_person):
     return sales_person or None
 
 
-def _sales_cheque_dues(own_book):
-    """Flagged cheques for the sales banner: a locked member sees only those for customers in
-    their own book, a manager sees every one. Reuses the same customer access the page enforces."""
-    from ipay.ipay.main.utils import sales
+def _sales_cheque_dues(own_book, person):
+    """Flagged cheques for the sales banner, scoped exactly like the customer list beneath it:
+    one member's book when locked to it or filtered to a member, every book for an unrestricted
+    manager who has picked nobody.
 
-    dues = all_open_dues()
-    if not own_book:
-        return dues
-    return [d for d in dues if sales.can_access_customer(d.customer)]
+    Matched on book membership, not can_access_customer: that asks for an outstanding invoice,
+    which would drop the flagged customer whose cheque is the last thing owed."""
+    if person:
+        return open_dues_for_customers(customers_in_book(person))
+    return [] if own_book else all_open_dues()
 
 
 @frappe.whitelist()
@@ -731,8 +748,8 @@ def sales_customers(payment_term=None, sales_person=None):
         "sales_persons": [] if own_book else sales_person_options(),
         "sales_person": person or "",
         "is_manager": not own_book,
-        # Flagged cheques for awareness: a locked member sees only their own book's, a manager all.
-        "cheque_dues": _sales_cheque_dues(own_book),
+        # Flagged cheques for awareness, under the same book/member scope as the list.
+        "cheque_dues": _sales_cheque_dues(own_book, person),
         "unmapped": False,
     }
 
