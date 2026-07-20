@@ -338,6 +338,33 @@ class TestOldestOpenDue(FrappeTestCase):
             self.assertIsNone(cheque_due._oldest_open_due("CUST"))
 
 
+class TestOpenDuesDriverFilter(FrappeTestCase):
+    """The banner follows the page's driver filter. Narrowing must never widen: a collector who
+    passes a driver that is not theirs sees nothing, not everyone's."""
+
+    def test_operator_banner_narrows_to_the_chosen_driver(self):
+        with patch.object(cheque_due, "_due_rows", return_value=[]) as rows:
+            cheque_due.all_open_dues("DRV-1")
+        self.assertEqual(rows.call_args.args[0], {"driver": "DRV-1"})
+
+    def test_operator_banner_is_unfiltered_without_one(self):
+        with patch.object(cheque_due, "_due_rows", return_value=[]) as rows:
+            cheque_due.all_open_dues()
+        self.assertEqual(rows.call_args.args[0], {})
+
+    def test_collector_narrowing_to_their_own_driver(self):
+        with patch.object(cheque_due, "my_driver_ids", return_value=["DRV-A", "DRV-B"]), \
+             patch.object(cheque_due, "_due_rows", return_value=[]) as rows:
+            cheque_due.open_dues_for_driver("u", "DRV-A")
+        self.assertEqual(rows.call_args.args[0], {"driver": ["in", ["DRV-A"]]})
+
+    def test_collector_cannot_widen_to_a_driver_that_is_not_theirs(self):
+        with patch.object(cheque_due, "my_driver_ids", return_value=["DRV-A"]), \
+             patch.object(cheque_due, "_due_rows", return_value=[]) as rows:
+            self.assertEqual(cheque_due.open_dues_for_driver("u", "DRV-OTHER"), [])
+        rows.assert_not_called()
+
+
 def _fake_response(status_code, json_value=None, json_error=False):
     resp = MagicMock()
     resp.status_code = status_code

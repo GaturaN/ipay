@@ -146,17 +146,21 @@ def mark_cheque_received(pickup):
 # Each collect surface feeds its banner from the scope it already enforces — the driver sees only
 # what is routed to them, operators see everything, sales sees its own book.
 
-def open_dues_for_driver(user):
-	"""Due pickups routed to this collector's driver(s) — the field app's banner."""
+def open_dues_for_driver(user, driver=None):
+	"""Due pickups routed to this collector's driver(s) — the field app's banner. `driver`
+	narrows to one of their own, so the banner follows the page's driver filter; a driver that
+	is not theirs narrows to nothing rather than widening."""
 	drivers = my_driver_ids(user)
+	if driver:
+		drivers = [d for d in drivers if d == driver]
 	if not drivers:
 		return []
 	return _due_rows({"driver": ["in", drivers]})
 
 
-def all_open_dues():
-	"""Every Due pickup — the internal (operator) banner."""
-	return _due_rows({})
+def all_open_dues(driver=None):
+	"""Every Due pickup — the internal (operator) banner, narrowed to one driver on request."""
+	return _due_rows({"driver": driver} if driver else {})
 
 
 def open_dues_for_customers(customers):

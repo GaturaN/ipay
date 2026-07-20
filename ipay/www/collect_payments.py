@@ -481,8 +481,9 @@ def collection_customers(driver=None):
         "drivers": drivers,
         "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
         "can_bundle": not is_collector_only(frappe.session.user),
-        # Cheques accounts have flagged for this collector to pick up — only their own driver's.
-        "cheque_dues": open_dues_for_driver(frappe.session.user),
+        # Cheques accounts have flagged for this collector to pick up — only their own driver's,
+        # and following the same driver filter as the customers beneath them.
+        "cheque_dues": open_dues_for_driver(frappe.session.user, driver),
     }
 
 
@@ -636,8 +637,10 @@ def internal_customers(driver=None, payment_term=None, sales_person=None):
         "drivers": _internal_driver_names(),
         "payment_terms": _internal_payment_terms(),
         "sales_persons": sales_person_options(),
-        # Operators see every flagged cheque — full awareness across all drivers.
-        "cheque_dues": all_open_dues(),
+        # Operators see every flagged cheque, narrowed by the driver filter like the list below.
+        # Not by payment term or sales person: a pickup has neither, and deriving them from the
+        # customer's invoices would hide the flagged customers that have no invoice at all.
+        "cheque_dues": all_open_dues(driver),
     }
 
 
