@@ -4,10 +4,11 @@ import frappe
 import requests
 from frappe.tests.utils import FrappeTestCase
 
-from ipay.ipay.main.utils import cheque, collector, make_payment_entry, reconcile_payments
+from ipay.ipay.main.utils import cheque, cheque_due, collector, make_payment_entry, reconcile_payments
 from ipay.ipay.main.utils import sales
 from ipay.ipay.main.utils.constants import amounts_match, clean_oid
 from ipay.ipay.main.utils.finalize_payment import _resolve_status
+from ipay.ipay.main.utils import ipay_redirect
 from ipay.ipay.main.utils.ipay_redirect import normalize_phone
 from ipay.ipay.main.utils.make_payment_entry import allocate_references
 
@@ -295,6 +296,73 @@ class TestCollectorCanAccessCustomer(FrappeTestCase):
     def test_sales_only_delegates_to_the_sales_book(self):
         self.assertTrue(self._run(is_col=False, is_sal=True, has_outstanding=False, sales_grants=True))
         self.assertFalse(self._run(is_col=False, is_sal=True, has_outstanding=True, sales_grants=False))
+
+
+class TestRequireCustomerAccess(FrappeTestCase):
+    """The gate on recording an on-account cheque. A flagged pickup grants the collect action for
+    a customer with no outstanding invoice to be scoped by — but only the action: widening
+    can_access_customer itself would leak the on-account figure it also gates."""
+
+    def _run(self, can_access, has_pickup):
+        with patch.object(collector, "can_access_customer", return_value=can_access), \
+             patch.object(cheque_due, "has_open_pickup", return_value=has_pickup):
+            try:
+                ipay_redirect._require_customer_access("CUST")
+                return True
+            except frappe.PermissionError:
+                return False
+
+    def test_normal_scope_still_grants(self):
+        self.assertTrue(self._run(can_access=True, has_pickup=False))
+
+    def test_a_flagged_pickup_grants_when_nothing_else_would(self):
+        self.assertTrue(self._run(can_access=False, has_pickup=True))
+
+    def test_neither_is_refused(self):
+        self.assertFalse(self._run(can_access=False, has_pickup=False))
+
+
+class TestOldestOpenDue(FrappeTestCase):
+    """Which scheduled pickup a collection completes. Scoping this to the recorder's own driver
+    left the pickup open and created a duplicate for every operator and sales collection."""
+
+    def test_matches_on_customer_and_status_only(self):
+        with patch.object(cheque_due.frappe, "get_all", return_value=["CHQ-1"]) as g:
+            self.assertEqual(cheque_due._oldest_open_due("CUST"), "CHQ-1")
+        # No driver filter: whoever brings the cheque in completes the pickup.
+        self.assertNotIn("driver", g.call_args.kwargs["filters"])
+        self.assertEqual(g.call_args.kwargs["filters"], {"customer": "CUST", "status": "Due"})
+
+    def test_returns_none_when_nothing_was_scheduled(self):
+        with patch.object(cheque_due.frappe, "get_all", return_value=[]):
+            self.assertIsNone(cheque_due._oldest_open_due("CUST"))
+
+
+class TestOpenDuesDriverFilter(FrappeTestCase):
+    """The banner follows the page's driver filter. Narrowing must never widen: a collector who
+    passes a driver that is not theirs sees nothing, not everyone's."""
+
+    def test_operator_banner_narrows_to_the_chosen_driver(self):
+        with patch.object(cheque_due, "_due_rows", return_value=[]) as rows:
+            cheque_due.all_open_dues("DRV-1")
+        self.assertEqual(rows.call_args.args[0], {"driver": "DRV-1"})
+
+    def test_operator_banner_is_unfiltered_without_one(self):
+        with patch.object(cheque_due, "_due_rows", return_value=[]) as rows:
+            cheque_due.all_open_dues()
+        self.assertEqual(rows.call_args.args[0], {})
+
+    def test_collector_narrowing_to_their_own_driver(self):
+        with patch.object(cheque_due, "my_driver_ids", return_value=["DRV-A", "DRV-B"]), \
+             patch.object(cheque_due, "_due_rows", return_value=[]) as rows:
+            cheque_due.open_dues_for_driver("u", "DRV-A")
+        self.assertEqual(rows.call_args.args[0], {"driver": ["in", ["DRV-A"]]})
+
+    def test_collector_cannot_widen_to_a_driver_that_is_not_theirs(self):
+        with patch.object(cheque_due, "my_driver_ids", return_value=["DRV-A"]), \
+             patch.object(cheque_due, "_due_rows", return_value=[]) as rows:
+            self.assertEqual(cheque_due.open_dues_for_driver("u", "DRV-OTHER"), [])
+        rows.assert_not_called()
 
 
 def _fake_response(status_code, json_value=None, json_error=False):

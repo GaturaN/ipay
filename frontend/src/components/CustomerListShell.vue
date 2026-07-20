@@ -1,6 +1,7 @@
 <script setup>
 import RoundHeader from '@/components/RoundHeader.vue'
 import CustomerCard from '@/components/CustomerCard.vue'
+import ChequeDueBanner from '@/components/ChequeDueBanner.vue'
 import ErrorRetry from '@/components/ErrorRetry.vue'
 
 // The shared customer-list screen (field /collect and internal /collect/internal): title,
@@ -24,6 +25,7 @@ defineProps({
   cardDriver: { type: String, default: '' },
   cardPaymentTerm: { type: String, default: '' },
   cardSalesPerson: { type: String, default: '' },
+  chequeDues: { type: Array, default: () => [] }, // cheques accounts flagged to collect here
 })
 defineEmits(['retry'])
 </script>
@@ -46,6 +48,15 @@ defineEmits(['retry'])
     <div class="flex flex-col gap-2 sm:flex-row">
       <slot name="filters" />
     </div>
+
+    <!-- Cheques accounts flagged to collect — links into each customer's page. -->
+    <ChequeDueBanner
+      :dues="chequeDues"
+      :route-name="cardRouteName"
+      :driver="cardDriver"
+      :payment-term="cardPaymentTerm"
+      :sales-person="cardSalesPerson"
+    />
 
     <div v-if="listLoading" class="grid grid-cols-1 gap-3 md:grid-cols-2">
       <div v-for="n in 6" :key="n" class="h-20 animate-pulse rounded-xl bg-ink/5" />

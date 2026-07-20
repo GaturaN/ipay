@@ -20,6 +20,7 @@
   "allow_cheque_collection",
   "cheque_per_invoice",
   "cheque_account",
+  "cheque_banking_assignee",
   "alert_email",
   "last_reconcile_run",
   "restrict_sales_managers"
@@ -117,6 +118,14 @@
    "fieldtype": "Link",
    "label": "Cheque Account",
    "options": "Account"
+  },
+  {
+   "depends_on": "allow_cheque_collection",
+   "description": "Who a collected cheque is assigned to for banking. Leave blank to assign to everyone holding the Accounts Manager role.",
+   "fieldname": "cheque_banking_assignee",
+   "fieldtype": "Link",
+   "label": "Cheque Banking Assignee",
+   "options": "User"
   },
   {
    "description": "Where money-at-risk alerts (a payment confirmed at iPay but not recorded) are emailed. Leave blank to log to Error Log only.",

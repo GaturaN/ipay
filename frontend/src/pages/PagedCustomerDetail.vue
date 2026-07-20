@@ -13,6 +13,7 @@ import InvoiceCard from '@/components/InvoiceCard.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
 import NotesDialog from '@/components/NotesDialog.vue'
 import ChequeDialog from '@/components/ChequeDialog.vue'
+import ChequeDueBanner from '@/components/ChequeDueBanner.vue'
 import CustomerMoneyHeader from '@/components/CustomerMoneyHeader.vue'
 import CollectBar from '@/components/CollectBar.vue'
 import ErrorRetry from '@/components/ErrorRetry.vue'
@@ -50,6 +51,7 @@ const scopeQuery = () =>
 
 const customerName = ref('')
 const invoices = ref([])
+const chequeDue = ref(null) // a cheque accounts flagged to collect from this customer
 const total = ref(0)
 const chequeOnAccount = ref(0)
 const count = ref(0)
@@ -114,7 +116,12 @@ async function load(reset = true) {
       salesPerson: route.query.sales_person || '',
     })
     if (seq !== loadSeq) return // a newer load/search superseded this response — drop it
-    customerName.value = data.customer_name || customer
+    chequeDue.value = data.cheque_due || null
+    // With no invoice for this customer the server can only echo the id; the flag carries the name.
+    customerName.value =
+      (data.invoice_count ? data.customer_name : chequeDue.value?.customer_name) ||
+      data.customer_name ||
+      customer
     total.value = data.total_outstanding
     count.value = data.invoice_count
     enableRedirect.value = Boolean(data.enable_redirect)
@@ -208,12 +215,18 @@ function chequeFor(rows, outstanding) {
   chequing.value = { customer, customer_name: customerName.value, invoices: rows, outstanding }
 }
 
+// A flagged cheque records on account; suggest the expected amount if accounts gave one.
+function collectFlaggedCheque() {
+  chequeFor([], Number(chequeDue.value?.expected_amount || 0) || total.value)
+}
+
 // Mark the cards in place rather than reloading, which would clear the ticked set underneath.
 function onChequeRecorded({ invoices: names, amount, covered }) {
   if (!names.length) chequeOnAccount.value += amount
   invoices.value.forEach((inv) => {
     if (covered[inv.name]) inv.awaiting_cheque = covered[inv.name]
   })
+  chequeDue.value = null // the flagged cheque is now collected — drop its banner
   clearSelection()
 }
 
@@ -249,6 +262,8 @@ onMounted(() => load(true))
         :count="count"
         :term="paymentTerm || 'all terms'"
       />
+
+      <ChequeDueBanner :due="chequeDue" @collect="collectFlaggedCheque" />
 
       <CollectBar
         :show-bar="selected.length > 0 || canCollectAll"

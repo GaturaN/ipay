@@ -1,0 +1,219 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "CHQ-.YYYY.-.#####",
+ "creation": "2026-07-19 08:30:00.000000",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "customer",
+  "customer_name",
+  "expected_amount",
+  "driver",
+  "notes",
+  "column_break_head",
+  "status",
+  "collection_section",
+  "payment_entry",
+  "cheque_no",
+  "amount_collected",
+  "column_break_coll",
+  "cheque_image",
+  "collected_by",
+  "collected_on",
+  "receipt_section",
+  "received_by",
+  "received_on"
+ ],
+ "fields": [
+  {
+   "fieldname": "customer",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Customer",
+   "options": "Customer",
+   "read_only_depends_on": "eval:doc.status != 'Due'",
+   "reqd": 1
+  },
+  {
+   "fetch_from": "customer.customer_name",
+   "fieldname": "customer_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Customer Name",
+   "read_only": 1
+  },
+  {
+   "description": "What accounts expect the cheque to be for. A hint to the driver only — the actual amount is whatever is recorded.",
+   "fieldname": "expected_amount",
+   "fieldtype": "Currency",
+   "label": "Expected Amount",
+   "read_only_depends_on": "eval:doc.status != 'Due'"
+  },
+  {
+   "description": "The driver this cheque is routed to. They see it on their collect app; no one else's app does.",
+   "fieldname": "driver",
+   "fieldtype": "Link",
+   "in_standard_filter": 1,
+   "label": "Assigned Driver",
+   "mandatory_depends_on": "eval:doc.status=='Due'",
+   "options": "Driver",
+   "read_only_depends_on": "eval:doc.status != 'Due'"
+  },
+  {
+   "description": "Instruction shown to the driver on the customer page — e.g. \"MD signs cheques on Fridays\".",
+   "fieldname": "notes",
+   "fieldtype": "Small Text",
+   "label": "Notes for the Driver",
+   "read_only_depends_on": "eval:doc.status != 'Due'"
+  },
+  {
+   "fieldname": "column_break_head",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "Due",
+   "description": "Due → Collected → Physical copy received. Whether the money is banked is read from the linked Payment Entry, not stored here.",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Due\nCollected\nReceived\nCancelled",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.status != 'Due'",
+   "fieldname": "collection_section",
+   "fieldtype": "Section Break",
+   "label": "Collection"
+  },
+  {
+   "description": "The draft cheque Payment Entry — the proof, and the source of the banked state.",
+   "fieldname": "payment_entry",
+   "fieldtype": "Link",
+   "label": "Payment Entry",
+   "options": "Payment Entry",
+   "read_only": 1
+  },
+  {
+   "fieldname": "cheque_no",
+   "fieldtype": "Data",
+   "label": "Cheque No",
+   "read_only": 1
+  },
+  {
+   "fieldname": "amount_collected",
+   "fieldtype": "Currency",
+   "label": "Amount Collected",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_coll",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "cheque_image",
+   "fieldtype": "Attach Image",
+   "label": "Cheque Image",
+   "read_only": 1
+  },
+  {
+   "fieldname": "collected_by",
+   "fieldtype": "Link",
+   "label": "Collected By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "collected_on",
+   "fieldtype": "Datetime",
+   "label": "Collected On",
+   "read_only": 1
+  },
+  {
+   "depends_on": "eval:doc.status == 'Received'",
+   "fieldname": "receipt_section",
+   "fieldtype": "Section Break",
+   "label": "Physical Copy Received"
+  },
+  {
+   "fieldname": "received_by",
+   "fieldtype": "Link",
+   "label": "Received By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "received_on",
+   "fieldtype": "Datetime",
+   "label": "Received On",
+   "read_only": 1
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-19 08:30:00.000000",
+ "modified_by": "Administrator",
+ "module": "Ipay",
+ "name": "iPay Cheque Collection",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "iPay Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Accounts User",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "title_field": "customer_name",
+ "track_changes": 1
+}

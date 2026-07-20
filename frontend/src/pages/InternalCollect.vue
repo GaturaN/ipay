@@ -20,6 +20,7 @@ const statsLoading = ref(false)
 
 const search = ref('')
 const drivers = ref([])
+const chequeDues = ref([])
 const driver = ref(route.query.driver || '') // restored when returning from a detail page
 const paymentTerms = ref([])
 const paymentTerm = ref(route.query.payment_term || '')
@@ -46,6 +47,7 @@ async function loadCustomers() {
     const data = await fetchInternalCustomers(driver.value, paymentTerm.value, salesPerson.value)
     customers.value = data.customers || []
     drivers.value = data.drivers || []
+    chequeDues.value = data.cheque_dues || []
     paymentTerms.value = data.payment_terms || []
     salesPersons.value = data.sales_persons || []
   } catch (e) {
@@ -89,6 +91,7 @@ onMounted(refreshAll)
     :load-error="loadError"
     :not-permitted="notPermitted"
     :customers="filtered"
+    :cheque-dues="chequeDues"
     :empty-message="emptyMessage"
     card-route-name="InternalCustomer"
     :card-driver="driver"
