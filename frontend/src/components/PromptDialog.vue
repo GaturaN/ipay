@@ -189,7 +189,7 @@ onUnmounted(() => {
       <!-- Prompt form -->
       <template v-else>
         <p class="font-display text-xs font-semibold uppercase tracking-widest text-ink/60">
-          Prompt M-Pesa
+          M-Pesa
         </p>
         <p id="prompt-title" class="mt-1 text-lg font-semibold leading-snug text-ink">
           {{ target.title }}

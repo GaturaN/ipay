@@ -150,7 +150,7 @@ async function payViaIpay() {
           :disabled="actionsDisabled"
           @click="$emit('prompt')"
         >
-          Prompt M-Pesa
+          M-Pesa
         </button>
         <button
           v-if="enableRedirect"
