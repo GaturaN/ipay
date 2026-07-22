@@ -310,7 +310,7 @@ onMounted(load)
           class="h-14 rounded-xl bg-mpesa text-lg font-semibold text-white transition active:scale-[.98]"
           @click="promptNow"
         >
-          Prompt M-Pesa — {{ formatKES(detail.amount) }}
+          M-Pesa — {{ formatKES(detail.amount) }}
         </button>
         <p v-else class="rounded-xl bg-owed/10 px-3 py-2 text-sm text-owed">
           M-Pesa isn't available for amounts over {{ formatKES(detail.mpesa_max) }}.
