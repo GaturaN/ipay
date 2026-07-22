@@ -146,21 +146,33 @@ def mark_cheque_received(pickup):
 # Each collect surface feeds its banner from the scope it already enforces — the driver sees only
 # what is routed to them, operators see everything, sales sees its own book.
 
-def open_dues_for_driver(user, driver=None):
-	"""Due pickups routed to this collector's driver(s) — the field app's banner. `driver`
-	narrows to one of their own, so the banner follows the page's driver filter; a driver that
-	is not theirs narrows to nothing rather than widening."""
+def _driver_ids_named(driver_name):
+	"""Driver records carrying this full name. The collect pages filter by the driver name shown
+	on a delivery note, while a pickup is routed to the Driver record itself — without this the
+	two never match and choosing a driver empties the banner."""
+	return frappe.get_all("Driver", filters={"full_name": driver_name}, pluck="name")
+
+
+def open_dues_for_driver(user, driver_name=None):
+	"""Due pickups routed to this collector's own driver(s) — the field banner for a collector.
+	`driver_name` narrows to one of their own; a driver that is not theirs narrows to nothing
+	rather than widening."""
 	drivers = my_driver_ids(user)
-	if driver:
-		drivers = [d for d in drivers if d == driver]
+	if driver_name:
+		named = set(_driver_ids_named(driver_name))
+		drivers = [d for d in drivers if d in named]
 	if not drivers:
 		return []
 	return _due_rows({"driver": ["in", drivers]})
 
 
-def all_open_dues(driver=None):
-	"""Every Due pickup — the internal (operator) banner, narrowed to one driver on request."""
-	return _due_rows({"driver": driver} if driver else {})
+def all_open_dues(driver_name=None):
+	"""Every Due pickup — the banner for anyone who sees every customer, narrowed to one driver
+	on request."""
+	if not driver_name:
+		return _due_rows({})
+	drivers = _driver_ids_named(driver_name)
+	return _due_rows({"driver": ["in", drivers]}) if drivers else []
 
 
 def open_dues_for_customers(customers):
