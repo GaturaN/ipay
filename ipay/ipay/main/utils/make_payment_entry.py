@@ -5,6 +5,83 @@ import json
 logger = logging.getLogger(__name__)
 
 
+def allocate_references(invoice_names, amount):
+    """Split `amount` across invoices oldest-first, per payment term where the invoice has them.
+
+    Returns (invoices, references, remaining) — `remaining` is unallocated customer credit. Shared
+    by every rail: allocation belongs to the invoices, not to how the money arrived."""
+    flt = frappe.utils.flt
+
+    # Read outstanding live, so an invoice settled elsewhere meanwhile is skipped.
+    invoices = sorted(
+        (
+            frappe.db.get_value(
+                "Sales Invoice",
+                name,
+                ["name", "outstanding_amount", "posting_date", "customer", "customer_name", "company"],
+                as_dict=True,
+            )
+            for name in invoice_names
+        ),
+        key=lambda si: (si.posting_date, si.name),
+    )
+
+    remaining = flt(amount)
+    references = []
+    for si in invoices:
+        if remaining <= 0:
+            break
+        # Live outstanding caps the terms below: ERPNext leaves a term row stale unless the
+        # payment that cleared it named its payment_term, and most do not.
+        payable = flt(si.outstanding_amount)
+        if payable <= 0:
+            continue
+
+        # Invoices with payment terms must allocate per term (oldest due first) and carry the
+        # payment_term on the reference; others take a single reference.
+        terms = [
+            t
+            for t in frappe.get_all(
+                "Payment Schedule",
+                filters={"parent": si.name, "parenttype": "Sales Invoice"},
+                fields=["payment_term", "outstanding"],
+                order_by="due_date asc",
+            )
+            if flt(t.outstanding) > 0
+        ]
+        if terms:
+            for term in terms:
+                if remaining <= 0 or payable <= 0:
+                    break
+                allocated = min(remaining, flt(term.outstanding), payable)
+                references.append(
+                    {
+                        "reference_doctype": "Sales Invoice",
+                        "reference_name": si.name,
+                        "payment_term": term.payment_term,
+                        "allocated_amount": allocated,
+                    }
+                )
+                remaining = flt(remaining - allocated)
+                payable = flt(payable - allocated)
+            # If the term rows sum to less than the invoice still owes (a stale schedule), the
+            # rest cannot be allocated: a Collect invoice's template allocates by payment term, and
+            # ERPNext rejects a term-less reference on it. So the shortfall stays as customer credit
+            # rather than being forced onto the invoice — the payment is still recorded.
+        else:
+            allocated = min(remaining, payable)
+            references.append(
+                {
+                    "reference_doctype": "Sales Invoice",
+                    "reference_name": si.name,
+                    "allocated_amount": allocated,
+                }
+            )
+            remaining = flt(remaining - allocated)
+
+    return invoices, references, remaining
+
+
 # NOT @frappe.whitelist: this is an internal helper called only by
 # finalize_payment (server-side). Exposing it let any authenticated user POST a
 # forged response_data (fake transaction_code + amount) and submit a Payment
@@ -68,68 +145,9 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
         if not invoice_names:
             invoice_names = [inv]
 
-        # Pull live invoice data and allocate oldest-first against current
-        # outstanding (so an invoice paid elsewhere meanwhile is skipped).
-        invoices = sorted(
-            (
-                frappe.db.get_value(
-                    "Sales Invoice",
-                    name,
-                    ["name", "outstanding_amount", "posting_date", "customer", "customer_name", "company"],
-                    as_dict=True,
-                )
-                for name in invoice_names
-            ),
-            key=lambda si: (si.posting_date, si.name),
-        )
-        primary = invoices[0]
-
         transaction_amount = flt(response_data.get("transaction_amount", 0))
-        remaining = transaction_amount
-        references = []
-        for si in invoices:
-            if remaining <= 0:
-                break
-            if flt(si.outstanding_amount) <= 0:
-                continue
-
-            # Invoices with payment terms must allocate per term (oldest due
-            # first) and carry the payment_term on the reference; others take a
-            # single reference.
-            terms = [
-                t
-                for t in frappe.get_all(
-                    "Payment Schedule",
-                    filters={"parent": si.name, "parenttype": "Sales Invoice"},
-                    fields=["payment_term", "outstanding"],
-                    order_by="due_date asc",
-                )
-                if flt(t.outstanding) > 0
-            ]
-            if terms:
-                for term in terms:
-                    if remaining <= 0:
-                        break
-                    allocated = min(remaining, flt(term.outstanding))
-                    references.append(
-                        {
-                            "reference_doctype": "Sales Invoice",
-                            "reference_name": si.name,
-                            "payment_term": term.payment_term,
-                            "allocated_amount": allocated,
-                        }
-                    )
-                    remaining = flt(remaining - allocated)
-            else:
-                allocated = min(remaining, flt(si.outstanding_amount))
-                references.append(
-                    {
-                        "reference_doctype": "Sales Invoice",
-                        "reference_name": si.name,
-                        "allocated_amount": allocated,
-                    }
-                )
-                remaining = flt(remaining - allocated)
+        invoices, references, remaining = allocate_references(invoice_names, transaction_amount)
+        primary = invoices[0]
 
         # If nothing could be allocated (every invoice was already settled
         # elsewhere), the money is still real — record it as unallocated credit,

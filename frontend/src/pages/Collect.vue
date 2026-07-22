@@ -9,6 +9,7 @@ const route = useRoute()
 
 const customers = ref([])
 const drivers = ref([])
+const chequeDues = ref([])
 const listLoading = ref(true)
 const loadError = ref(false)
 
@@ -45,6 +46,7 @@ async function loadCustomers() {
     const data = await fetchCollectionCustomers(driver.value)
     customers.value = data.customers || []
     drivers.value = data.drivers || []
+    chequeDues.value = data.cheque_dues || []
   } catch {
     loadError.value = true
   } finally {
@@ -81,6 +83,7 @@ onMounted(refreshAll)
     :list-loading="listLoading"
     :load-error="loadError"
     :customers="filtered"
+    :cheque-dues="chequeDues"
     :empty-message="emptyMessage"
     :card-driver="driver"
     @retry="loadCustomers"

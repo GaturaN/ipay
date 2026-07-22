@@ -6,11 +6,14 @@ import {
   fetchInternalCustomerInvoices,
   fetchSalesCustomerInvoices,
 } from '@/data/collection'
+import { formatKES } from '@/utils/format'
 import { useResumeRefresh } from '@/composables/useResumeRefresh'
 import { useInvoiceSelection } from '@/composables/useInvoiceSelection'
 import InvoiceCard from '@/components/InvoiceCard.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
 import NotesDialog from '@/components/NotesDialog.vue'
+import ChequeDialog from '@/components/ChequeDialog.vue'
+import ChequeDueBanner from '@/components/ChequeDueBanner.vue'
 import CustomerMoneyHeader from '@/components/CustomerMoneyHeader.vue'
 import CollectBar from '@/components/CollectBar.vue'
 import ErrorRetry from '@/components/ErrorRetry.vue'
@@ -48,10 +51,14 @@ const scopeQuery = () =>
 
 const customerName = ref('')
 const invoices = ref([])
+const chequeDue = ref(null) // a cheque accounts flagged to collect from this customer
 const total = ref(0)
+const chequeOnAccount = ref(0)
 const count = ref(0)
 const hasMore = ref(false)
 const enableRedirect = ref(false)
+const allowCheque = ref(false)
+const chequePerInvoice = ref(true)
 const mpesaMax = ref(0)
 
 const loading = ref(true)
@@ -61,6 +68,7 @@ const creatingBundle = ref(false)
 const collectError = ref(false)
 const prompting = ref(null)
 const noting = ref(null)
+const chequing = ref(null)
 
 const search = ref('')
 let searchTimer = null
@@ -73,9 +81,18 @@ const { selected, isSelected, toggleSelect, clearSelection, dropSelected, select
   useInvoiceSelection()
 const selectable = computed(() => count.value > 2)
 
+// A cheque already in hand is not banked yet, so the invoice still shows its full balance —
+// but charging it again would take the money twice. It stays listed, it just cannot be collected.
+const collectable = computed(() => invoices.value.filter((inv) => !inv.awaiting_cheque))
+const collectableTotal = computed(() =>
+  collectable.value.reduce((sum, inv) => sum + Number(inv.outstanding_amount || 0), 0),
+)
+
 // Over the M-Pesa cap with no card fallback a bundle can't be paid (and hides its invoices
 // ~30 min) — block it and let the operator collect invoices individually.
-const bundleAmount = computed(() => (selected.value.length ? selectedTotal.value : total.value))
+const bundleAmount = computed(() =>
+  selected.value.length ? selectedTotal.value : collectableTotal.value,
+)
 const bundleBlocked = computed(
   () => !enableRedirect.value && mpesaMax.value > 0 && bundleAmount.value > mpesaMax.value,
 )
@@ -99,11 +116,19 @@ async function load(reset = true) {
       salesPerson: route.query.sales_person || '',
     })
     if (seq !== loadSeq) return // a newer load/search superseded this response — drop it
-    customerName.value = data.customer_name || customer
+    chequeDue.value = data.cheque_due || null
+    // With no invoice for this customer the server can only echo the id; the flag carries the name.
+    customerName.value =
+      (data.invoice_count ? data.customer_name : chequeDue.value?.customer_name) ||
+      data.customer_name ||
+      customer
     total.value = data.total_outstanding
     count.value = data.invoice_count
     enableRedirect.value = Boolean(data.enable_redirect)
+    allowCheque.value = Boolean(data.allow_cheque)
+    chequePerInvoice.value = data.cheque_per_invoice !== false
     mpesaMax.value = data.mpesa_max || 0
+    chequeOnAccount.value = Number(data.cheque_on_account || 0)
     invoices.value = reset ? data.invoices || [] : [...invoices.value, ...(data.invoices || [])]
     hasMore.value = Boolean(data.has_more)
   } catch {
@@ -154,12 +179,12 @@ async function collect(names) {
 }
 // Ticked a subset → collect those; nothing ticked → the whole loaded balance.
 const collectNow = () =>
-  collect((selected.value.length ? selected.value : invoices.value).map((inv) => inv.name))
+  collect((selected.value.length ? selected.value : collectable.value).map((inv) => inv.name))
 
 // "Collect all" only when the whole balance is on screen: no more pages AND no active
 // search (a search narrows the loaded rows, so "all" would bundle just the matches).
 const canCollectAll = computed(
-  () => !hasMore.value && invoices.value.length > 1 && !search.value.trim(),
+  () => !hasMore.value && collectable.value.length > 1 && !search.value.trim(),
 )
 
 const toList = () => router.push({ name: mode.list, query: scopeQuery() })
@@ -175,6 +200,34 @@ function onPaid(name) {
   if (paid) total.value = Math.max(0, total.value - Number(paid.outstanding_amount || 0))
   if (count.value <= 0) toList()
   else if (!invoices.value.length) load(true)
+}
+
+// A cheque covers the ticked invoices; nothing ticked records it against the customer instead.
+function chequeFromBar() {
+  // Per-invoice off -> the bar records a customer-level cheque, so no invoice rows go with it.
+  const rows = chequePerInvoice.value
+    ? selected.value.map((i) => ({ name: i.name, amount: Number(i.outstanding_amount || 0) }))
+    : []
+  chequeFor(rows, rows.length ? selectedTotal.value : total.value)
+}
+
+function chequeFor(rows, outstanding) {
+  chequing.value = { customer, customer_name: customerName.value, invoices: rows, outstanding }
+}
+
+// A flagged cheque records on account; suggest the expected amount if accounts gave one.
+function collectFlaggedCheque() {
+  chequeFor([], Number(chequeDue.value?.expected_amount || 0) || total.value)
+}
+
+// Mark the cards in place rather than reloading, which would clear the ticked set underneath.
+function onChequeRecorded({ invoices: names, amount, covered }) {
+  if (!names.length) chequeOnAccount.value += amount
+  invoices.value.forEach((inv) => {
+    if (covered[inv.name]) inv.awaiting_cheque = covered[inv.name]
+  })
+  chequeDue.value = null // the flagged cheque is now collected — drop its banner
+  clearSelection()
 }
 
 // Patch the card in place: reloading the list would clear a ticked bundle and reset paging.
@@ -210,19 +263,29 @@ onMounted(() => load(true))
         :term="paymentTerm || 'all terms'"
       />
 
+      <ChequeDueBanner :due="chequeDue" @collect="collectFlaggedCheque" />
+
       <CollectBar
         :show-bar="selected.length > 0 || canCollectAll"
         :selected-count="selected.length"
         :selected-total="selectedTotal"
-        :total="total"
+        :total="collectableTotal"
         :creating-bundle="creatingBundle"
         :bundle-blocked="bundleBlocked"
         :mpesa-max="mpesaMax"
         :collect-error="collectError"
         :show-tick-hint="selectable && !selected.length"
+        :show-cheque="allowCheque && count > 0"
+        :cheque-per-invoice="chequePerInvoice"
         @collect="collectNow"
         @clear="clearSelection"
+        @cheque="chequeFromBar"
       />
+
+      <p v-if="chequeOnAccount" class="-mt-2 rounded-xl bg-owed/10 px-3 py-2.5 text-[13px] font-medium text-owed">
+        {{ formatKES(chequeOnAccount) }} already collected by cheque, with accounts to bank. It is
+        not tied to an invoice, so check before collecting again.
+      </p>
 
       <input
         v-model="search"
@@ -247,11 +310,14 @@ onMounted(() => load(true))
             :invoice="inv"
             :enable-redirect="enableRedirect"
             :mpesa-max="mpesaMax"
-            :selectable="selectable"
+            :selectable="selectable && !inv.awaiting_cheque"
             :selected="isSelected(inv)"
             :actions-disabled="selected.length > 0"
+            :allow-cheque="allowCheque"
+            :cheque-per-invoice="chequePerInvoice"
             @prompt="promptInvoice(inv)"
             @notes="noting = { invoice: inv.name, customer_name: inv.customer_name }"
+            @cheque="chequeFor([{ name: inv.name, amount: Number(inv.outstanding_amount || 0) }], Number(inv.outstanding_amount || 0))"
             @toggle-select="toggleSelect(inv)"
           />
         </div>
@@ -269,6 +335,7 @@ onMounted(() => load(true))
 
       <PromptDialog :target="prompting" @close="prompting = null" @paid="onPaid" @changed="load(true)" />
       <NotesDialog :target="noting" @close="noting = null" @saved="onNoteSaved" />
+      <ChequeDialog :target="chequing" @close="chequing = null" @recorded="onChequeRecorded" />
     </template>
   </main>
 </template>

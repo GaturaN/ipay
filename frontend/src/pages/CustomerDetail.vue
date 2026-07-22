@@ -2,11 +2,14 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { createBundle, fetchCustomerCollection } from '@/data/collection'
+import { formatKES } from '@/utils/format'
 import { useResumeRefresh } from '@/composables/useResumeRefresh'
 import { useInvoiceSelection } from '@/composables/useInvoiceSelection'
 import InvoiceCard from '@/components/InvoiceCard.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
 import NotesDialog from '@/components/NotesDialog.vue'
+import ChequeDialog from '@/components/ChequeDialog.vue'
+import ChequeDueBanner from '@/components/ChequeDueBanner.vue'
 import CustomerMoneyHeader from '@/components/CustomerMoneyHeader.vue'
 import CollectBar from '@/components/CollectBar.vue'
 import ErrorRetry from '@/components/ErrorRetry.vue'
@@ -18,7 +21,11 @@ const driver = route.query.driver || '' // scope the detail to the driver picked
 
 const customerName = ref('')
 const invoices = ref([])
+const chequeDue = ref(null) // a cheque accounts flagged to collect from this customer
+const chequeOnAccount = ref(0)
 const enableRedirect = ref(false)
+const allowCheque = ref(false)
+const chequePerInvoice = ref(true)
 const canBundle = ref(false)
 const mpesaMax = ref(0)
 const loading = ref(true)
@@ -27,21 +34,31 @@ const creatingBundle = ref(false)
 const collectError = ref(false)
 const prompting = ref(null)
 const noting = ref(null)
+const chequing = ref(null)
 
 const { selected, isSelected, toggleSelect, clearSelection, dropSelected, selectedTotal } =
   useInvoiceSelection()
 // Ticking a subset only makes sense at 3+ invoices — 1 has nothing to bundle and 2 are
 // already covered by "Collect all".
-const selectable = computed(() => canBundle.value && invoices.value.length > 2)
+const selectable = computed(() => canBundle.value && collectable.value.length > 2)
 
 const total = computed(() =>
   invoices.value.reduce((sum, inv) => sum + Number(inv.outstanding_amount || 0), 0),
 )
 
+// A cheque already in hand is not banked yet, so the invoice still shows its full balance —
+// but charging it again would take the money twice. It stays listed, it just cannot be collected.
+const collectable = computed(() => invoices.value.filter((inv) => !inv.awaiting_cheque))
+const collectableTotal = computed(() =>
+  collectable.value.reduce((sum, inv) => sum + Number(inv.outstanding_amount || 0), 0),
+)
+
 // A bundle is charged as one M-Pesa STK (or hosted checkout). Over the cap with no card
 // fallback it can't be paid and would hide the invoices ~30 min — block it and let the
 // operator collect invoices individually instead.
-const bundleAmount = computed(() => (selected.value.length ? selectedTotal.value : total.value))
+const bundleAmount = computed(() =>
+  selected.value.length ? selectedTotal.value : collectableTotal.value,
+)
 const bundleBlocked = computed(
   () => !enableRedirect.value && mpesaMax.value > 0 && bundleAmount.value > mpesaMax.value,
 )
@@ -60,11 +77,19 @@ async function load() {
   clearSelection()
   try {
     const data = await fetchCustomerCollection(customer, driver)
-    customerName.value = data.customer_name || customer
     invoices.value = data.invoices || []
+    chequeDue.value = data.cheque_due || null
+    // With no outstanding invoice the server can only echo the id; the flagged cheque carries the name.
+    customerName.value =
+      (invoices.value.length ? data.customer_name : chequeDue.value?.customer_name) ||
+      data.customer_name ||
+      customer
     enableRedirect.value = Boolean(data.enable_redirect)
+    allowCheque.value = Boolean(data.allow_cheque)
+    chequePerInvoice.value = data.cheque_per_invoice !== false
     canBundle.value = Boolean(data.can_bundle)
     mpesaMax.value = data.mpesa_max || 0
+    chequeOnAccount.value = Number(data.cheque_on_account || 0)
   } catch {
     loadError.value = true
   } finally {
@@ -106,7 +131,7 @@ async function collect(names) {
   }
 }
 const collectNow = () =>
-  collect((selected.value.length ? selected.value : invoices.value).map((inv) => inv.name))
+  collect((selected.value.length ? selected.value : collectable.value).map((inv) => inv.name))
 
 const toList = () => router.push({ name: 'Collect', query: driver ? { driver } : {} })
 
@@ -115,6 +140,34 @@ function onPaid(name) {
   invoices.value = invoices.value.filter((inv) => inv.name !== name)
   dropSelected(name)
   if (!invoices.value.length) toList()
+}
+
+// A cheque covers the ticked invoices; nothing ticked records it against the customer instead.
+function chequeFromBar() {
+  // Per-invoice off -> the bar records a customer-level cheque, so no invoice rows go with it.
+  const rows = chequePerInvoice.value
+    ? selected.value.map((i) => ({ name: i.name, amount: Number(i.outstanding_amount || 0) }))
+    : []
+  chequeFor(rows, rows.length ? selectedTotal.value : total.value)
+}
+
+function chequeFor(rows, outstanding) {
+  chequing.value = { customer, customer_name: customerName.value, invoices: rows, outstanding }
+}
+
+// A flagged cheque records on account; suggest the expected amount if accounts gave one.
+function collectFlaggedCheque() {
+  chequeFor([], Number(chequeDue.value?.expected_amount || 0) || total.value)
+}
+
+// Mark the cards in place rather than reloading, which would clear the ticked set underneath.
+function onChequeRecorded({ invoices: names, amount, covered }) {
+  if (!names.length) chequeOnAccount.value += amount
+  invoices.value.forEach((inv) => {
+    if (covered[inv.name]) inv.awaiting_cheque = covered[inv.name]
+  })
+  chequeDue.value = null // the flagged cheque is now collected — drop its banner
+  clearSelection()
 }
 
 // Patch the card in place: reloading the list would clear a ticked bundle and reset paging.
@@ -145,19 +198,29 @@ onMounted(load)
     <template v-else>
       <CustomerMoneyHeader :name="customerName" :total="total" :count="invoices.length" />
 
+      <ChequeDueBanner :due="chequeDue" @collect="collectFlaggedCheque" />
+
       <CollectBar
-        :show-bar="canBundle && invoices.length > 1"
+        :show-bar="canBundle && collectable.length > 1"
         :selected-count="selected.length"
         :selected-total="selectedTotal"
-        :total="total"
+        :total="collectableTotal"
         :creating-bundle="creatingBundle"
         :bundle-blocked="bundleBlocked"
         :mpesa-max="mpesaMax"
         :collect-error="collectError"
         :show-tick-hint="selectable && !selected.length"
+        :show-cheque="allowCheque && invoices.length > 0"
+        :cheque-per-invoice="chequePerInvoice"
         @collect="collectNow"
         @clear="clearSelection"
+        @cheque="chequeFromBar"
       />
+
+      <p v-if="chequeOnAccount" class="-mt-2 rounded-xl bg-owed/10 px-3 py-2.5 text-[13px] font-medium text-owed">
+        {{ formatKES(chequeOnAccount) }} already collected by cheque, with accounts to bank. It is
+        not tied to an invoice, so check before collecting again.
+      </p>
 
       <input
         v-if="invoices.length > 1"
@@ -181,11 +244,14 @@ onMounted(load)
           :invoice="inv"
           :enable-redirect="enableRedirect"
           :mpesa-max="mpesaMax"
-          :selectable="selectable"
+          :selectable="selectable && !inv.awaiting_cheque"
           :selected="isSelected(inv)"
           :actions-disabled="selected.length > 0"
+          :allow-cheque="allowCheque"
+          :cheque-per-invoice="chequePerInvoice"
           @prompt="promptInvoice(inv)"
           @notes="noting = { invoice: inv.name, customer_name: inv.customer_name }"
+          @cheque="chequeFor([{ name: inv.name, amount: Number(inv.outstanding_amount || 0) }], Number(inv.outstanding_amount || 0))"
           @toggle-select="toggleSelect(inv)"
         />
       </div>
@@ -193,5 +259,6 @@ onMounted(load)
 
     <PromptDialog :target="prompting" @close="prompting = null" @paid="onPaid" @changed="load" />
     <NotesDialog :target="noting" @close="noting = null" @saved="onNoteSaved" />
+    <ChequeDialog :target="chequing" @close="chequing = null" @recorded="onChequeRecorded" />
   </main>
 </template>

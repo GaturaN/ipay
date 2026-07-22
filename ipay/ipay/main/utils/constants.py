@@ -32,6 +32,11 @@ ACTIVE_BUNDLE_WINDOW_MIN = 30
 COLLECTION_NOTE_SUBJECT = "iPay Collection Note"
 COLLECTION_NOTE_MAX_LENGTH = 500
 
+# The Mode of Payment a collected cheque is recorded under — what marks a draft Payment Entry as
+# "a cheque a collector took", both when writing one and when flagging the invoices it covers.
+CHEQUE_MODE = "Cheque"
+CHEQUE_NO_MAX_LENGTH = 30
+
 
 def note_filters(reference_name):
     """Comment filters for the collection notes on one invoice, or on a list of them."""

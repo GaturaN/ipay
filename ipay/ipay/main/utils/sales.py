@@ -120,6 +120,25 @@ def can_access_invoice(sales_invoice, user=None):
     return _in_book(sales_invoice, named, customers)
 
 
+def can_access_customer(customer, user=None):
+    """May this sales member act on a customer-level (on-account) cheque? Only a customer with an
+    outstanding invoice in their book — the customer is theirs, or one of their named invoices is
+    the customer's. One query either way; never a scan of the customer's every invoice."""
+    person = my_sales_person(user)
+    if not person:
+        return False
+    named, customers = _cached_scope(person)
+    if customer in customers:
+        return bool(frappe.db.exists(
+            "Sales Invoice",
+            {"customer": customer, "docstatus": 1, "outstanding_amount": [">", 0]},
+        ))
+    return bool(named) and bool(frappe.db.exists(
+        "Sales Invoice",
+        {"name": ["in", list(named)], "customer": customer, "docstatus": 1, "outstanding_amount": [">", 0]},
+    ))
+
+
 def can_access_request(request_name, user=None):
     """May this sales member act on the given iPay Request? Only when EVERY invoice it
     covers is their own book — owning one member must not grant prompting a bundle across

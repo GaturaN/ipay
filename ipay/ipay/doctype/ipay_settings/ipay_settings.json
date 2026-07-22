@@ -17,6 +17,10 @@
   "mpesa_max_amount",
   "payment_link_ttl_days",
   "cash_account",
+  "allow_cheque_collection",
+  "cheque_per_invoice",
+  "cheque_account",
+  "cheque_banking_assignee",
   "alert_email",
   "last_reconcile_run",
   "restrict_sales_managers"
@@ -92,6 +96,36 @@
    "fieldtype": "Link",
    "label": "Cash Account (fallback)",
    "options": "Account"
+  },
+  {
+   "default": "0",
+   "description": "Let collectors record a cheque from the collect app. Off by default; a Cheque Account must also be set before a cheque can be recorded.",
+   "fieldname": "allow_cheque_collection",
+   "fieldtype": "Check",
+   "label": "Allow Cheque Collection"
+  },
+  {
+   "default": "1",
+   "depends_on": "allow_cheque_collection",
+   "description": "Allow a cheque to be attached to specific invoices. Off: every cheque is recorded at the customer level (on account, no invoice attached) and the accounts team decides which invoices it settles.",
+   "fieldname": "cheque_per_invoice",
+   "fieldtype": "Check",
+   "label": "Cheque Per Invoice"
+  },
+  {
+   "description": "Account collected cheques are booked to, as undeposited funds. Required before a cheque can be recorded — cheques must never book to cash.",
+   "fieldname": "cheque_account",
+   "fieldtype": "Link",
+   "label": "Cheque Account",
+   "options": "Account"
+  },
+  {
+   "depends_on": "allow_cheque_collection",
+   "description": "Who a collected cheque is assigned to for banking. Leave blank to assign to everyone holding the Accounts Manager role.",
+   "fieldname": "cheque_banking_assignee",
+   "fieldtype": "Link",
+   "label": "Cheque Banking Assignee",
+   "options": "User"
   },
   {
    "description": "Where money-at-risk alerts (a payment confirmed at iPay but not recorded) are emailed. Leave blank to log to Error Log only.",

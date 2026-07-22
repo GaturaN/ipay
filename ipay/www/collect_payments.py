@@ -2,8 +2,19 @@ import frappe
 from frappe.utils import add_to_date, cint, flt, now_datetime, today
 
 from ipay.ipay.main.utils.prepaid import all_prepaid_invoice_names, prepaid_invoice_names
-from ipay.ipay.main.utils.collector import OPERATOR_ROLES, collector_scope, is_collector_only
-from ipay.ipay.main.utils.constants import ACTIVE_BUNDLE_WINDOW_MIN, note_filters, note_text
+from ipay.ipay.main.utils.collector import OPERATOR_ROLES, collector_scope, is_collector_only, my_driver_ids
+from ipay.ipay.main.utils.cheque import awaiting_cheque_amounts
+from ipay.ipay.main.utils.cheque_due import (
+    all_open_dues,
+    open_due_for_customer,
+    open_dues_for_driver,
+)
+from ipay.ipay.main.utils.constants import (
+    ACTIVE_BUNDLE_WINDOW_MIN,
+    CHEQUE_MODE,
+    note_filters,
+    note_text,
+)
 from ipay.ipay.main.utils.sales import (
     SALES_MANAGER_ROLES,
     SALES_ROLE,
@@ -141,17 +152,26 @@ def _annotate_delivery(invoices):
 def _collectable_terms():
     """Payment Terms Templates the Collect app is scoped to (iPay Settings → Collect
     Payment Terms) — the terms drivers settle on delivery. Empty means no term filter,
-    so every outstanding invoice is collectable (behaviour before the setting existed)."""
-    settings = frappe.get_cached_doc("iPay Settings")
-    return [row.payment_terms_template for row in (settings.get("collect_payment_terms") or [])]
+    so every outstanding invoice is collectable (behaviour before the setting existed).
+
+    Read fresh from the child rows, not the doc cache — a cached read would keep the old terms
+    after the setting changes (same reason _settings_flags reads the flags fresh)."""
+    return frappe.get_all(
+        "iPay Collection Payment Term",
+        filters={"parenttype": "iPay Settings", "parentfield": "collect_payment_terms"},
+        pluck="payment_terms_template",
+    )
 
 
 def _settings_flags():
-    """The two iPay Settings every collection response carries: hosted-checkout
-    availability and the M-Pesa STK ceiling."""
+    """The iPay Settings every collection response carries: hosted-checkout availability, the
+    M-Pesa STK ceiling, and whether cheque collection is on. Read fresh, exactly like
+    enable_redirect — a cached read would keep showing the old value after the setting is toggled."""
     return {
         "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
         "mpesa_max": flt(frappe.db.get_single_value("iPay Settings", "mpesa_max_amount")),
+        "allow_cheque": bool(frappe.db.get_single_value("iPay Settings", "allow_cheque_collection")),
+        "cheque_per_invoice": bool(frappe.db.get_single_value("iPay Settings", "cheque_per_invoice")),
     }
 
 
@@ -227,6 +247,7 @@ def _customer_invoices(user, customer, driver=None):
     _annotate_customer_phone(invoices)
     _annotate_sales_person(invoices)
     _annotate_notes(invoices)
+    _annotate_awaiting_cheque(invoices)
     return invoices
 
 
@@ -296,6 +317,43 @@ def _annotate_notes(invoices):
     for inv in invoices:
         inv.note_count = counts.get(inv.name, 0)
         inv.note_latest = note_text(latest.get(inv.name) or "")
+
+
+def _annotate_awaiting_cheque(invoices):
+    """Flag each invoice with the amount a collected cheque already covers, so the card can drop
+    its prompt buttons. The amount rides along because a cheque may cover only part of the
+    invoice, and a bare flag would read as though the whole balance were settled."""
+    covered = awaiting_cheque_amounts([inv.name for inv in invoices])
+    for inv in invoices:
+        inv.awaiting_cheque = flt(covered.get(inv.name, 0))
+
+
+def _cheque_on_account(customer):
+    """What a customer has handed over in cheques that name no invoice. Nothing marks those
+    invoices, so this is the only thing standing between an on-account cheque and collecting
+    the same money twice.
+
+    Scoped to the caller: the invoices in the same response are already scoped, so this figure
+    must be too — a collector or sales member never sees it for a customer they cannot access.
+
+    Any unallocated amount counts, not only fully-on-account cheques: a cheque that partly covers
+    ticked invoices leaves the rest as customer credit, and that surplus is on account too."""
+    from ipay.ipay.main.utils.collector import can_access_customer
+
+    if not can_access_customer(customer):
+        return 0.0
+    amounts = frappe.get_all(
+        "Payment Entry",
+        filters={
+            "party_type": "Customer",
+            "party": customer,
+            "docstatus": 0,
+            "mode_of_payment": CHEQUE_MODE,
+            "unallocated_amount": [">", 0],
+        },
+        pluck="unallocated_amount",
+    )
+    return flt(sum(amounts))
 
 
 def get_context(context):
@@ -423,6 +481,9 @@ def collection_customers(driver=None):
         "drivers": drivers,
         "enable_redirect": bool(frappe.db.get_single_value("iPay Settings", "enable_redirect")),
         "can_bundle": not is_collector_only(frappe.session.user),
+        # Cheques accounts have flagged for this collector to pick up — only their own driver's,
+        # and following the same driver filter as the customers beneath them.
+        "cheque_dues": open_dues_for_driver(frappe.session.user, driver),
     }
 
 
@@ -433,12 +494,17 @@ def customer_collection(customer, driver=None):
     collector only ever sees their own book here even if another customer's id is passed."""
     _require_collection_access()
     invoices = _customer_invoices(frappe.session.user, customer, driver=driver)
+    user = frappe.session.user
+    # A collector only ever sees a cheque routed to their own driver; an operator here sees any.
+    driver_ids = my_driver_ids(user) if is_collector_only(user) else None
     return {
         "customer": customer,
         "customer_name": invoices[0].customer_name if invoices else customer,
         "invoices": invoices,
+        "cheque_on_account": _cheque_on_account(customer),
+        "cheque_due": open_due_for_customer(customer, driver_ids),
         **_settings_flags(),
-        "can_bundle": not is_collector_only(frappe.session.user),
+        "can_bundle": not is_collector_only(user),
     }
 
 
@@ -505,9 +571,12 @@ def _customers_by_latest(invoices):
     )
 
 
-def _drill_down(invoices, customer, start, page_length, search):
+def _drill_down(invoices, customer, start, page_length, search, cheque_due=None):
     """One customer's invoices for a drill-down: totals over the whole scoped balance, then
-    an optionally-searched page of it. Shared by the internal and sales detail views."""
+    an optionally-searched page of it. Shared by the internal and sales detail views.
+
+    `cheque_due` is the caller's to resolve: scoping here is on invoices, so a caller restricted
+    to its own book can be handed a customer outside it and must not leak that customer's cheque."""
     start, page_length = cint(start), cint(page_length) or 50
     total = sum(flt(inv.outstanding_amount) for inv in invoices)
     count = len(invoices)
@@ -520,9 +589,12 @@ def _drill_down(invoices, customer, start, page_length, search):
     _annotate_customer_phone(page)
     _annotate_sales_person(page)
     _annotate_notes(page)
+    _annotate_awaiting_cheque(page)
     return {
         "customer": customer,
         "customer_name": frappe.db.get_value("Customer", customer, "customer_name") or customer,
+        "cheque_on_account": _cheque_on_account(customer),
+        "cheque_due": cheque_due,
         "invoices": page,
         "invoice_count": count,
         "total_outstanding": total,
@@ -565,6 +637,10 @@ def internal_customers(driver=None, payment_term=None, sales_person=None):
         "drivers": _internal_driver_names(),
         "payment_terms": _internal_payment_terms(),
         "sales_persons": sales_person_options(),
+        # Operators see every flagged cheque, narrowed by the driver filter like the list below.
+        # Not by payment term or sales person: a pickup has neither, and deriving them from the
+        # customer's invoices would hide the flagged customers that have no invoice at all.
+        "cheque_dues": all_open_dues(driver),
     }
 
 
@@ -580,7 +656,8 @@ def internal_customer_invoices(customer, start=0, page_length=50, search=None, d
         _scope_to_driver(_internal_outstanding(customer, payment_term=payment_term), driver),
         sales_person,
     )
-    return _drill_down(invoices, customer, start, page_length, search)
+    # An operator sees every book, so any flagged cheque for this customer is theirs to see.
+    return _drill_down(invoices, customer, start, page_length, search, open_due_for_customer(customer))
 
 
 # --- Sales mode (/collect/sales) --------------------------------------------------------
@@ -621,6 +698,17 @@ def _sales_view_person(sales_person):
     return sales_person or None
 
 
+def _sales_cheque_dues(own_book):
+    """Flagged cheques for the sales banner: a locked member sees only those for customers in
+    their own book, a manager sees every one. Reuses the same customer access the page enforces."""
+    from ipay.ipay.main.utils import sales
+
+    dues = all_open_dues()
+    if not own_book:
+        return dues
+    return [d for d in dues if sales.can_access_customer(d.customer)]
+
+
 @frappe.whitelist()
 def sales_customers(payment_term=None, sales_person=None):
     """Customers with a collectable balance for the sales page, newest-invoice customer first,
@@ -643,6 +731,8 @@ def sales_customers(payment_term=None, sales_person=None):
         "sales_persons": [] if own_book else sales_person_options(),
         "sales_person": person or "",
         "is_manager": not own_book,
+        # Flagged cheques for awareness: a locked member sees only their own book's, a manager all.
+        "cheque_dues": _sales_cheque_dues(own_book),
         "unmapped": False,
     }
 
@@ -658,4 +748,10 @@ def sales_customer_invoices(customer, start=0, page_length=50, search=None, paym
         _internal_outstanding(customer, payment_term=payment_term),
         _sales_view_person(sales_person),
     )
-    return _drill_down(invoices, customer, start, page_length, search)
+    # Same rule as the list banner: a member locked to their own book sees only its cheques.
+    from ipay.ipay.main.utils import sales
+
+    due = open_due_for_customer(customer)
+    if _own_book_only() and not sales.can_access_customer(customer):
+        due = None
+    return _drill_down(invoices, customer, start, page_length, search, due)

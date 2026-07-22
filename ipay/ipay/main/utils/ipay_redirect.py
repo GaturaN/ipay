@@ -3,7 +3,10 @@ import hmac
 import hashlib
 
 import frappe
+from frappe.utils.file_manager import save_file
 
+from ipay.ipay.main.utils.cheque import awaiting_cheque_amounts
+from ipay.ipay.main.utils.make_payment_entry import allocate_references
 from ipay.ipay.main.utils.reconcile_payments import reconcile_request
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
 from ipay.ipay.main.utils.constants import (
@@ -12,6 +15,8 @@ from ipay.ipay.main.utils.constants import (
     note_filters,
     note_text,
     ACTIVE_BUNDLE_WINDOW_MIN,
+    CHEQUE_MODE,
+    CHEQUE_NO_MAX_LENGTH,
     COLLECTION_NOTE_MAX_LENGTH,
     COLLECTION_NOTE_SUBJECT,
 )
@@ -33,6 +38,8 @@ ALL_OPERATOR_ROLES = OPERATOR_ROLES | {"iPay Collector", "Sales User", "Sales Ma
 # Bundling several invoices into one prompt: operators, sales users and sales managers
 # (who chase a customer's whole balance). Field collectors stay one invoice at a time.
 BUNDLER_ROLES = OPERATOR_ROLES | {"Sales User", "Sales Manager"}
+# Shown wherever a rail refuses an invoice a cheque has already been collected for.
+CHEQUE_HELD = "A cheque has already been collected for this — accounts will bank it."
 
 
 def _require_full_operator():
@@ -61,6 +68,16 @@ def _require_operator():
 def _redirect_enabled():
     """True when "Use Hosted Checkout Redirect" is on in iPay Settings."""
     return bool(frappe.db.get_single_value("iPay Settings", "enable_redirect"))
+
+
+def _cheque_enabled():
+    """True when "Allow Cheque Collection" is on in iPay Settings."""
+    return bool(frappe.db.get_single_value("iPay Settings", "allow_cheque_collection"))
+
+
+def _cheque_per_invoice_enabled():
+    """True when a cheque may attach to specific invoices; off means customer-level only."""
+    return bool(frappe.db.get_single_value("iPay Settings", "cheque_per_invoice"))
 
 
 def _require_redirect_enabled():
@@ -226,6 +243,10 @@ def _ensure_request(invoice):
     # _ensure_request for the same invoice blocks here until we commit, then sees
     # the request we created and reuses it instead of inserting a second one.
     frappe.db.get_value("Sales Invoice", invoice, "name", for_update=True)
+    # A cheque already collected leaves the invoice outstanding until accounts bank it, so it
+    # still looks chargeable — every rail creates its request here, so one refusal covers them.
+    if awaiting_cheque_amounts([invoice]):
+        frappe.throw(CHEQUE_HELD)
     # If this invoice is a member of an active bundle, collect through that bundle —
     # never spin up a duplicate request for a bundled invoice (it would double-charge
     # it). A non-primary member's lookup below would otherwise miss the bundle.
@@ -311,6 +332,10 @@ def resolve_pay_token(token):
         return None, "invalid"
     if row.pay_token_expiry and frappe.utils.get_datetime(row.pay_token_expiry) < frappe.utils.now_datetime():
         return None, "expired"
+    # The token outlives the moment it was minted (days), so a cheque collected after it was
+    # shared must still stop it here — this is the one gate every token rail passes through.
+    if _request_awaits_cheque(row.name):
+        return None, "held"
     return row.name, "ok"
 
 
@@ -339,13 +364,23 @@ def _payment_state(request_name, include_detail=False):
     return state
 
 
+def _request_invoices(request_name, sales_invoice=None):
+    """The Sales Invoices a request covers: a bundle's child rows, else its single invoice."""
+    return frappe.get_all(
+        "iPay Request Invoice", filters={"parent": request_name}, pluck="sales_invoice"
+    ) or [sales_invoice or frappe.db.get_value("iPay Request", request_name, "sales_invoice")]
+
+
+def _request_awaits_cheque(request_name, sales_invoice=None):
+    """True when a draft cheque already covers any invoice this request would charge."""
+    return bool(awaiting_cheque_amounts(_request_invoices(request_name, sales_invoice)))
+
+
 def _live_request_amount(request_name, sales_invoice):
     """Sum the live outstanding of a request's invoices (a bundle's child rows, or
     the single sales invoice) so an STK charges what is actually owed now — not a
     stored amount that goes stale when a member invoice is paid separately."""
-    invoices = frappe.get_all(
-        "iPay Request Invoice", filters={"parent": request_name}, pluck="sales_invoice"
-    ) or [sales_invoice]
+    invoices = _request_invoices(request_name, sales_invoice)
     total = 0.0
     for invoice in invoices:
         if invoice:
@@ -377,6 +412,10 @@ def _enqueue_stk(request_name, phone):
         return {"status": "error", "message": "This request is no longer chargeable."}
     if req.status in ("Success", "Underpaid", "Overpaid"):
         return {"status": "error", "message": "This request has already been paid."}
+    # A request raised before the cheque was collected is still chargeable on its own — the
+    # invoice's outstanding does not move until accounts bank it.
+    if _request_awaits_cheque(request_name, req.sales_invoice):
+        return {"status": "error", "message": CHEQUE_HELD}
 
     phone = normalize_phone(phone or req.customer_phone)
     if not phone:
@@ -460,6 +499,8 @@ def start_request_checkout(request):
     _require_operator()
     _require_redirect_enabled()
     _require_request_access(request)
+    if _request_awaits_cheque(request):
+        frappe.throw(CHEQUE_HELD)
     token = _ensure_pay_token(request)
     return {"url": f"/ipay_checkout?token={token}"}
 
@@ -476,6 +517,10 @@ def get_payment_link(invoice=None, request=None):
     request_name = request or (_ensure_request(invoice) if invoice else None)
     if not request_name:
         frappe.throw("An invoice or iPay Request is required.")
+    # The invoice path is already refused inside _ensure_request; this covers the request path,
+    # so an operator is never handed a link the checkout page would then refuse.
+    if _request_awaits_cheque(request_name):
+        frappe.throw(CHEQUE_HELD)
     token = _ensure_pay_token(request_name)
     return {
         "url": frappe.utils.get_url("/pay?token=" + token),
@@ -497,6 +542,8 @@ def regenerate_payment_link(request):
     status = frappe.db.get_value("iPay Request", request, "status")
     if status in ("Success", "Overpaid"):
         frappe.throw("This request is already paid; a new payment link is not needed.")
+    if _request_awaits_cheque(request):
+        frappe.throw(CHEQUE_HELD)
     token = _new_pay_token(request)
     frappe.db.commit()
     return {
@@ -518,18 +565,31 @@ def create_bundle(customer, invoices):
     if not invoices:
         frappe.throw("Select at least one invoice.")
 
+    # A cheque already in hand does not reduce outstanding until accounts bank it, so these
+    # invoices still look collectable here — bundling one would charge the money twice.
+    awaiting_cheque = awaiting_cheque_amounts(invoices)
+
     rows = []
     total = 0.0
     companies = set()
+    seen = set()
     for name in invoices:
         # A scoped caller (sales member) may only bundle their own work — without this the
         # customer check below would still pass for another member's invoices.
         _require_invoice_access(name)
+        # Take the name back from the DB: invoice names match case-insensitively, so a caller's
+        # spelling would slip past the checks below that compare names in Python.
         si = frappe.db.get_value(
-            "Sales Invoice", name, ["customer", "company", "outstanding_amount", "posting_date"], as_dict=True
+            "Sales Invoice", name, ["name", "customer", "company", "outstanding_amount", "posting_date"], as_dict=True
         )
         if not si:
             continue
+        name = si.name
+        # The same invoice sent twice (or in a different case) must not be bundled — and charged —
+        # twice; dedup on the canonical name the DB returned.
+        if name in seen:
+            continue
+        seen.add(name)
         if si.customer != customer:
             frappe.throw(f"Invoice {name} does not belong to {customer}.")
         if frappe.utils.flt(si.outstanding_amount) <= 0:
@@ -537,12 +597,17 @@ def create_bundle(customer, invoices):
         # Prepaid invoices settle automatically — never bundle them for collection.
         if is_sales_invoice_prepaid(name):
             continue
+        if frappe.utils.flt(awaiting_cheque.get(name)) > 0:
+            continue
         companies.add(si.company)
         rows.append((si.posting_date, name))
         total += frappe.utils.flt(si.outstanding_amount)
 
     if not rows:
-        frappe.throw("None of the selected invoices need collection (paid, prepaid, or zero balance).")
+        frappe.throw(
+            "None of the selected invoices need collection (paid, prepaid, awaiting a cheque, "
+            "or zero balance)."
+        )
     if len(companies) > 1:
         frappe.throw("All invoices in a bundle must belong to the same company.")
 
@@ -751,6 +816,9 @@ def request_detail(request):
         # A single (non-bundle) request has no child rows; its one invoice carries the
         # whole request amount.
         invoices = [{"name": req.sales_invoice, "amount": frappe.utils.flt(req.amount)}]
+    # A cheque already collected against any of these invoices makes the request unchargeable,
+    # so the page hides its charge actions the same way an invoice card does.
+    awaiting_cheque = frappe.utils.flt(sum(awaiting_cheque_amounts([i["name"] for i in invoices]).values()))
     cancelled = req.docstatus == 2
     status = "Cancelled" if cancelled else (req.status or "Pending")
     is_bundle = len(invoices) > 1
@@ -771,6 +839,12 @@ def request_detail(request):
         "paid": req.status == "Success",
         # Drives whether the detail page shows the payment-link actions.
         "enable_redirect": _redirect_enabled(),
+        # Whether the cheque action is offered here, read fresh like enable_redirect.
+        "allow_cheque": _cheque_enabled(),
+        # Off means the cheque here records on account, not against this request's invoices.
+        "cheque_per_invoice": _cheque_per_invoice_enabled(),
+        # Non-zero once a cheque covers these invoices — the page then hides its charge actions.
+        "awaiting_cheque": awaiting_cheque,
         # Above this the M-Pesa prompt is hidden (only hosted checkout can take it).
         "mpesa_max": _mpesa_max_amount(),
     }
@@ -870,6 +944,157 @@ def add_invoice_note(invoice, note):
             "content": note_content(text),
         }
     ).insert(ignore_permissions=True)
+
+
+def _require_customer_access(customer):
+    """A scoped actor may only act on a customer they hold an outstanding invoice for — an
+    on-account cheque names no invoice, so nothing else would scope it.
+
+    A pickup accounts flagged is itself the instruction to collect from that customer, and a
+    flagged customer may have no outstanding invoice to be scoped by. Granted here at the action
+    rather than in can_access_customer, which also gates what a scoped actor may *see*."""
+    from ipay.ipay.main.utils.cheque_due import has_open_pickup
+    from ipay.ipay.main.utils.collector import can_access_customer
+
+    if can_access_customer(customer) or has_open_pickup(customer):
+        return
+    frappe.throw("You are not assigned to this customer.", frappe.PermissionError)
+
+
+def _cheque_account(company):
+    """Where collected cheques are booked — set once in iPay Settings, and never cash."""
+    account = frappe.db.get_single_value("iPay Settings", "cheque_account")
+    if not account:
+        frappe.throw("No cheque account is configured. Set iPay Settings → Cheque Account.")
+    if frappe.db.get_value("Account", account, "company") != company:
+        frappe.throw(f"The cheque account in iPay Settings does not belong to {company}.")
+    return account
+
+
+def _cheque_company(customer):
+    """On-account cheques name no invoice, so take the company from the customer's own book."""
+    company = frappe.db.get_value(
+        "Sales Invoice", {"customer": customer, "docstatus": 1}, "company", order_by="posting_date desc"
+    )
+    if not company:
+        frappe.throw("This customer has no invoices to book a cheque against.")
+    return company
+
+
+@frappe.whitelist(methods=["POST"])
+def record_cheque(customer, amount, cheque_no, photo, invoices=None, cheque_date=None):
+    """Record a collected cheque as a DRAFT Payment Entry — the accounts team submits it, never us.
+
+    Ticked invoices allocate against them; none means an on-account credit."""
+    _require_operator()
+    if not _cheque_enabled():
+        frappe.throw("Cheque collection is turned off (enable it in iPay Settings).")
+
+    invoice_names = frappe.parse_json(invoices) if isinstance(invoices, str) else list(invoices or [])
+    # When per-invoice cheques are off, every cheque is customer-level — drop any invoices a client
+    # sent so it can never attach to one, whatever the UI offered.
+    if not _cheque_per_invoice_enabled():
+        invoice_names = []
+    for invoice in invoice_names:
+        _require_invoice_access(invoice)
+    if not invoice_names:
+        _require_customer_access(customer)
+
+    amount = frappe.utils.flt(amount)
+    if amount <= 0:
+        frappe.throw("Enter the cheque amount.")
+    number = (cheque_no or "").strip()
+    if not number:
+        frappe.throw("Enter the cheque number.")
+    if len(number) > CHEQUE_NO_MAX_LENGTH:
+        frappe.throw(f"Keep the cheque number under {CHEQUE_NO_MAX_LENGTH} characters.")
+    if not photo:
+        frappe.throw("Attach a photo of the cheque.")
+
+    if invoice_names:
+        invoices_data, references, remaining = allocate_references(invoice_names, amount)
+        if any(si.customer != customer for si in invoices_data):
+            frappe.throw("Those invoices do not all belong to this customer.")
+        company = invoices_data[0].company
+    else:
+        references, remaining = [], amount
+        company = _cheque_company(customer)
+
+    payment_entry = frappe.new_doc("Payment Entry")
+    payment_entry.payment_type = "Receive"
+    payment_entry.company = company
+    payment_entry.posting_date = frappe.utils.today()
+    payment_entry.mode_of_payment = CHEQUE_MODE
+    payment_entry.party_type = "Customer"
+    payment_entry.party = customer
+    payment_entry.paid_to = _cheque_account(company)
+    payment_entry.paid_amount = amount
+    payment_entry.received_amount = amount
+    payment_entry.source_exchange_rate = 1.0
+    payment_entry.target_exchange_rate = 1.0
+    payment_entry.unallocated_amount = remaining
+    # Namespaced by customer: two customers may share a cheque number, one customer may not reuse it.
+    payment_entry.reference_no = f"{number}-{customer}"
+    payment_entry.reference_date = cheque_date or frappe.utils.today()
+    payment_entry.custom_remarks = 1
+    allocated_to = ", ".join(r["reference_name"] for r in references) or "account"
+    payment_entry.remarks = (
+        f"Cheque {number} for KES {amount} collected from {customer} against {allocated_to}\n"
+        f"Recorded from iPay Collect by {frappe.session.user}"
+    )
+    for ref in references:
+        payment_entry.append("references", ref)
+
+    # ERPNext's own validation calls frappe.has_permission("Payment Entry"), which ignore_permissions
+    # cannot bypass and iPay roles never hold — the guards above are the authorisation instead.
+    collector = frappe.session.user
+    cheque_file = None
+    frappe.set_user("Administrator")
+    try:
+        payment_entry.insert(ignore_permissions=True)
+        # insert() always stamps the session user, so the collector is restored as owner after it.
+        payment_entry.db_set("owner", collector, update_modified=False)
+        # Attached after the insert, or a rejected Payment Entry strands the written file.
+        cheque_file = save_file(
+            f"cheque-{number}.jpg", photo, "Payment Entry", payment_entry.name,
+            decode=True, is_private=1,
+        )
+    except frappe.UniqueValidationError:
+        frappe.throw(f"Cheque {number} is already recorded for this customer.")
+    except OSError:
+        # A corrupt photo arrives as an unreadable image, not a validation error.
+        frappe.throw("That photo could not be read. Take it again.")
+    finally:
+        frappe.set_user(collector)
+
+    # Track the collected cheque so accounts can follow the physical copy from the field to the
+    # banking desk — completing a scheduled pickup or opening a fresh one, then handing it over.
+    # The money is already saved: a tracking failure must never undo it, so swallow and log.
+    frappe.set_user("Administrator")
+    try:
+        from ipay.ipay.main.utils.cheque_due import advance_or_create_on_collect
+
+        advance_or_create_on_collect(
+            customer, payment_entry.name, number, amount,
+            cheque_file.file_url if cheque_file else None, collector,
+        )
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "iPay cheque pickup tracking failed")
+    finally:
+        frappe.set_user(collector)
+
+    # Per-invoice cover, so the caller can flag each card with the real amount instead of
+    # refetching — the same shape awaiting_cheque_amounts returns on the next load.
+    covered = {}
+    for ref in references:
+        covered[ref["reference_name"]] = covered.get(ref["reference_name"], 0) + ref["allocated_amount"]
+
+    return {
+        "payment_entry": payment_entry.name,
+        "amount": amount,
+        "allocated": frappe.utils.flt(amount - remaining),
+        "covered": covered,
+    }
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])

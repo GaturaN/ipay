@@ -37,7 +37,13 @@ def lipana_mpesa(
     # cancelled request; this closes the operator/worker path too.
     state = frappe.db.get_value(
         "iPay Request", docid, ["docstatus", "status"], as_dict=True
-    ) or {}
+    )
+    # No request at all: it was deleted or split, or the transaction that created it rolled back
+    # after the job was already enqueued. An empty state used to pass the checks below and push
+    # an STK for a request that does not exist — never charge in that case.
+    if not state:
+        create_log_entry("INF", f"Skipping STK for {docid}: request no longer exists")
+        return {"status": "skipped", "message": "This request is no longer chargeable."}
     if state.get("docstatus") == 2 or state.get("status") in ("Success", "Underpaid", "Overpaid"):
         create_log_entry(
             "INF",
@@ -45,6 +51,15 @@ def lipana_mpesa(
             f"(docstatus={state.get('docstatus')}, status={state.get('status')})",
         )
         return {"status": "skipped", "message": "This request is no longer chargeable."}
+
+    # The desk "Prompt iPay" button reaches here directly, and a worker picks this up moments
+    # after enqueue — so this last line also stops a cheque collected in that gap. Every other
+    # rail is refused earlier; this is the one that bypasses them all.
+    from ipay.ipay.main.utils.ipay_redirect import _request_awaits_cheque, CHEQUE_HELD
+
+    if _request_awaits_cheque(docid):
+        create_log_entry("INF", f"Skipping STK for {docid}: a cheque has been collected")
+        return {"status": "skipped", "message": CHEQUE_HELD}
 
     # Enforce the M-Pesa STK ceiling on EVERY path — the desk button calls this directly,
     # bypassing _enqueue_stk's check. Over the cap M-Pesa can't process the charge.

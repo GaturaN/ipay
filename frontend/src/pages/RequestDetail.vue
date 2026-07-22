@@ -11,6 +11,7 @@ import {
 } from '@/data/collection'
 import { formatKES } from '@/utils/format'
 import PromptDialog from '@/components/PromptDialog.vue'
+import ChequeDialog from '@/components/ChequeDialog.vue'
 import ErrorRetry from '@/components/ErrorRetry.vue'
 
 // The transient home for a request or bundle: live status, the invoices it
@@ -30,10 +31,21 @@ const checkoutBusy = ref(false)
 const copied = ref(false)
 const linkExpiry = ref(null)
 const prompting = ref(null)
+const chequing = ref(null)
+const chequeRecorded = ref(false) // a cheque was just taken here — even on-account, don't also charge it
 let pollTimer = null
 
 const SETTLED = ['Success', 'Underpaid', 'Overpaid', 'Cancelled']
-const promptable = computed(() => detail.value && !SETTLED.includes(detail.value.status))
+// A cheque already collected here makes the request unchargeable (the server refuses every rail for
+// a per-invoice cheque), so it drops out of promptable like a settled one. A cheque just taken on
+// this page also drops out, so an on-account one can't be double-charged from the same screen.
+const promptable = computed(
+  () =>
+    detail.value &&
+    !SETTLED.includes(detail.value.status) &&
+    !detail.value.awaiting_cheque &&
+    !chequeRecorded.value,
+)
 
 // M-Pesa can't process a charge over the ceiling — hide the prompt, steer to the link/iPay.
 const mpesaBlocked = computed(
@@ -110,6 +122,30 @@ function onPaid() {
   }
   stopPolling()
   prompting.value = null // dismiss the success screen
+}
+
+function chequeNow() {
+  // Per-invoice off -> record at the customer level, not against this request's invoices.
+  const invoices =
+    detail.value.cheque_per_invoice !== false
+      ? detail.value.invoices.map((inv) => ({ name: inv.name, amount: Number(inv.amount || 0) }))
+      : []
+  chequing.value = {
+    customer: detail.value.customer,
+    customer_name: detail.value.customer_name,
+    invoices,
+    outstanding: Number(detail.value.amount || 0),
+  }
+}
+
+// A cheque was taken here — mark it so the charge actions give way to the notice, without a
+// reload. A per-invoice cheque also carries its covered amount; an on-account one covers nothing
+// specific, but it must still stop an immediate M-Pesa charge for the same request.
+function onChequeRecorded({ covered }) {
+  const total = Object.values(covered || {}).reduce((sum, v) => sum + Number(v || 0), 0)
+  if (detail.value) detail.value.awaiting_cheque = total
+  chequeRecorded.value = true
+  stopPolling()
 }
 
 async function payViaIpay() {
@@ -330,9 +366,34 @@ onMounted(load)
             </button>
           </div>
         </div>
+
+        <!-- Deliberately quiet: cheques are the exception, M-Pesa stays the obvious action. -->
+        <button
+          v-if="detail.allow_cheque"
+          type="button"
+          class="h-11 rounded-xl border border-hairline bg-white text-sm font-medium text-ink/70 transition active:bg-paper"
+          @click="chequeNow"
+        >
+          Collect a cheque
+        </button>
       </template>
 
+      <p
+        v-else-if="detail.awaiting_cheque"
+        class="rounded-xl bg-owed/10 px-3 py-2.5 text-sm font-medium text-owed"
+      >
+        Cheque for {{ formatKES(detail.awaiting_cheque) }} collected — with accounts to bank. This
+        request can't be charged until it clears.
+      </p>
+      <p
+        v-else-if="chequeRecorded"
+        class="rounded-xl bg-owed/10 px-3 py-2.5 text-sm font-medium text-owed"
+      >
+        Cheque recorded against the customer — with accounts to bank. Don't also charge this request.
+      </p>
+
       <PromptDialog :target="prompting" @close="prompting = null" @paid="onPaid" />
+      <ChequeDialog :target="chequing" @close="chequing = null" @recorded="onChequeRecorded" />
     </template>
   </main>
 </template>

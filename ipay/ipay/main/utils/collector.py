@@ -61,12 +61,23 @@ def _invoices_delivered_by(drivers):
 
 
 def collector_scope(user=None):
-    """The set of Sales Invoices and iPay Requests a collector may see.
+    """The set of Sales Invoices and iPay Requests a collector may see, cached for the life of
+    the request — access is checked once per invoice in a bundle, and the scope is several
+    unbounded reads (mirrors sales._cached_scope).
 
     invoices = driver-delivered ∪ assigned-request invoices (single + bundle).
     requests = explicitly-assigned ∪ requests covering a driver-delivered invoice.
     """
     user = user or frappe.session.user
+    cache = getattr(frappe.local, "ipay_collector_scope", None)
+    if cache is None:
+        cache = frappe.local.ipay_collector_scope = {}
+    if user not in cache:
+        cache[user] = _compute_collector_scope(user)
+    return cache[user]
+
+
+def _compute_collector_scope(user):
     invoices = _invoices_delivered_by(my_driver_ids(user))
     requests = set(my_assigned_requests(user))
 
@@ -105,6 +116,56 @@ def can_access_invoice(sales_invoice, user=None):
         if sales.can_access_invoice(sales_invoice, user):
             return True
     return not scoped
+
+
+def can_access_customer(customer, user=None):
+    """May this user act on a customer-level (on-account) cheque? Always True for a full operator;
+    a scoped actor must hold at least one of the customer's outstanding invoices. Checked against
+    the actor's own (bounded) book in one query — never by scanning the customer's every invoice,
+    which for a large customer was minutes of work per request."""
+    from ipay.ipay.main.utils import sales
+
+    user = user or frappe.session.user
+    scoped = False
+    if is_collector_only(user):
+        scoped = True
+        if _customer_has_scoped_invoice(customer, collector_scope(user)["invoices"]):
+            return True
+    if sales.is_sales_only(user):
+        scoped = True
+        if sales.can_access_customer(customer, user):
+            return True
+    if scoped:
+        return False
+    # Unscoped (full operator / Sales Manager): the old loop granted only when the customer had
+    # an outstanding invoice to grant on, so keep that — an on-account cheque still needs one.
+    return _customer_has_outstanding(customer)
+
+
+def _customer_has_outstanding(customer):
+    """True when the customer has any outstanding invoice at all."""
+    return bool(
+        frappe.db.exists(
+            "Sales Invoice",
+            {"customer": customer, "docstatus": 1, "outstanding_amount": [">", 0]},
+        )
+    )
+
+
+def _customer_has_scoped_invoice(customer, scope_invoices):
+    """True when one of `scope_invoices` is an outstanding invoice of `customer` — the same
+    accept test the per-invoice check applied, intersected in the database in one query."""
+    return bool(scope_invoices) and bool(
+        frappe.db.exists(
+            "Sales Invoice",
+            {
+                "name": ["in", list(scope_invoices)],
+                "customer": customer,
+                "docstatus": 1,
+                "outstanding_amount": [">", 0],
+            },
+        )
+    )
 
 
 def can_access_request(request_name, user=None):

@@ -13,6 +13,7 @@ const route = useRoute()
 // their manager sees every member's book and filters to one. The server resolves a locked
 // caller from their login, so nothing here can widen a user's scope.
 const customers = ref([])
+const chequeDues = ref([])
 const listLoading = ref(true)
 const loadError = ref(false)
 const unmapped = ref(false) // login has no Sales Person — the page explains rather than looking empty
@@ -48,6 +49,7 @@ async function loadCustomers() {
   try {
     const data = await fetchSalesCustomers(paymentTerm.value, salesPerson.value)
     customers.value = data.customers || []
+    chequeDues.value = data.cheque_dues || []
     paymentTerms.value = data.payment_terms || []
     salesPersons.value = data.sales_persons || []
     person.value = data.sales_person || ''
@@ -73,6 +75,7 @@ onMounted(loadCustomers)
     :list-loading="listLoading"
     :load-error="loadError"
     :customers="filtered"
+    :cheque-dues="chequeDues"
     :empty-message="emptyMessage"
     card-route-name="SalesCustomer"
     :card-payment-term="paymentTerm"
