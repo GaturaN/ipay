@@ -101,6 +101,25 @@ def _cached_scope(sales_person):
     return cache[sales_person]
 
 
+def customers_in_book(sales_person):
+    """Every customer in a member's book: those they are named on, plus the customers of the
+    invoices they are named on — the same either/or reading as scope_to_sales_person.
+
+    Unlike can_access_customer this asks for no outstanding invoice: a flagged cheque may be the
+    only thing left on a customer, and that is exactly the one their banner must still show."""
+    named, customers = _cached_scope(sales_person)
+    if not named:
+        return set(customers)
+    # Submitted only: a Sales Team row survives on a draft or cancelled invoice, and counting
+    # those would put customers in the book that the customer list can never show.
+    return set(customers) | set(frappe.get_all(
+        "Sales Invoice",
+        filters={"name": ["in", list(named)], "docstatus": 1},
+        pluck="customer",
+        distinct=True,
+    ))
+
+
 def _in_book(sales_invoice, named, customers):
     """True when the invoice is in a book described by (named invoices, named customers)."""
     if not sales_invoice:

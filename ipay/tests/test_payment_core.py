@@ -10,6 +10,7 @@ from ipay.ipay.main.utils.constants import amounts_match, clean_oid
 from ipay.ipay.main.utils.finalize_payment import _resolve_status
 from ipay.ipay.main.utils import ipay_redirect
 from ipay.ipay.main.utils.ipay_redirect import normalize_phone
+from ipay.www import collect_payments as cp
 from ipay.ipay.main.utils.make_payment_entry import allocate_references
 
 
@@ -339,30 +340,80 @@ class TestOldestOpenDue(FrappeTestCase):
 
 
 class TestOpenDuesDriverFilter(FrappeTestCase):
-    """The banner follows the page's driver filter. Narrowing must never widen: a collector who
-    passes a driver that is not theirs sees nothing, not everyone's."""
+    """The banner follows the page's driver filter. That filter carries the driver NAME shown on a
+    delivery note while a pickup is routed to the Driver record, so the name must be resolved —
+    comparing the two directly silently emptied the banner. Narrowing must never widen."""
 
-    def test_operator_banner_narrows_to_the_chosen_driver(self):
-        with patch.object(cheque_due, "_due_rows", return_value=[]) as rows:
-            cheque_due.all_open_dues("DRV-1")
-        self.assertEqual(rows.call_args.args[0], {"driver": "DRV-1"})
+    def test_operator_banner_resolves_the_driver_name_to_its_records(self):
+        with patch.object(cheque_due, "_driver_ids_named", return_value=["HR-DRI-1"]), \
+             patch.object(cheque_due, "_due_rows", return_value=[]) as rows:
+            cheque_due.all_open_dues("Pickup")
+        self.assertEqual(rows.call_args.args[0], {"driver": ["in", ["HR-DRI-1"]]})
+
+    def test_an_unknown_driver_name_shows_nothing_rather_than_everything(self):
+        with patch.object(cheque_due, "_driver_ids_named", return_value=[]), \
+             patch.object(cheque_due, "_due_rows", return_value=[]) as rows:
+            self.assertEqual(cheque_due.all_open_dues("No Such Driver"), [])
+        rows.assert_not_called()
 
     def test_operator_banner_is_unfiltered_without_one(self):
         with patch.object(cheque_due, "_due_rows", return_value=[]) as rows:
             cheque_due.all_open_dues()
         self.assertEqual(rows.call_args.args[0], {})
 
-    def test_collector_narrowing_to_their_own_driver(self):
-        with patch.object(cheque_due, "my_driver_ids", return_value=["DRV-A", "DRV-B"]), \
+    def test_collector_narrowing_intersects_the_name_with_their_own(self):
+        with patch.object(cheque_due, "my_driver_ids", return_value=["HR-DRI-A", "HR-DRI-B"]), \
+             patch.object(cheque_due, "_driver_ids_named", return_value=["HR-DRI-A"]), \
              patch.object(cheque_due, "_due_rows", return_value=[]) as rows:
-            cheque_due.open_dues_for_driver("u", "DRV-A")
-        self.assertEqual(rows.call_args.args[0], {"driver": ["in", ["DRV-A"]]})
+            cheque_due.open_dues_for_driver("u", "Anne")
+        self.assertEqual(rows.call_args.args[0], {"driver": ["in", ["HR-DRI-A"]]})
 
     def test_collector_cannot_widen_to_a_driver_that_is_not_theirs(self):
-        with patch.object(cheque_due, "my_driver_ids", return_value=["DRV-A"]), \
+        with patch.object(cheque_due, "my_driver_ids", return_value=["HR-DRI-A"]), \
+             patch.object(cheque_due, "_driver_ids_named", return_value=["HR-DRI-OTHER"]), \
              patch.object(cheque_due, "_due_rows", return_value=[]) as rows:
-            self.assertEqual(cheque_due.open_dues_for_driver("u", "DRV-OTHER"), [])
+            self.assertEqual(cheque_due.open_dues_for_driver("u", "Someone Else"), [])
         rows.assert_not_called()
+
+
+class TestSalesChequeDues(FrappeTestCase):
+    """The sales banner must match the customer list beneath it. Matching on book membership, not
+    can_access_customer: that asks for an outstanding invoice, which would drop the flagged
+    customer whose cheque is the last thing owed."""
+
+    def test_a_named_member_sees_only_their_own_book(self):
+        with patch.object(cp, "customers_in_book", return_value={"CUST-A"}) as book, \
+             patch.object(cp, "open_dues_for_customers", return_value=["due"]) as scoped, \
+             patch.object(cp, "all_open_dues", return_value=["everything"]) as everything:
+            self.assertEqual(cp._sales_cheque_dues(True, "Person"), ["due"])
+        book.assert_called_once_with("Person")
+        scoped.assert_called_once_with({"CUST-A"})
+        everything.assert_not_called()
+
+    def test_a_locked_member_with_no_sales_person_sees_nothing(self):
+        # Never every book: an unmapped login must not fall through to the whole company's cheques.
+        with patch.object(cp, "all_open_dues", return_value=["everything"]) as everything:
+            self.assertEqual(cp._sales_cheque_dues(True, None), [])
+        everything.assert_not_called()
+
+    def test_an_unrestricted_manager_picking_nobody_sees_every_book(self):
+        with patch.object(cp, "all_open_dues", return_value=["everything"]):
+            self.assertEqual(cp._sales_cheque_dues(False, None), ["everything"])
+
+
+class TestBannerDues(FrappeTestCase):
+    """The operator banner under the page's own driver and sales-member filters."""
+
+    def test_sales_member_filter_keeps_only_that_book(self):
+        dues = [frappe._dict(name="CHQ-1", customer="MINE"), frappe._dict(name="CHQ-2", customer="THEIRS")]
+        with patch.object(cp, "all_open_dues", return_value=dues), \
+             patch.object(cp, "customers_in_book", return_value={"MINE"}):
+            self.assertEqual([d.name for d in cp._banner_dues(None, "Person")], ["CHQ-1"])
+
+    def test_no_sales_filter_passes_the_driver_scope_through(self):
+        with patch.object(cp, "all_open_dues", return_value=["as-is"]) as everything:
+            self.assertEqual(cp._banner_dues("Pickup", None), ["as-is"])
+        everything.assert_called_once_with("Pickup")
 
 
 def _fake_response(status_code, json_value=None, json_error=False):
