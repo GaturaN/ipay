@@ -148,11 +148,14 @@ scheduler_events = {
 	"daily": [
 		"ipay.ipay.main.utils.log_cleanup.del_old_logs"
 	],
-	"cron": {
-		"*/5 * * * *": [
-			"ipay.ipay.main.utils.reconcile_payments.reconcile_pending_payments"
-		]
-	},
+	# PAUSED: the reconcile poller re-queries iPay for every undelivered request on every run
+	# (no per-request backoff), so its call volume grows with the backlog. Off until it is
+	# reworked — see reconcile_pending_payments, which also returns early while paused.
+	# "cron": {
+	# 	"*/5 * * * *": [
+	# 		"ipay.ipay.main.utils.reconcile_payments.reconcile_pending_payments"
+	# 	]
+	# },
 # 	"hourly": [
 # 		"ipay.tasks.hourly"
 # 	],
