@@ -7,6 +7,11 @@ from ipay.ipay.main.utils.ipay_logs import create_log_entry
 from ipay.ipay.main.utils.constants import clean_oid, search_hash
 from ipay.ipay.main.utils.alerts import notify_money_at_risk
 
+# Master switch for the scheduled backstop. Set False to resume once it polls selectively
+# (only genuinely-unknown requests) and backs off per request instead of re-querying the
+# whole backlog every run.
+RECONCILE_PAUSED = True
+
 # Only reconcile requests created within this window; older unconfirmed requests
 # are assumed abandoned (marked terminal below) so we don't poll them forever.
 RECONCILE_WINDOW_HOURS = 24
@@ -40,6 +45,13 @@ def reconcile_pending_payments():
     Entry is deduped on the transaction code and the callback on the
     callback_delivered flag.
     """
+    # PAUSED pending a rework: one iPay lookup per undelivered request per run, with no
+    # per-request backoff, so the call volume grows with the backlog. Guarded here as well as
+    # in hooks so an already-registered Scheduled Job Type stops the moment this code deploys,
+    # without waiting for the migrate that removes it.
+    if RECONCILE_PAUSED:
+        return
+
     settings = frappe.get_single("iPay Settings")
     vid = (settings.vendor_id or "").lower()
     secret_key = settings.api_key
