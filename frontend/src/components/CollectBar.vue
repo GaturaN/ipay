@@ -24,6 +24,7 @@ defineEmits(['collect', 'clear', 'cheque'])
   <div v-if="showBar" class="flex gap-2">
     <button
       type="button"
+      data-tour="collect-bar"
       class="h-14 flex-1 rounded-xl bg-mpesa text-lg font-semibold text-white transition active:scale-[.98] disabled:opacity-50"
       :disabled="creatingBundle || bundleBlocked"
       :aria-busy="creatingBundle"

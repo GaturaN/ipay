@@ -1,4 +1,4 @@
-import { nextTick } from 'vue'
+import { nextTick, watch } from 'vue'
 import { driver } from 'driver.js'
 import 'driver.js/dist/driver.css'
 import { useSession } from '@/stores/session'
@@ -43,4 +43,21 @@ export function useTour() {
   }
 
   return { start, hasSeen }
+}
+
+// Run a page's first-run tour once its content is ready (e.g. the list finished loading), so
+// the anchors exist. Fires only on the first ready transition — not on later re-fetches (a
+// foreground resume, a filter change). `isReady` is a getter, e.g. () => !loading.value.
+export function useFirstRunTour(isReady, key, steps) {
+  const { start } = useTour()
+  let tried = false
+  watch(
+    isReady,
+    (ready) => {
+      if (!ready || tried || !key || !steps.length) return
+      tried = true
+      start(key, steps)
+    },
+    { immediate: true },
+  )
 }

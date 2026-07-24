@@ -1,10 +1,9 @@
 <script setup>
-import { watch } from 'vue'
 import RoundHeader from '@/components/RoundHeader.vue'
 import CustomerCard from '@/components/CustomerCard.vue'
 import ChequeDueBanner from '@/components/ChequeDueBanner.vue'
 import ErrorRetry from '@/components/ErrorRetry.vue'
-import { useTour } from '@/composables/useTour'
+import { useFirstRunTour } from '@/composables/useTour'
 
 // The shared customer-list screen (field /collect and internal /collect/internal): title,
 // today's-round header, a filters row (slotted, since each mode's filters differ), and the
@@ -34,18 +33,8 @@ const props = defineProps({
 defineEmits(['retry'])
 
 // Kick the first-run tour once the list has loaded, so its anchors (stats, filters, a
-// customer card) are on the page. Fires only on the first load, not on every re-fetch.
-const { start } = useTour()
-let tourTried = false
-watch(
-  () => props.listLoading,
-  (loading) => {
-    if (loading || tourTried || !props.tourKey || !props.tourSteps.length) return
-    tourTried = true
-    start(props.tourKey, props.tourSteps)
-  },
-  { immediate: true },
-)
+// customer card) are on the page.
+useFirstRunTour(() => !props.listLoading, props.tourKey, props.tourSteps)
 </script>
 
 <template>
