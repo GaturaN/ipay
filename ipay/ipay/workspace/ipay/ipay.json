@@ -1,6 +1,19 @@
 {
- "charts": [],
- "content": "[{\"id\":\"WTrGmNbfgC\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">iPay</span>\",\"col\":12}},{\"id\":\"qEtlvsBVH1\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"iPay Settings\",\"col\":4}},{\"id\":\"s8igVNSQXA\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Logs\",\"col\":4}},{\"id\":\"LNxzIELU3D\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"iPay Requests\",\"col\":4}},{\"id\":\"sh4TjBCNlC\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Sales Invoice\",\"col\":4}}]",
+ "charts": [
+  {
+   "chart_name": "iPay M-Pesa Collections",
+   "label": "iPay M-Pesa Collections"
+  },
+  {
+   "chart_name": "iPay Requests by Status",
+   "label": "iPay Requests by Status"
+  },
+  {
+   "chart_name": "iPay Cheques by Status",
+   "label": "iPay Cheques by Status"
+  }
+ ],
+ "content": "[{\"id\": \"ipayblk001\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\">iPay</span>\", \"col\": 12}}, {\"id\": \"ipayblk002\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Collections</b></span>\", \"col\": 12}}, {\"id\": \"ipayblk003\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"iPay M-Pesa Collected Today\", \"col\": 3}}, {\"id\": \"ipayblk004\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"iPay M-Pesa Collected This Month\", \"col\": 3}}, {\"id\": \"ipayblk005\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"iPay M-Pesa Payments Today\", \"col\": 3}}, {\"id\": \"ipayblk006\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"iPay Outstanding to Collect\", \"col\": 3}}, {\"id\": \"ipayblk007\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Needs attention</b></span>\", \"col\": 12}}, {\"id\": \"ipayblk008\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"iPay Underpaid Payments\", \"col\": 3}}, {\"id\": \"ipayblk009\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"iPay Overpaid Payments\", \"col\": 3}}, {\"id\": \"ipayblk010\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"iPay Undelivered Callbacks\", \"col\": 3}}, {\"id\": \"ipayblk011\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"iPay Errors Today\", \"col\": 3}}, {\"id\": \"ipayblk012\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Cheques</b></span>\", \"col\": 12}}, {\"id\": \"ipayblk013\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"iPay Cheques Due\", \"col\": 3}}, {\"id\": \"ipayblk014\", \"type\": \"number_card\", \"data\": {\"number_card_name\": \"iPay Cheques Awaiting Receipt\", \"col\": 3}}, {\"id\": \"ipayblk015\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Trends</b></span>\", \"col\": 12}}, {\"id\": \"ipayblk016\", \"type\": \"chart\", \"data\": {\"chart_name\": \"iPay M-Pesa Collections\", \"col\": 12}}, {\"id\": \"ipayblk017\", \"type\": \"chart\", \"data\": {\"chart_name\": \"iPay Requests by Status\", \"col\": 6}}, {\"id\": \"ipayblk018\", \"type\": \"chart\", \"data\": {\"chart_name\": \"iPay Cheques by Status\", \"col\": 6}}, {\"id\": \"ipayblk019\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Watchlist</b></span>\", \"col\": 12}}, {\"id\": \"ipayblk020\", \"type\": \"quick_list\", \"data\": {\"quick_list_name\": \"Cheques Due\", \"col\": 6}}, {\"id\": \"ipayblk021\", \"type\": \"quick_list\", \"data\": {\"quick_list_name\": \"Errors\", \"col\": 6}}, {\"id\": \"ipayblk022\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Shortcuts</b></span>\", \"col\": 12}}, {\"id\": \"ipayblk023\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"iPay Requests\", \"col\": 4}}, {\"id\": \"ipayblk024\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Cheques to Collect\", \"col\": 4}}, {\"id\": \"ipayblk025\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Payments Needing Attention\", \"col\": 4}}, {\"id\": \"ipayblk026\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Logs\", \"col\": 4}}, {\"id\": \"ipayblk027\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Sales Invoice\", \"col\": 4}}, {\"id\": \"ipayblk028\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"iPay Settings\", \"col\": 4}}, {\"id\": \"ipayblk029\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Documents</b></span>\", \"col\": 12}}, {\"id\": \"ipayblk030\", \"type\": \"card\", \"data\": {\"card_name\": \"iPay\", \"col\": 4}}, {\"id\": \"ipayblk031\", \"type\": \"card\", \"data\": {\"card_name\": \"Payments & Customers\", \"col\": 4}}, {\"id\": \"ipayblk032\", \"type\": \"card\", \"data\": {\"card_name\": \"Reports\", \"col\": 4}}]",
  "creation": "2025-03-13 08:48:44.284218",
  "custom_blocks": [],
  "docstatus": 0,
@@ -12,40 +25,238 @@
  "indicator_color": "green",
  "is_hidden": 0,
  "label": "iPay",
- "links": [],
- "modified": "2025-03-13 09:05:00.139251",
+ "links": [
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "iPay",
+   "link_count": 5,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "iPay Request",
+   "link_count": 0,
+   "link_to": "iPay Request",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "iPay Cheque Collection",
+   "link_count": 0,
+   "link_to": "iPay Cheque Collection",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "iPay Collection Payment Term",
+   "link_count": 0,
+   "link_to": "iPay Collection Payment Term",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "iPay Logs",
+   "link_count": 0,
+   "link_to": "iPay Logs",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "iPay Settings",
+   "link_count": 0,
+   "link_to": "iPay Settings",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Payments & Customers",
+   "link_count": 4,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Payment Entry",
+   "link_count": 0,
+   "link_to": "Payment Entry",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Sales Invoice",
+   "link_count": 0,
+   "link_to": "Sales Invoice",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Customer",
+   "link_count": 0,
+   "link_to": "Customer",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Driver",
+   "link_count": 0,
+   "link_to": "Driver",
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Link"
+  },
+  {
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Reports",
+   "link_count": 1,
+   "link_type": "DocType",
+   "onboard": 0,
+   "type": "Card Break"
+  },
+  {
+   "dependencies": "iPay Request",
+   "hidden": 0,
+   "is_query_report": 1,
+   "label": "iPay Payments Needing Attention",
+   "link_count": 0,
+   "link_to": "iPay Payments Needing Attention",
+   "link_type": "Report",
+   "onboard": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-07-24 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Ipay",
  "name": "iPay",
- "number_cards": [],
+ "number_cards": [
+  {
+   "label": "iPay M-Pesa Collected Today",
+   "number_card_name": "iPay M-Pesa Collected Today"
+  },
+  {
+   "label": "iPay M-Pesa Collected This Month",
+   "number_card_name": "iPay M-Pesa Collected This Month"
+  },
+  {
+   "label": "iPay M-Pesa Payments Today",
+   "number_card_name": "iPay M-Pesa Payments Today"
+  },
+  {
+   "label": "iPay Outstanding to Collect",
+   "number_card_name": "iPay Outstanding to Collect"
+  },
+  {
+   "label": "iPay Underpaid Payments",
+   "number_card_name": "iPay Underpaid Payments"
+  },
+  {
+   "label": "iPay Overpaid Payments",
+   "number_card_name": "iPay Overpaid Payments"
+  },
+  {
+   "label": "iPay Undelivered Callbacks",
+   "number_card_name": "iPay Undelivered Callbacks"
+  },
+  {
+   "label": "iPay Errors Today",
+   "number_card_name": "iPay Errors Today"
+  },
+  {
+   "label": "iPay Cheques Due",
+   "number_card_name": "iPay Cheques Due"
+  },
+  {
+   "label": "iPay Cheques Awaiting Receipt",
+   "number_card_name": "iPay Cheques Awaiting Receipt"
+  }
+ ],
  "owner": "Administrator",
  "parent_page": "",
  "public": 1,
- "quick_lists": [],
+ "quick_lists": [
+  {
+   "document_type": "iPay Cheque Collection",
+   "label": "Cheques Due",
+   "quick_list_filter": "{\"status\": \"Due\"}"
+  },
+  {
+   "document_type": "iPay Logs",
+   "label": "Errors",
+   "quick_list_filter": "{\"log_type\": \"ERR\"}"
+  }
+ ],
  "roles": [],
  "sequence_id": 28.0,
  "shortcuts": [
   {
-   "color": "Grey",
+   "color": "Blue",
    "doc_view": "List",
-   "label": "iPay Settings",
-   "link_to": "iPay Settings",
+   "label": "iPay Requests",
+   "link_to": "iPay Request",
+   "stats_filter": "[[\"iPay Request\", \"status\", \"!=\", \"Success\", false]]",
    "type": "DocType"
+  },
+  {
+   "color": "Orange",
+   "doc_view": "List",
+   "label": "Cheques to Collect",
+   "link_to": "iPay Cheque Collection",
+   "stats_filter": "[[\"iPay Cheque Collection\", \"status\", \"=\", \"Due\", false]]",
+   "type": "DocType"
+  },
+  {
+   "color": "Red",
+   "doc_view": "",
+   "label": "Payments Needing Attention",
+   "link_to": "iPay Payments Needing Attention",
+   "type": "Report"
   },
   {
    "color": "Red",
    "doc_view": "List",
    "label": "Logs",
    "link_to": "iPay Logs",
-   "stats_filter": "[[\"iPay Logs\",\"log_type\",\"=\",\"ERR\",false]]",
-   "type": "DocType"
-  },
-  {
-   "color": "Blue",
-   "doc_view": "List",
-   "label": "iPay Requests",
-   "link_to": "iPay Request",
-   "stats_filter": "[[\"iPay Request\",\"status\",\"!=\",\"Success\",false]]",
+   "stats_filter": "[[\"iPay Logs\", \"log_type\", \"=\", \"ERR\", false]]",
    "type": "DocType"
   },
   {
@@ -53,7 +264,14 @@
    "doc_view": "List",
    "label": "Sales Invoice",
    "link_to": "Sales Invoice",
-   "stats_filter": "[[\"Sales Invoice\",\"status\",\"in\",[\"Submitted\",\"Unpaid\",\"Partly Paid\",null],false]]",
+   "stats_filter": "[[\"Sales Invoice\", \"outstanding_amount\", \">\", \"0\", false]]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "iPay Settings",
+   "link_to": "iPay Settings",
    "type": "DocType"
   }
  ],

@@ -1,0 +1,21 @@
+{
+ "creation": "2026-07-24 00:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Number Card",
+ "document_type": "iPay Cheque Collection",
+ "dynamic_filters_json": "",
+ "filters_json": "[[\"iPay Cheque Collection\", \"status\", \"=\", \"Collected\", false]]",
+ "function": "Count",
+ "idx": 0,
+ "is_public": 1,
+ "is_standard": 1,
+ "label": "iPay Cheques Awaiting Receipt",
+ "modified": "2026-07-24 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Ipay",
+ "name": "iPay Cheques Awaiting Receipt",
+ "owner": "Administrator",
+ "show_percentage_stats": 0,
+ "stats_time_interval": "Daily",
+ "type": "Document Type"
+}
