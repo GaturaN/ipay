@@ -70,6 +70,29 @@ function refreshAll() {
 
 useResumeRefresh(refreshAll) // re-pull when the PWA returns to the foreground
 onMounted(refreshAll)
+
+// First-run walkthrough (runs once, skippable). Anchors live in CustomerListShell.
+const TOUR_STEPS = [
+  {
+    title: 'Welcome to iPay Collect',
+    description: "A quick tour of your collection page — tap Next, or close it any time.",
+  },
+  {
+    element: '[data-tour="stats"]',
+    title: "Today's round",
+    description: "What you've collected today and what's still owed, at a glance.",
+  },
+  {
+    element: '[data-tour="filters"]',
+    title: 'Find a customer',
+    description: 'Search by customer, invoice or delivery note — or filter by driver.',
+  },
+  {
+    element: '[data-tour="list"] > :first-child',
+    title: 'Open a customer',
+    description: 'Tap a customer to see their invoices and prompt them to pay by M-Pesa.',
+  },
+]
 </script>
 
 <template>
@@ -86,6 +109,8 @@ onMounted(refreshAll)
     :cheque-dues="chequeDues"
     :empty-message="emptyMessage"
     :card-driver="driver"
+    tour-key="collect"
+    :tour-steps="TOUR_STEPS"
     @retry="loadCustomers"
   >
     <template #filters>

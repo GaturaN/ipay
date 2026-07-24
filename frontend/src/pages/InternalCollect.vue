@@ -76,6 +76,29 @@ function refreshAll() {
 
 useResumeRefresh(refreshAll) // re-pull when the PWA returns to the foreground
 onMounted(refreshAll)
+
+// First-run walkthrough (runs once, skippable). Anchors live in CustomerListShell.
+const TOUR_STEPS = [
+  {
+    title: 'Welcome to internal collections',
+    description: 'A quick tour of this page — tap Next, or close it any time.',
+  },
+  {
+    element: '[data-tour="stats"]',
+    title: 'Business at a glance',
+    description: "Collected today and what's still outstanding across every customer.",
+  },
+  {
+    element: '[data-tour="filters"]',
+    title: 'Search and filter',
+    description: 'Find a customer, or narrow the list by driver, payment term or sales person.',
+  },
+  {
+    element: '[data-tour="list"] > :first-child',
+    title: 'Open a customer',
+    description: 'Tap a customer to see their invoices and collect a payment.',
+  },
+]
 </script>
 
 <template>
@@ -97,6 +120,8 @@ onMounted(refreshAll)
     :card-driver="driver"
     :card-payment-term="paymentTerm"
     :card-sales-person="salesPerson"
+    tour-key="internal"
+    :tour-steps="TOUR_STEPS"
     @retry="loadCustomers"
   >
     <template #filters>
