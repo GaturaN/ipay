@@ -16,6 +16,26 @@ Ipay is a cutting-edge Frappe application that enables vendors to integrate M-Pe
 
 Without an iPay account, this application cannot process mobile money transactions.
 
+## Architecture at a glance
+
+iPay has three surfaces over one Frappe backend:
+
+- **Backend (Frappe app).** The payment engine. An **iPay Request** is the unit of collection
+  (a single invoice or a per-customer bundle). Prompting a customer triggers an M-Pesa STK push
+  through iPay Africa; every confirmation route — the in-session flow, the manual desk *Verify
+  Payment*, the hosted-checkout return, and the reconcile backstop — funnels through one
+  `finalize_payment`, which records a **Payment Entry**, resolves the request to
+  Success / Underpaid / Overpaid, and delivers an n8n callback exactly once. Configuration lives
+  in **iPay Settings**; every step is written to **iPay Logs**.
+- **iPay Collect (the `/collect` PWA).** An installable, mobile-first Vue app for field, sales,
+  and operator teams to prompt and track payments, record cheques, and — now — receive push
+  notifications. It shares the logged-in Frappe session and the same whitelisted APIs.
+- **The Desk.** Managers configure Settings, review Logs, and monitor collections from Frappe's
+  Desk.
+
+Key DocTypes: **iPay Request**, **iPay Cheque Collection**, **iPay Push Subscription**,
+**iPay Settings**, **iPay Logs**.
+
 ## Key Features
 
 -  **Seamless M-Pesa Payment Integration**: Effortlessly connect your business system to M-Pesa, enabling a smooth and intuitive payment experience for your customers without additional technical complexity.
@@ -23,6 +43,7 @@ Without an iPay account, this application cannot process mobile money transactio
 -  **Real-Time Payment Verification**: Verify payments as they happen, ensuring immediate confirmation and reducing delays in processing.
 -  **Secure Transaction Logging**: Maintain a tamper-proof, detailed record of all payment transactions, including timestamps, amounts, and statuses, for compliance and auditing purposes.
 -  **Cheque Collection**: Collectors record a customer's cheque as a draft Payment Entry for the accounts team to submit — see [docs/cheque-collection.md](docs/cheque-collection.md) for how it works, the settings, and the operational notes.
+-  **Push Notifications**: Opt-in Web Push to the Collect app — a driver is alerted when a cheque collection is assigned to them, and collectors hear when a collection succeeds or fails. Per-user, per-type, and off by default; see [docs/push-notifications.md](docs/push-notifications.md) for setup and how it works.
 
 ## Payment Workflow
 
