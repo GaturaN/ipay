@@ -22,13 +22,8 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
-      // Custom service worker (src/sw.js), so it can carry a Web Push `push` /
-      // `notificationclick` handler — a generated SW can't. It was previously
-      // self-destroying (no push listener, unregisters itself), which made push
-      // impossible; that is now off. The SW deliberately does NOT precache the
-      // app shell yet (globPatterns empty) — its only job for now is Web Push, so
-      // there is no stale-asset risk to manage. Offline precaching can be layered
-      // on later by giving the injected manifest real glob patterns.
+      // Custom service worker (src/sw.js) so it can carry a Web Push handler; a generated one
+      // can't. No precaching yet (empty globPatterns) — its only job for now is push.
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.js',
