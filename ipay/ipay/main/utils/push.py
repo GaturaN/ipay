@@ -112,7 +112,6 @@ def collect_worker():
 	response = Response(content, mimetype="text/javascript")
 	response.headers["Service-Worker-Allowed"] = "/collect"
 	response.headers["Cache-Control"] = "no-cache"
-	frappe.local.response = response
 	return response
 
 
