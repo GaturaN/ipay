@@ -7,9 +7,6 @@ import {
   unsubscribePush,
 } from '@/data/push'
 
-// The service worker is registered at its own asset scope (see PR: SW foundation), which does
-// NOT control /collect — so navigator.serviceWorker.ready (which waits for the SW controlling
-// THIS page) never resolves here. We fetch the registration directly instead.
 const SW_URL = '/assets/ipay/frontend/sw.js'
 const SW_SCOPE = '/assets/ipay/frontend/'
 
@@ -19,14 +16,23 @@ const DEFAULT_PREFS = {
   notify_collection_error: 1,
 }
 
-// VAPID public key (base64url) → the Uint8Array the Push API wants as applicationServerKey.
-function urlBase64ToUint8Array(base64String) {
-  const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
-  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const raw = atob(base64)
-  const out = new Uint8Array(raw.length)
-  for (let i = 0; i < raw.length; i += 1) out[i] = raw.charCodeAt(i)
-  return out
+function vapidKey(base64) {
+  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4)
+  const raw = atob(padded.replace(/-/g, '+').replace(/_/g, '/'))
+  return Uint8Array.from(raw, (char) => char.charCodeAt(0))
+}
+
+// The SW is scoped to /assets, so it never controls /collect and serviceWorker.ready would
+// hang here; take the registration straight from register().
+async function swRegistration() {
+  const reg = await navigator.serviceWorker.register(SW_URL, { scope: SW_SCOPE })
+  if (reg.active) return reg
+  await new Promise((resolve) => {
+    const worker = reg.installing || reg.waiting
+    if (!worker) return resolve()
+    worker.addEventListener('statechange', () => worker.state === 'activated' && resolve())
+  })
+  return reg
 }
 
 export function usePushNotifications() {
@@ -43,36 +49,20 @@ export function usePushNotifications() {
   const prefs = ref({ ...DEFAULT_PREFS })
   let endpoint = ''
 
-  // Server-side keys present? Without them the browser can't subscribe.
   const configured = computed(() => Boolean(window.vapid_public_key))
-  // Permission actively denied — the user must re-enable in browser settings; we can't reprompt.
   const blocked = computed(() => permission.value === 'denied')
 
-  async function registration() {
-    const reg = await navigator.serviceWorker.register(SW_URL, { scope: SW_SCOPE })
-    if (reg.active) return reg
-    // First install — wait for it to activate before subscribing.
-    await new Promise((resolve) => {
-      const sw = reg.installing || reg.waiting
-      if (!sw) return resolve()
-      sw.addEventListener('statechange', () => sw.state === 'activated' && resolve())
-    })
-    return reg
-  }
-
-  // Read current state so the panel opens showing the truth (subscribed? which prefs?).
   async function refresh() {
     if (!supported.value) return
     try {
-      const reg = await registration()
-      const sub = await reg.pushManager.getSubscription()
+      const sub = await (await swRegistration()).pushManager.getSubscription()
       subscribed.value = Boolean(sub)
       if (sub) {
         endpoint = sub.endpoint
         prefs.value = (await getPushPrefs(endpoint).catch(() => null)) || { ...DEFAULT_PREFS }
       }
     } catch {
-      // Non-fatal — the panel just falls back to the enable button.
+      error.value = ''
     }
   }
 
@@ -87,14 +77,14 @@ export function usePushNotifications() {
     try {
       permission.value = await Notification.requestPermission()
       if (permission.value !== 'granted') return
-      const reg = await registration()
-      const sub = await reg.pushManager.subscribe({
+      const sub = await (await swRegistration()).pushManager.subscribe({
         userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(window.vapid_public_key),
+        applicationServerKey: vapidKey(window.vapid_public_key),
       })
       endpoint = sub.endpoint
-      const res = await subscribePush(sub.toJSON(), navigator.userAgent)
-      prefs.value = res?.prefs || { ...DEFAULT_PREFS }
+      prefs.value = (await subscribePush(sub.toJSON(), navigator.userAgent))?.prefs || {
+        ...DEFAULT_PREFS,
+      }
       subscribed.value = true
     } catch {
       error.value = 'Could not turn on notifications — please try again.'
@@ -106,8 +96,7 @@ export function usePushNotifications() {
   async function disable() {
     busy.value = true
     try {
-      const reg = await registration()
-      const sub = await reg.pushManager.getSubscription()
+      const sub = await (await swRegistration()).pushManager.getSubscription()
       if (sub) {
         await unsubscribePush(sub.endpoint).catch(() => {})
         await sub.unsubscribe()
@@ -124,9 +113,7 @@ export function usePushNotifications() {
     if (endpoint) await setPushPrefs(endpoint, prefs.value).catch(() => {})
   }
 
-  async function test() {
-    await sendTestPush().catch(() => {})
-  }
+  const test = () => sendTestPush().catch(() => {})
 
   return {
     supported,

@@ -1,7 +1,5 @@
 import { frappeRequest } from 'frappe-ui'
 
-// Push-notification API — separate from collection.js since it's a different concern. Every
-// call rides the shared Frappe session + CSRF via frappeRequest.
 const M = 'ipay.ipay.main.utils.push'
 const post = (method, params) =>
   frappeRequest({ url: `/api/method/${M}.${method}`, method: 'POST', params })
