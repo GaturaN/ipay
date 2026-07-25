@@ -67,10 +67,11 @@ website_route_rules = [
 # ----------
 
 # add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "ipay.utils.jinja_methods",
-# 	"filters": "ipay.utils.jinja_filters"
-# }
+jinja = {
+	"methods": [
+		"ipay.ipay.main.utils.jinja.ipay_payment_link",
+	],
+}
 
 # Installation
 # ------------

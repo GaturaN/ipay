@@ -23,6 +23,7 @@ Without an iPay account, this application cannot process mobile money transactio
 -  **Real-Time Payment Verification**: Verify payments as they happen, ensuring immediate confirmation and reducing delays in processing.
 -  **Secure Transaction Logging**: Maintain a tamper-proof, detailed record of all payment transactions, including timestamps, amounts, and statuses, for compliance and auditing purposes.
 -  **Cheque Collection**: Collectors record a customer's cheque as a draft Payment Entry for the accounts team to submit — see [docs/cheque-collection.md](docs/cheque-collection.md) for how it works, the settings, and the operational notes.
+-  **Payment Links in Emails**: Add a "Pay now" link to any invoice or reminder email — the customer opens a no-login page and prompts themselves to pay. A Jinja helper for your own ERPNext emails, plus two ready-made (disabled) notifications; see [docs/payment-links-in-emails.md](docs/payment-links-in-emails.md).
 
 ## Payment Workflow
 
