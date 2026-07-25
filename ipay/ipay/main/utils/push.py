@@ -14,12 +14,14 @@ PREF_FIELDS = (
 	"notify_cheque_assigned",
 	"notify_collection_success",
 	"notify_collection_error",
+	"notify_comment",
 )
 
 TYPE_TO_PREF = {
 	"cheque_assigned": "notify_cheque_assigned",
 	"collection_success": "notify_collection_success",
 	"collection_error": "notify_collection_error",
+	"comment": "notify_comment",
 }
 
 

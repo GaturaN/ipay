@@ -16,7 +16,8 @@
   "prefs_section",
   "notify_cheque_assigned",
   "notify_collection_success",
-  "notify_collection_error"
+  "notify_collection_error",
+  "notify_comment"
  ],
  "fields": [
   {
@@ -75,6 +76,13 @@
    "fieldname": "notify_collection_error",
    "fieldtype": "Check",
    "label": "Collection error"
+  },
+  {
+   "default": "0",
+   "description": "A note left on a customer you're involved with. Off by default — notes are frequent.",
+   "fieldname": "notify_comment",
+   "fieldtype": "Check",
+   "label": "New note on a customer"
   }
  ],
  "index_web_pages_for_search": 0,

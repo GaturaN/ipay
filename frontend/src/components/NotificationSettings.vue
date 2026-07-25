@@ -24,6 +24,7 @@ const OPTIONS = [
   { key: 'notify_cheque_assigned', label: 'Cheque collection assigned to me' },
   { key: 'notify_collection_success', label: 'Successful collection' },
   { key: 'notify_collection_error', label: 'Collection error' },
+  { key: 'notify_comment', label: 'New note on a customer' },
 ]
 
 const TEST_MESSAGE = {
