@@ -113,7 +113,16 @@ export function usePushNotifications() {
     if (endpoint) await setPushPrefs(endpoint, prefs.value).catch(() => {})
   }
 
-  const test = () => sendTestPush().catch(() => {})
+  const testStatus = ref('')
+  async function test() {
+    testStatus.value = 'sending'
+    try {
+      const res = await sendTestPush()
+      testStatus.value = res && res.sent ? 'sent' : 'none'
+    } catch {
+      testStatus.value = 'error'
+    }
+  }
 
   return {
     supported,
@@ -124,6 +133,7 @@ export function usePushNotifications() {
     busy,
     error,
     prefs,
+    testStatus,
     refresh,
     enable,
     disable,

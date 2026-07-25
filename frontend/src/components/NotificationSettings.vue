@@ -12,6 +12,7 @@ const {
   busy,
   error,
   prefs,
+  testStatus,
   refresh,
   enable,
   disable,
@@ -24,6 +25,13 @@ const OPTIONS = [
   { key: 'notify_collection_success', label: 'Successful collection' },
   { key: 'notify_collection_error', label: 'Collection error' },
 ]
+
+const TEST_MESSAGE = {
+  sending: 'Sending…',
+  sent: 'Test sent — check your notifications (or Notification Center).',
+  none: 'No active device found for this login.',
+  error: "Couldn't send the test — please try again.",
+}
 
 async function show() {
   open.value = true
@@ -111,6 +119,9 @@ async function show() {
           Turn off
         </button>
       </div>
+      <p v-if="testStatus" class="mt-2 text-center text-[13px] text-ink/70">
+        {{ TEST_MESSAGE[testStatus] }}
+      </p>
     </template>
   </BaseDialog>
 </template>
