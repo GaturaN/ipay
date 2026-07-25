@@ -100,6 +100,22 @@ def set_prefs(endpoint, prefs):
 	return _prefs_of(doc)
 
 
+@frappe.whitelist(allow_guest=True, methods=["GET"])
+def collect_worker():
+	"""Serve the built service worker with Service-Worker-Allowed: /collect, so it can be
+	registered at /collect scope and control the app — which iOS requires to deliver push."""
+	from werkzeug.wrappers import Response
+
+	path = frappe.get_app_path("ipay", "public", "frontend", "sw.js")
+	with open(path, encoding="utf-8") as handle:
+		content = handle.read()
+	response = Response(content, mimetype="text/javascript")
+	response.headers["Service-Worker-Allowed"] = "/collect"
+	response.headers["Cache-Control"] = "no-cache"
+	frappe.local.response = response
+	return response
+
+
 @frappe.whitelist(methods=["POST"])
 def send_test():
 	sent = send_web_push(

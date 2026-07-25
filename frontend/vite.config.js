@@ -22,6 +22,9 @@ export default defineConfig({
     vue(),
     VitePWA({
       registerType: 'autoUpdate',
+      // We register the worker ourselves (main.js) from a root-served copy, scoped to /collect
+      // so it controls the app — iOS only shows push for a worker that controls the app's pages.
+      injectRegister: false,
       // Custom service worker (src/sw.js), so it can carry a Web Push `push` /
       // `notificationclick` handler — a generated SW can't. It was previously
       // self-destroying (no push listener, unregisters itself), which made push

@@ -7,8 +7,8 @@ import {
   unsubscribePush,
 } from '@/data/push'
 
-const SW_URL = '/assets/ipay/frontend/sw.js'
-const SW_SCOPE = '/assets/ipay/frontend/'
+const SW_URL = '/api/method/ipay.ipay.main.utils.push.collect_worker'
+const SW_SCOPE = '/collect'
 
 const DEFAULT_PREFS = {
   notify_cheque_assigned: 1,
@@ -22,8 +22,6 @@ function vapidKey(base64) {
   return Uint8Array.from(raw, (char) => char.charCodeAt(0))
 }
 
-// The SW is scoped to /assets, so it never controls /collect and serviceWorker.ready would
-// hang here; take the registration straight from register().
 async function swRegistration() {
   const reg = await navigator.serviceWorker.register(SW_URL, { scope: SW_SCOPE })
   if (reg.active) return reg
