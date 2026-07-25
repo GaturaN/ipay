@@ -1,0 +1,111 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "hash",
+ "creation": "2026-07-25 00:00:00.000000",
+ "default_view": "List",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "user",
+  "user_agent",
+  "endpoint",
+  "p256dh",
+  "auth",
+  "prefs_section",
+  "notify_cheque_assigned",
+  "notify_collection_success",
+  "notify_collection_error"
+ ],
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1
+  },
+  {
+   "fieldname": "user_agent",
+   "fieldtype": "Small Text",
+   "label": "Device"
+  },
+  {
+   "description": "The browser push endpoint URL. Unique per browser install; used to target and de-duplicate a subscription.",
+   "fieldname": "endpoint",
+   "fieldtype": "Small Text",
+   "in_list_view": 1,
+   "label": "Endpoint",
+   "reqd": 1
+  },
+  {
+   "fieldname": "p256dh",
+   "fieldtype": "Data",
+   "label": "p256dh Key",
+   "reqd": 1
+  },
+  {
+   "fieldname": "auth",
+   "fieldtype": "Data",
+   "label": "Auth Secret",
+   "reqd": 1
+  },
+  {
+   "fieldname": "prefs_section",
+   "fieldtype": "Section Break",
+   "label": "Notification Preferences"
+  },
+  {
+   "default": "1",
+   "fieldname": "notify_cheque_assigned",
+   "fieldtype": "Check",
+   "label": "Cheque collection assigned to me"
+  },
+  {
+   "default": "1",
+   "fieldname": "notify_collection_success",
+   "fieldtype": "Check",
+   "label": "Successful collection"
+  },
+  {
+   "default": "1",
+   "fieldname": "notify_collection_error",
+   "fieldtype": "Check",
+   "label": "Collection error"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-07-25 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Ipay",
+ "name": "iPay Push Subscription",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "delete": 1,
+   "read": 1,
+   "report": 1,
+   "role": "iPay Manager"
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 0
+}

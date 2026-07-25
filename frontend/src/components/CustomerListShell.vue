@@ -3,6 +3,7 @@ import RoundHeader from '@/components/RoundHeader.vue'
 import CustomerCard from '@/components/CustomerCard.vue'
 import ChequeDueBanner from '@/components/ChequeDueBanner.vue'
 import ErrorRetry from '@/components/ErrorRetry.vue'
+import NotificationSettings from '@/components/NotificationSettings.vue'
 
 // The shared customer-list screen (field /collect and internal /collect/internal): title,
 // today's-round header, a filters row (slotted, since each mode's filters differ), and the
@@ -32,7 +33,10 @@ defineEmits(['retry'])
 
 <template>
   <main class="mx-auto flex min-h-full w-full flex-col gap-4 p-4 pb-10" :class="containerClass">
-    <h1 class="pt-1 font-display text-2xl font-bold tracking-tight text-ink">{{ title }}</h1>
+    <div class="flex items-center justify-between gap-3 pt-1">
+      <h1 class="font-display text-2xl font-bold tracking-tight text-ink">{{ title }}</h1>
+      <NotificationSettings />
+    </div>
 
     <!-- Sales mode supplies its own header: "Today's round" is a driver framing. -->
     <slot name="header">

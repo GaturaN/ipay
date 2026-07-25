@@ -62,6 +62,9 @@ def get_boot():
             "sales_access": can_open_sales(),
             "site_name": frappe.local.site,
             "csrf_token": frappe.sessions.get_csrf_token(),
+            # Public VAPID key for Web Push subscription (null until keys are configured in
+            # site config). Public by design — safe to expose to the browser.
+            "vapid_public_key": frappe.conf.get("ipay_vapid_public_key"),
             "timezone": {
                 "system": get_system_timezone(),
                 "user": frappe.db.get_value("User", frappe.session.user, "time_zone")
