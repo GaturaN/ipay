@@ -11,6 +11,15 @@ import router from './router'
 // session cookie and the CSRF token, so the SPA shares the logged-in desk session.
 setConfig('resourceFetcher', frappeRequest)
 
+// The worker is served with Service-Worker-Allowed: /collect so it can be scoped to /collect
+// and control the app — iOS only shows push for a worker that controls the app's pages.
+const SW_URL = '/api/method/ipay.ipay.main.utils.push.collect_worker'
+if (!import.meta.env.DEV && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register(SW_URL, { scope: '/collect' }).catch(() => {})
+  })
+}
+
 const app = createApp(App)
 app.use(createPinia())
 app.use(router)
