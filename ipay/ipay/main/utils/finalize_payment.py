@@ -12,6 +12,7 @@ import frappe
 from ipay.ipay.main.utils.make_payment_entry import make_payment_entry
 from ipay.ipay.main.utils.send_callback import deliver_callback
 from ipay.ipay.main.utils.constants import amounts_match
+from ipay.ipay.main.utils.notifications import notify_collection_success
 
 
 def build_response_data(data):
@@ -114,6 +115,9 @@ def finalize_payment(
     # duration of the callback POST.
     deliver_callback(request_name, response_data)
     frappe.db.commit()
+
+    if status in ("Success", "Underpaid", "Overpaid"):
+        notify_collection_success(request_name, paid, response_data.get("payee"))
 
     result["request_status"] = status
     result["response_data"] = response_data

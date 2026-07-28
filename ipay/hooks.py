@@ -130,13 +130,11 @@ has_permission = {
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"iPay Cheque Collection": {
+		"on_update": "ipay.ipay.main.utils.notifications.cheque_collection_assigned",
+	},
+}
 
 # Scheduled Tasks
 # ---------------

@@ -5,6 +5,7 @@ from ipay.ipay.main.utils.trigger_stk_push import trigger_stk_push
 from ipay.ipay.main.utils.verify_mpesa_payment import verify_mpesa_payment
 from ipay.ipay.main.utils.finalize_payment import finalize_payment
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
+from ipay.ipay.main.utils.notifications import notify_collection_error
 from ipay.ipay.main.utils.constants import clean_oid
 from ipay.ipay.main.utils.alerts import iPayDeclined
 
@@ -243,6 +244,7 @@ def lipana_mpesa(
                 "iPay Request", docid, {"status": "Failed", "result_detail": str(decline)}
             )
             frappe.db.commit()
+            notify_collection_error(docid, str(decline))
 
         except Exception as error:
             logger.error("An error occurred during the payment process: %s", error)
@@ -256,4 +258,5 @@ def lipana_mpesa(
                 {"status": "Failed", "result_detail": str(error)},
             )
             frappe.db.commit()
+            notify_collection_error(docid, str(error))
             # frappe.throw("An error occurred during the payment process")
