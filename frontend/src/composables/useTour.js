@@ -3,18 +3,24 @@ import { driver } from 'driver.js'
 import 'driver.js/dist/driver.css'
 import { useSession } from '@/stores/session'
 import { safeGet, safeSet } from '@/utils/storage'
+import { markTourSeen } from '@/data/onboarding'
 
-// A first-run walkthrough of a page. It runs once per user, then never again (the "seen"
-// flag persists in localStorage), and can be closed at any step via the ✕ or the backdrop —
-// closing still counts as seen, so we don't nag on the next visit. Keyed per user so a
-// shared device walks each collector through once.
+// A first-run walkthrough of a page. It runs once per user, then never again, and can be closed
+// at any step via the ✕ or the backdrop — closing still counts as seen. "Seen" is recorded
+// server-side against the user account (boot.tours_seen → window.tours_seen), so it survives a
+// cache clear, a new browser, a different device, or a PWA reinstall. localStorage mirrors it
+// per browser for an instant check and as a fallback if the server write is missed.
 const seenKey = (key, user) => `ipay:tour-seen:${key}:${user || 'anon'}`
+
+// The account-level list from boot, kept in memory so a tour marked seen this session isn't
+// replayed on an in-app navigation before the next page load re-reads boot.
+const serverSeen = () => (typeof window !== 'undefined' && window.tours_seen) || []
 
 export function useTour() {
   const session = useSession()
 
   function hasSeen(key) {
-    return Boolean(safeGet(seenKey(key, session.user)))
+    return serverSeen().includes(key) || Boolean(safeGet(seenKey(key, session.user)))
   }
 
   // steps: [{ element?: string, title, description }]. An element-less step is a centred
@@ -27,7 +33,13 @@ export function useTour() {
     // If nothing anchored survives (e.g. the whole list is empty), don't spend the one run.
     if (!present.some((s) => s.element)) return
 
-    const markSeen = () => safeSet(seenKey(key, session.user), '1')
+    const markSeen = () => {
+      safeSet(seenKey(key, session.user), '1') // instant, this browser
+      if (!serverSeen().includes(key)) {
+        window.tours_seen = [...serverSeen(), key] // this session won't replay it
+        markTourSeen(key).catch(() => {}) // persist against the account, across devices
+      }
+    }
     driver({
       showProgress: true,
       popoverClass: 'ipay-tour',
