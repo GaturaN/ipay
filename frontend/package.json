@@ -9,6 +9,7 @@
     "serve": "vite preview"
   },
   "dependencies": {
+    "driver.js": "^1.8.0",
     "frappe-ui": "^0.1.171",
     "pinia": "^2.0.33",
     "vue": "^3.5.13",

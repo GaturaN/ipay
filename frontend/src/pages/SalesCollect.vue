@@ -66,6 +66,30 @@ async function loadCustomers() {
 
 useResumeRefresh(loadCustomers) // re-pull when the PWA returns to the foreground
 onMounted(loadCustomers)
+
+// First-run walkthrough (runs once, skippable). Anchors live in CustomerListShell.
+const TOUR_STEPS = [
+  {
+    title: 'Welcome to iPay Collect',
+    description: 'A quick tour of your collections book — tap Next, or close it any time.',
+  },
+  {
+    element: '[data-tour="stats"]',
+    title: 'Your book',
+    description: 'The total outstanding across the customers you look after.',
+  },
+  {
+    element: '[data-tour="filters"]',
+    title: 'Find a customer',
+    description:
+      'Search your customers, or filter by payment term. Managers can also pick a team member.',
+  },
+  {
+    element: '[data-tour="list"] > :first-child',
+    title: 'Open a customer',
+    description: 'Tap a customer to see their invoices and record a payment.',
+  },
+]
 </script>
 
 <template>
@@ -80,6 +104,8 @@ onMounted(loadCustomers)
     card-route-name="SalesCustomer"
     :card-payment-term="paymentTerm"
     :card-sales-person="salesPerson"
+    tour-key="sales"
+    :tour-steps="TOUR_STEPS"
     @retry="loadCustomers"
   >
     <template #header>

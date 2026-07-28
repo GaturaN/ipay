@@ -5,6 +5,7 @@ import { createBundle, fetchCustomerCollection } from '@/data/collection'
 import { formatKES } from '@/utils/format'
 import { useResumeRefresh } from '@/composables/useResumeRefresh'
 import { useInvoiceSelection } from '@/composables/useInvoiceSelection'
+import { useFirstRunTour } from '@/composables/useTour'
 import InvoiceCard from '@/components/InvoiceCard.vue'
 import PromptDialog from '@/components/PromptDialog.vue'
 import NotesDialog from '@/components/NotesDialog.vue'
@@ -181,6 +182,24 @@ function onNoteSaved({ invoice, count, latest }) {
 
 useResumeRefresh(load) // re-pull when the PWA returns to the foreground
 onMounted(load)
+
+// First-run walkthrough of the customer page — where payment is actually prompted. Runs once
+// (shared key across every customer page), after invoices load so the anchors exist. Steps
+// whose anchor is absent (nothing collectable, no bundle bar) are dropped.
+const TOUR_STEPS = [
+  {
+    element: '[data-tour="prompt"]',
+    title: 'Prompt for payment',
+    description:
+      "Tap M-Pesa to send this invoice's request to the customer's phone — they approve it with their M-Pesa PIN.",
+  },
+  {
+    element: '[data-tour="collect-bar"]',
+    title: 'Collect several at once',
+    description: 'More than one invoice? Collect them together in a single request.',
+  },
+]
+useFirstRunTour(() => !loading.value, 'customer', TOUR_STEPS)
 </script>
 
 <template>
