@@ -14,6 +14,7 @@ const DEFAULT_PREFS = {
   notify_cheque_assigned: 1,
   notify_collection_success: 1,
   notify_collection_error: 1,
+  notify_comment: 0,
 }
 
 function vapidKey(base64) {

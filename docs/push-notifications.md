@@ -13,9 +13,16 @@ opted in, and each type can be toggled independently.
 | **Cheque collection assigned to me** | Accounts assign a *Due* `iPay Cheque Collection` to a driver | that driver's linked User |
 | **Successful collection** | A payment finalises as Success / Underpaid / Overpaid | whoever initiated the request |
 | **Collection error** | A collection is declined or fails | whoever initiated the request |
+| **New note on a customer** | A collector leaves a note in the Collect app | the customer's audience, minus the author (see below) — **off by default** |
 
 "Whoever initiated" is the request's `owner` plus anyone it was assigned to (Frappe *Assign To*).
 Tapping a notification opens (or focuses) the Collect app.
+
+**A note's audience** is everyone with a stake in that customer: the **drivers** who deliver to
+them, the **sales people** who own them, and anyone already **involved** (assigned a request, or
+who left a prior note) — never the author. Operators who can see every customer but aren't
+involved are deliberately excluded, and the type is **off by default**, because notes are
+frequent. Only notes added in the Collect app trigger it (not Desk-timeline comments).
 
 ## Turning it on (for users)
 

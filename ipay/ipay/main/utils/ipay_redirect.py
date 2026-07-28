@@ -945,6 +945,10 @@ def add_invoice_note(invoice, note):
         }
     ).insert(ignore_permissions=True)
 
+    from ipay.ipay.main.utils.notifications import notify_note
+
+    notify_note(invoice, frappe.session.user, text)
+
 
 def _require_customer_access(customer):
     """A scoped actor may only act on a customer they hold an outstanding invoice for — an
