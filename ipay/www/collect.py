@@ -50,6 +50,7 @@ def get_context_for_dev():
 
 
 def get_boot():
+    from ipay.ipay.main.utils import onboarding
     from ipay.www.collect_payments import can_open_sales, lands_on_sales
 
     return frappe._dict(
@@ -63,6 +64,7 @@ def get_boot():
             "site_name": frappe.local.site,
             "csrf_token": frappe.sessions.get_csrf_token(),
             "vapid_public_key": frappe.conf.get("ipay_vapid_public_key"),
+            "tours_seen": onboarding.seen_tours(),
             "timezone": {
                 "system": get_system_timezone(),
                 "user": frappe.db.get_value("User", frappe.session.user, "time_zone")
