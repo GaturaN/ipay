@@ -44,6 +44,7 @@ Key DocTypes: **iPay Request**, **iPay Cheque Collection**, **iPay Push Subscrip
 -  **Secure Transaction Logging**: Maintain a tamper-proof, detailed record of all payment transactions, including timestamps, amounts, and statuses, for compliance and auditing purposes.
 -  **Cheque Collection**: Collectors record a customer's cheque as a draft Payment Entry for the accounts team to submit — see [docs/cheque-collection.md](docs/cheque-collection.md) for how it works, the settings, and the operational notes.
 -  **Push Notifications**: Opt-in Web Push to the Collect app — a driver is alerted when a cheque collection is assigned to them, and collectors hear when a collection succeeds or fails. Per-user, per-type, and off by default; see [docs/push-notifications.md](docs/push-notifications.md) for setup and how it works.
+-  **Payment Links in Emails**: Add a "Pay now" link to any invoice or reminder email — the customer opens a no-login page and prompts themselves to pay. A Jinja helper for your own ERPNext emails, plus two ready-made (disabled) notifications; see [docs/payment-links-in-emails.md](docs/payment-links-in-emails.md).
 
 ## Payment Workflow
 
