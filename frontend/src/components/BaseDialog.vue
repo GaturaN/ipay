@@ -59,7 +59,7 @@ defineExpose({ panel })
 <template>
   <div
     v-if="open"
-    class="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 p-4 sm:items-center"
+    class="fixed inset-0 z-50 flex items-end justify-center bg-ink/50 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:items-center"
     @click.self="$emit('close')"
   >
     <div
@@ -68,7 +68,7 @@ defineExpose({ panel })
       aria-modal="true"
       :aria-labelledby="labelledby"
       tabindex="-1"
-      class="w-full max-w-md rounded-3xl bg-paper p-6 focus:outline-none"
+      class="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl bg-paper p-6 focus:outline-none"
     >
       <slot />
     </div>

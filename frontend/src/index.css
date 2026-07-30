@@ -19,3 +19,45 @@ body {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* First-run tour (driver.js) — themed to the app palette. Scoped to .ipay-tour (set as the
+   popoverClass in useTour) so these win over driver.css without !important. */
+.driver-popover.ipay-tour {
+  background-color: #f2f5f1; /* paper */
+  color: #10241b; /* ink */
+  border-radius: 1rem;
+  max-width: 20rem;
+  font-family: 'Archivo', ui-sans-serif, sans-serif;
+}
+.driver-popover.ipay-tour .driver-popover-title {
+  font-weight: 700;
+  font-size: 1rem;
+}
+.driver-popover.ipay-tour .driver-popover-description {
+  color: rgba(16, 36, 27, 0.7);
+}
+.driver-popover.ipay-tour .driver-popover-progress-text {
+  color: rgba(16, 36, 27, 0.5);
+}
+.driver-popover.ipay-tour .driver-popover-arrow {
+  border-color: #f2f5f1; /* keep the arrow the same paper as the panel */
+}
+.driver-popover.ipay-tour .driver-popover-close-btn {
+  color: rgba(16, 36, 27, 0.5);
+}
+.driver-popover.ipay-tour .driver-popover-next-btn,
+.driver-popover.ipay-tour .driver-popover-prev-btn {
+  text-shadow: none;
+  border: none;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  font-family: inherit;
+}
+.driver-popover.ipay-tour .driver-popover-next-btn {
+  background-color: #007a36; /* mpesa */
+  color: #fff;
+}
+.driver-popover.ipay-tour .driver-popover-prev-btn {
+  background-color: transparent;
+  color: rgba(16, 36, 27, 0.6);
+}

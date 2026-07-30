@@ -339,6 +339,32 @@ def resolve_pay_token(token):
     return row.name, "ok"
 
 
+def payment_link_for_invoice(invoice):
+    """A customer-facing /pay link for an invoice, for emails, notifications and print formats.
+
+    Returns the URL, or None when there is nothing to collect (paid / not submitted), a cheque
+    is already held, or hosted checkout is off. Reuses the same idempotent request+token as
+    get_payment_link but without the operator gate — it renders server-side with no logged-in
+    caller, and never raises, so it can't break an email or print render."""
+    if not invoice or not _redirect_enabled():
+        return None
+    si = frappe.db.get_value(
+        "Sales Invoice", invoice, ["docstatus", "outstanding_amount"], as_dict=True
+    )
+    if not si or si.docstatus != 1 or frappe.utils.flt(si.outstanding_amount) <= 0:
+        return None
+    try:
+        token = _ensure_pay_token(_ensure_request(invoice))
+    except frappe.ValidationError:
+        # A cheque already held, a prepaid invoice, or another before_validate refusal — the
+        # invoice simply has no payable link, which is not an error.
+        return None
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "iPay payment link for email failed")
+        return None
+    return frappe.utils.get_url("/pay?token=" + token)
+
+
 def _request_from_token(token):
     """Resolve a (non-expired) payment-link token to its iPay Request name, or None."""
     return resolve_pay_token(token)[0]
@@ -944,6 +970,10 @@ def add_invoice_note(invoice, note):
             "content": note_content(text),
         }
     ).insert(ignore_permissions=True)
+
+    from ipay.ipay.main.utils.notifications import notify_note
+
+    notify_note(invoice, frappe.session.user, text)
 
 
 def _require_customer_access(customer):

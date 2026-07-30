@@ -146,6 +146,7 @@ async function payViaIpay() {
         <button
           v-if="!mpesaBlocked"
           type="button"
+          data-tour="prompt"
           class="h-12 flex-1 rounded-xl bg-mpesa font-semibold text-white transition active:scale-[.98] disabled:opacity-40"
           :disabled="actionsDisabled"
           @click="$emit('prompt')"

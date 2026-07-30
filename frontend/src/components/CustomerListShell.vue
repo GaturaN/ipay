@@ -3,12 +3,14 @@ import RoundHeader from '@/components/RoundHeader.vue'
 import CustomerCard from '@/components/CustomerCard.vue'
 import ChequeDueBanner from '@/components/ChequeDueBanner.vue'
 import ErrorRetry from '@/components/ErrorRetry.vue'
+import NotificationSettings from '@/components/NotificationSettings.vue'
+import { useFirstRunTour } from '@/composables/useTour'
 
 // The shared customer-list screen (field /collect and internal /collect/internal): title,
 // today's-round header, a filters row (slotted, since each mode's filters differ), and the
 // loading / not-permitted / error / empty / grid states. Each page owns its data + filters
 // and passes the rest as props, so behaviour stays per-page.
-defineProps({
+const props = defineProps({
   containerClass: { type: String, default: '' }, // per-mode max width
   title: { type: String, default: 'Collect' },
   collectedToday: { type: Number, default: 0 },
@@ -26,26 +28,37 @@ defineProps({
   cardPaymentTerm: { type: String, default: '' },
   cardSalesPerson: { type: String, default: '' },
   chequeDues: { type: Array, default: () => [] }, // cheques accounts flagged to collect here
+  tourKey: { type: String, default: '' }, // first-run walkthrough id; empty = no tour
+  tourSteps: { type: Array, default: () => [] },
 })
 defineEmits(['retry'])
+
+// Kick the first-run tour once the list has loaded, so its anchors (stats, filters, a
+// customer card) are on the page.
+useFirstRunTour(() => !props.listLoading, props.tourKey, props.tourSteps)
 </script>
 
 <template>
   <main class="mx-auto flex min-h-full w-full flex-col gap-4 p-4 pb-10" :class="containerClass">
-    <h1 class="pt-1 font-display text-2xl font-bold tracking-tight text-ink">{{ title }}</h1>
+    <div class="flex items-center justify-between gap-3 pt-1">
+      <h1 class="font-display text-2xl font-bold tracking-tight text-ink">{{ title }}</h1>
+      <NotificationSettings />
+    </div>
 
     <!-- Sales mode supplies its own header: "Today's round" is a driver framing. -->
-    <slot name="header">
-      <RoundHeader
-        :collected-today="collectedToday"
-        :outstanding-today="outstandingToday"
-        :remaining="remaining"
-        :count-label="countLabel"
-        :loading="statsLoading"
-      />
-    </slot>
+    <div data-tour="stats">
+      <slot name="header">
+        <RoundHeader
+          :collected-today="collectedToday"
+          :outstanding-today="outstandingToday"
+          :remaining="remaining"
+          :count-label="countLabel"
+          :loading="statsLoading"
+        />
+      </slot>
+    </div>
 
-    <div class="flex flex-col gap-2 sm:flex-row">
+    <div data-tour="filters" class="flex flex-col gap-2 sm:flex-row">
       <slot name="filters" />
     </div>
 
@@ -74,7 +87,7 @@ defineEmits(['retry'])
     <p v-else-if="!customers.length" class="py-16 text-center font-display text-ink/70">
       {{ emptyMessage }}
     </p>
-    <div v-else class="grid grid-cols-1 gap-3 md:grid-cols-2">
+    <div v-else data-tour="list" class="grid grid-cols-1 gap-3 md:grid-cols-2">
       <CustomerCard
         v-for="c in customers"
         :key="c.customer"

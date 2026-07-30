@@ -67,10 +67,11 @@ website_route_rules = [
 # ----------
 
 # add methods and filters to jinja environment
-# jinja = {
-# 	"methods": "ipay.utils.jinja_methods",
-# 	"filters": "ipay.utils.jinja_filters"
-# }
+jinja = {
+	"methods": [
+		"ipay.ipay.main.utils.jinja.ipay_payment_link",
+	],
+}
 
 # Installation
 # ------------
@@ -130,13 +131,11 @@ has_permission = {
 # ---------------
 # Hook on document methods and events
 
-# doc_events = {
-# 	"*": {
-# 		"on_update": "method",
-# 		"on_cancel": "method",
-# 		"on_trash": "method"
-# 	}
-# }
+doc_events = {
+	"iPay Cheque Collection": {
+		"on_update": "ipay.ipay.main.utils.notifications.cheque_collection_assigned",
+	},
+}
 
 # Scheduled Tasks
 # ---------------
