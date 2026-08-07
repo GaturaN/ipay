@@ -4,7 +4,7 @@
  "doctype": "Number Card",
  "document_type": "Payment Entry",
  "dynamic_filters_json": "",
- "filters_json": "[[\"Payment Entry\", \"docstatus\", \"=\", \"1\", false], [\"Payment Entry\", \"mode_of_payment\", \"=\", \"MPESA\", false], [\"Payment Entry\", \"posting_date\", \"Timespan\", \"today\", false]]",
+ "filters_json": "[[\"Payment Entry\", \"docstatus\", \"=\", \"1\", false], [\"Payment Entry\", \"mode_of_payment\", \"=\", \"MPESA\", false], [\"Payment Entry\", \"posting_date\", \"Timespan\", \"today\", false], [\"Payment Entry\", \"custom_ipay_request\", \"is\", \"set\", false]]",
  "function": "Count",
  "idx": 0,
  "is_public": 1,
