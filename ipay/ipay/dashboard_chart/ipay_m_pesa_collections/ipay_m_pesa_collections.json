@@ -9,7 +9,7 @@
  "doctype": "Dashboard Chart",
  "document_type": "Payment Entry",
  "dynamic_filters_json": "",
- "filters_json": "[[\"Payment Entry\", \"docstatus\", \"=\", 1], [\"Payment Entry\", \"mode_of_payment\", \"=\", \"MPESA\"]]",
+ "filters_json": "[[\"Payment Entry\", \"docstatus\", \"=\", 1], [\"Payment Entry\", \"mode_of_payment\", \"=\", \"MPESA\"], [\"Payment Entry\", \"custom_ipay_request\", \"is\", \"set\"]]",
  "idx": 0,
  "is_public": 1,
  "is_standard": 1,

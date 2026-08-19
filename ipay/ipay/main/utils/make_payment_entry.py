@@ -115,6 +115,7 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
                 )
                 if ipay_request:
                     frappe.db.set_value("iPay Request", ipay_request, "payment_entry", existing)
+                    frappe.db.set_value("Payment Entry", existing, "custom_ipay_request", ipay_request)
                 # Report how much the existing entry allocated to invoices, so the
                 # caller resolves the same status on a re-run instead of assuming a
                 # duplicate was fully allocated.
@@ -193,6 +194,7 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
         payment_entry.payment_order_status = "Initiated"
         payment_entry.posting_date = frappe.utils.today()
         payment_entry.mode_of_payment = "MPESA"
+        payment_entry.custom_ipay_request = ipay_request
         payment_entry.party_type = "Customer"
         payment_entry.party = primary.customer
         payment_entry.party_name = primary.customer_name
@@ -256,6 +258,7 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
             )
             if ipay_request:
                 frappe.db.set_value("iPay Request", ipay_request, "payment_entry", existing)
+                frappe.db.set_value("Payment Entry", existing, "custom_ipay_request", ipay_request)
             return {
                 "status": "duplicate",
                 "payment_entry": existing,
