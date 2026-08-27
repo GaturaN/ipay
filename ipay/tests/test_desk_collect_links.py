@@ -12,9 +12,10 @@ WORKSPACE = frappe.get_app_path("ipay", "ipay", "workspace", "ipay", "ipay.json"
 SHORTCUT_LABEL = "Collect Payments"
 SHORTCUT_URL = "/collect_payments"
 
-# `modified` shipped by PR #108. Frappe re-imports a fixture on a content-hash change, but
-# this repo also bumps the timestamp so the older timestamp gate agrees; a fixture edit that
-# forgets the bump fails here.
+# `modified` shipped by PR #108. For a Workspace the timestamp is the ONLY re-import gate —
+# frappe/modules/import_file.py only reads a migration_hash when doctype == "DocType", and
+# otherwise skips the file whenever the stored timestamp is not older. A fixture edit that
+# forgets the bump silently never reaches a site, so this is a floor, not a formality.
 PREVIOUS_MODIFIED = "2026-08-19 14:00:00.000000"
 
 # What the dashboard holds, so dropping a card or a chart while editing the fixture fails
@@ -27,14 +28,28 @@ WIDGET_COUNTS = {
     "links": 13,
 }
 
+# ...and what the layout draws. Defining a widget is not the same as placing it: a block can
+# be deleted from `content` while its child row survives, which would silently thin the
+# dashboard without changing any count above.
+BLOCK_COUNTS = {
+    "header": 8,
+    "number_card": 10,
+    "chart": 3,
+    "quick_list": 2,
+    "shortcut": 7,
+    "card": 3,
+}
+
 # A content block names its widget by the child row's `label`, not by the widget's document
 # name (see PR #108: the 'Total Outstanding' card is named 'iPay Outstanding to Collect').
 BLOCK_TO_TABLE = {
-    "number_card": ("number_card_name", "number_cards"),
-    "chart": ("chart_name", "charts"),
-    "quick_list": ("quick_list_name", "quick_lists"),
-    "shortcut": ("shortcut_name", "shortcuts"),
-    "card": ("card_name", "links"),
+    "number_card": ("number_card_name", "number_cards", None),
+    "chart": ("chart_name", "charts", None),
+    "quick_list": ("quick_list_name", "quick_lists", None),
+    "shortcut": ("shortcut_name", "shortcuts", None),
+    # A card block draws one Card Break and the Links beneath it, so only the breaks are
+    # candidates — matching against every `links` row would accept a plain Link's label.
+    "card": ("card_name", "links", "Card Break"),
 }
 
 
@@ -126,8 +141,12 @@ class TestDashboardCollectShortcut(FrappeTestCase):
         for block in json.loads(doc["content"]):
             if block["type"] not in BLOCK_TO_TABLE:
                 continue
-            key, table = BLOCK_TO_TABLE[block["type"]]
-            labels = {row["label"] for row in doc[table]}
+            key, table, row_type = BLOCK_TO_TABLE[block["type"]]
+            labels = {
+                row["label"]
+                for row in doc[table]
+                if row_type is None or row.get("type") == row_type
+            }
             with self.subTest(block=block["id"]):
                 self.assertIn(block["data"][key], labels)
 
@@ -136,16 +155,28 @@ class TestDashboardCollectShortcut(FrappeTestCase):
         ids = [b["id"] for b in json.loads(doc["content"])]
         self.assertEqual(len(ids), len(set(ids)))
 
-    def test_nothing_else_was_dropped_from_the_dashboard(self):
+    def test_no_widget_was_dropped_from_the_dashboard(self):
         _, doc = _workspace()
         self.assertEqual({k: len(doc[k]) for k in WIDGET_COUNTS}, WIDGET_COUNTS)
 
-    def test_modified_was_bumped_so_the_fixture_re_imports(self):
+    def test_no_widget_was_dropped_from_the_layout(self):
+        _, doc = _workspace()
+        counts = {}
+        for block in json.loads(doc["content"]):
+            counts[block["type"]] = counts.get(block["type"], 0) + 1
+        self.assertEqual(counts, BLOCK_COUNTS)
+
+    def test_modified_is_at_least_the_last_released_bump(self):
+        # A floor, not a ratchet: it proves this change bumped the timestamp, and stops a
+        # later edit from winding it backwards. It cannot see a later edit that forgets to
+        # bump at all — nothing in a single file's contents can.
         _, doc = _workspace()
         self.assertGreater(doc["modified"], PREVIOUS_MODIFIED)
 
     def test_the_file_is_still_in_frappe_export_format(self):
-        # Frappe writes these with indent=1 and sorted keys. Keeping the file canonical is
-        # what makes a structural diff of it trustworthy.
+        # frappe.as_json: indent=1, sorted keys. Keeping the file canonical is what makes a
+        # structural diff of it trustworthy. The trailing newline is not compared: the repo's
+        # copy has one, but frappe/modules/export_file.py writes none, so a file re-exported
+        # from the desk would differ only by that.
         raw, doc = _workspace()
-        self.assertEqual(json.dumps(doc, indent=1, sort_keys=True) + "\n", raw)
+        self.assertEqual(frappe.as_json(doc), raw.rstrip("\n"))

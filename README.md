@@ -84,6 +84,17 @@ tiers are ERPNext's stock roles, reused as-is.
 | **Sales User** | `/collect/sales` | Only their own book, all terms | Yes | No |
 | **Sales Manager** | `/collect/sales` | Every member's book + a member filter | Yes | No |
 
+### Getting in, and back out
+
+The desk and the app link to each other, so nobody has to remember a URL:
+
+- **Desk → app.** The **Collect Payments** button at the top of the iPay dashboard
+  (`/app/ipay`) points at `/collect_payments`, which sends each login to their own page —
+  the same role branch as the table above.
+- **App → desk.** `/collect/internal` and `/collect/sales` carry a **Back to Desk** link
+  back to the iPay dashboard. `/collect` does not: it is the installed phone app, and
+  leaving its scope offers no way back.
+
 ### iPay Collector — the field/delivery role
 
 Prompts and collects **only for their own work**, and only on the payment terms configured in
@@ -155,6 +166,7 @@ reuses the app's existing whitelisted APIs and the logged-in Frappe session.
 ```bash
 cd apps/ipay && yarn install   # installs frontend deps (root postinstall)
 yarn dev                       # Vite dev server; proxies the API to your bench
+yarn test                       # component tests (vitest)
 ```
 
 ### Build / deploy

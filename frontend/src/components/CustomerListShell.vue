@@ -1,4 +1,5 @@
 <script setup>
+import { computed } from 'vue'
 import RoundHeader from '@/components/RoundHeader.vue'
 import CustomerCard from '@/components/CustomerCard.vue'
 import ChequeDueBanner from '@/components/ChequeDueBanner.vue'
@@ -29,7 +30,7 @@ const props = defineProps({
   cardPaymentTerm: { type: String, default: '' },
   cardSalesPerson: { type: String, default: '' },
   chequeDues: { type: Array, default: () => [] }, // cheques accounts flagged to collect here
-  deskLink: Boolean, // offer a way back to the desk — the operator/sales pages, not the field app
+  showDeskLink: Boolean, // offer a way back to the desk (every page that the desk links into)
   tourKey: { type: String, default: '' }, // first-run walkthrough id; empty = no tour
   tourSteps: { type: Array, default: () => [] },
 })
@@ -39,7 +40,7 @@ defineEmits(['retry'])
 const DESK_URL = '/app/ipay'
 // Browser tab only: from an installed app this leaves the PWA's scope ('/collect'), which
 // drops the user outside it with no way back.
-const showDeskLink = props.deskLink && !isStandalone()
+const deskLinkVisible = computed(() => props.showDeskLink && !isStandalone())
 
 // Kick the first-run tour once the list has loaded, so its anchors (stats, filters, a
 // customer card) are on the page.
@@ -53,13 +54,14 @@ useFirstRunTour(() => !props.listLoading, props.tourKey, props.tourSteps)
         {{ title }}
       </h1>
       <div class="flex shrink-0 items-center gap-3">
-        <!-- '↗' rather than the in-app '‹': this leaves the app for the desk. -->
+        <!-- '↗' rather than the in-app '‹': this leaves the app for the desk. Hidden from
+             screen readers, which would otherwise read out the arrow's name. -->
         <a
-          v-if="showDeskLink"
+          v-if="deskLinkVisible"
           :href="DESK_URL"
-          class="whitespace-nowrap text-sm font-medium text-ink/70 hover:text-ink"
+          class="whitespace-nowrap text-sm font-medium text-ink/70 transition active:text-ink"
         >
-          Back to Desk ↗
+          Back to Desk <span aria-hidden="true">↗</span>
         </a>
         <NotificationSettings />
       </div>

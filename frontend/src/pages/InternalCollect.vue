@@ -120,7 +120,7 @@ const TOUR_STEPS = [
     :card-driver="driver"
     :card-payment-term="paymentTerm"
     :card-sales-person="salesPerson"
-    desk-link
+    show-desk-link
     tour-key="internal"
     :tour-steps="TOUR_STEPS"
     @retry="loadCustomers"

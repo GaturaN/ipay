@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 
@@ -31,25 +32,47 @@ const shell = (props = {}) =>
 const deskLink = (wrapper) => wrapper.find(`a[href="${DESK_URL}"]`)
 
 describe('CustomerListShell — back to the desk', () => {
-  it('offers no link by default, so the field app stays a one-screen app', () => {
+  it('offers no link unless a page asks for one', () => {
     expect(deskLink(shell()).exists()).toBe(false)
   })
 
-  it('links to the iPay dashboard when the page asks for it', () => {
-    const link = deskLink(shell({ deskLink: true }))
+  it('links to the iPay dashboard when a page asks for it', () => {
+    const link = deskLink(shell({ showDeskLink: true }))
     expect(link.exists()).toBe(true)
     expect(link.text()).toContain('Back to Desk')
   })
 
+  it('accepts the bare attribute the pages actually write', () => {
+    // The pages write `show-desk-link` with no value. Passing the prop object directly, as
+    // the tests above do, would not catch Vue failing to cast that to true.
+    const parent = {
+      components: { CustomerListShell },
+      template: '<CustomerListShell title="Collect Payments" show-desk-link />',
+    }
+    expect(deskLink(mount(parent)).exists()).toBe(true)
+  })
+
   it('hides the link in an installed app, which has no way back out of scope', () => {
     isStandalone.mockReturnValueOnce(true)
-    expect(deskLink(shell({ deskLink: true })).exists()).toBe(false)
+    expect(deskLink(shell({ showDeskLink: true })).exists()).toBe(false)
   })
 
   it('keeps the desk link out of the way of the page title', () => {
     // Three items in one row: without these the longest title wraps on a narrow screen.
-    const wrapper = shell({ deskLink: true })
+    const wrapper = shell({ showDeskLink: true })
     expect(wrapper.get('h1').classes()).toEqual(expect.arrayContaining(['min-w-0', 'truncate']))
     expect(deskLink(wrapper).element.parentElement.className).toContain('shrink-0')
+  })
+})
+
+describe('the pages the desk links into', () => {
+  // Every page /collect_payments can redirect to needs the way back, or the round trip is
+  // one-way for that persona. Asserted against the sources because mounting a page pulls in
+  // frappe-ui, whose source ESM does not resolve outside a Vite build.
+  it.each(['Collect', 'InternalCollect', 'SalesCollect'])('%s opts in', (page) => {
+    // Relative to the vitest root (frontend/), not to this file: under Vite,
+    // import.meta.url is a served URL rather than a filesystem path.
+    const src = readFileSync(`src/pages/${page}.vue`, 'utf8')
+    expect(src).toContain('show-desk-link')
   })
 })
