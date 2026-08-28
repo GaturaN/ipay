@@ -120,7 +120,7 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "Pending\nSuccess\nUnderpaid\nOverpaid\nFailed\nAbandoned",
+   "options": "Pending\nReceived\nSuccess\nUnderpaid\nOverpaid\nFailed\nAbandoned",
    "read_only": 1,
    "default": "Pending"
   },
