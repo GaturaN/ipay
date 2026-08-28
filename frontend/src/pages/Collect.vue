@@ -109,6 +109,7 @@ const TOUR_STEPS = [
     :cheque-dues="chequeDues"
     :empty-message="emptyMessage"
     :card-driver="driver"
+    show-desk-link
     tour-key="collect"
     :tour-steps="TOUR_STEPS"
     @retry="loadCustomers"

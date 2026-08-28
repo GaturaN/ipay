@@ -104,6 +104,7 @@ const TOUR_STEPS = [
     card-route-name="SalesCustomer"
     :card-payment-term="paymentTerm"
     :card-sales-person="salesPerson"
+    show-desk-link
     tour-key="sales"
     :tour-steps="TOUR_STEPS"
     @retry="loadCustomers"
