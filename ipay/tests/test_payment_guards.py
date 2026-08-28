@@ -231,3 +231,41 @@ class TestUnrecordedPayment(FrappeTestCase):
                     state = rd._payment_state("REQ-1")
                 self.assertFalse(state["received"])
                 self.assertTrue(state[key])
+
+
+class TestOperatorsCanSeeIt(FrappeTestCase):
+    """A state nobody is prompted to look at is not much better than silence."""
+
+    def test_the_attention_report_surfaces_an_unrecorded_payment(self):
+        from ipay.ipay.report.ipay_payments_needing_attention import (
+            ipay_payments_needing_attention as report,
+        )
+
+        self.assertIn("Received", report.ATTENTION_STATUSES)
+        rows = [
+            frappe._dict(
+                name="REQ-1", status="Received", customer="CUST-1", sales_invoice="INV-1",
+                amount=100, payment_entry=None, result_detail="unposted", modified="2026-08-28",
+            )
+        ]
+        with patch.object(frappe, "get_all", return_value=rows) as get_all, \
+             patch.object(frappe.db, "get_value", return_value=None):
+            _columns, data = report.execute()
+        # The report must ask for the new status, not just tolerate it.
+        self.assertIn("Received", get_all.call_args[1]["filters"]["status"][1])
+        self.assertEqual(len(data), 1)
+        # No Payment Entry, so nothing was received into the books — the difference is the
+        # whole expected amount, which is what an accountant needs to see.
+        self.assertEqual(data[0]["received"], 0)
+        self.assertEqual(data[0]["difference"], -100)
+
+    def test_nothing_promises_an_automatic_retry_while_the_poller_is_paused(self):
+        """A source check, deliberately: the defect was a user-facing sentence promising
+        recovery that is switched off, which told operators to stand down while money sat
+        unrecorded. It relaxes on its own if the poller is ever un-paused."""
+        from ipay.ipay.main.utils.reconcile_payments import RECONCILE_PAUSED
+
+        if not RECONCILE_PAUSED:
+            self.skipTest("the reconcile poller is live again, so a retry can be promised")
+        source = open(frappe.get_app_path("ipay", "ipay", "main", "main.py")).read()
+        self.assertNotIn("retried automatically", source)

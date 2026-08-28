@@ -223,9 +223,13 @@ def lipana_mpesa(
                     create_log_entry(
                         "ERR", f"Payment Entry creation failed: {result.get('message')}"
                     )
+                    # No promise of an automatic retry: the reconcile poller is paused
+                    # (reconcile_payments.RECONCILE_PAUSED), so the only recovery is the
+                    # Verify Payment button. Saying otherwise tells the operator to stand
+                    # down while the money sits unrecorded.
                     frappe.msgprint(
-                        "Payment received, but creating the Payment Entry failed. "
-                        "It will be retried automatically."
+                        "Payment received, but it could not be recorded. The request is "
+                        "marked Received — do not charge again. Use Verify Payment to retry."
                     )
 
                 return response_data

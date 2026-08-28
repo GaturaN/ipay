@@ -1,9 +1,11 @@
 import frappe
 from frappe.utils import flt
 
-# Payments that came in wrong and need a human: an Underpaid balance still to chase,
-# or an Overpaid excess sitting as customer credit to apply or refund.
-ATTENTION_STATUSES = ["Underpaid", "Overpaid"]
+# Payments that need a human: an Underpaid balance still to chase, an Overpaid excess
+# sitting as customer credit to apply or refund, or a Received payment that reached iPay but
+# no ledger — the last has no Payment Entry at all, so it shows Received 0 against the full
+# expected amount, which is exactly how much money is missing from the books.
+ATTENTION_STATUSES = ["Underpaid", "Overpaid", "Received"]
 
 
 def execute(filters=None):
