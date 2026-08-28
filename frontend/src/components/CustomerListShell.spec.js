@@ -49,7 +49,9 @@ describe('CustomerListShell — back to the desk', () => {
       components: { CustomerListShell },
       template: '<CustomerListShell title="Collect Payments" show-desk-link />',
     }
-    expect(deskLink(mount(parent)).exists()).toBe(true)
+    // router-link is registered by the app's router, not by a bare mount.
+    const wrapper = mount(parent, { global: { stubs: { 'router-link': true } } })
+    expect(deskLink(wrapper).exists()).toBe(true)
   })
 
   it('hides the link in an installed app, which has no way back out of scope', () => {
