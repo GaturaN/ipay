@@ -384,6 +384,10 @@ def _payment_state(request_name, include_detail=False):
         # polling, but distinct from a clean full payment.
         "partial": status in ("Underpaid", "Overpaid"),
         "failed": status in ("Failed", "Abandoned"),
+        # Money confirmed at iPay that could not be posted to the ledger. Terminal for
+        # polling — the collector must be told to stop, not to keep waiting — but explicitly
+        # not "paid": nothing has been recorded yet.
+        "received": status == "Received",
     }
     # result_detail embeds payer name/phone/txn — only expose to authorised operators.
     if include_detail:
