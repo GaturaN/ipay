@@ -269,3 +269,105 @@ class TestOperatorsCanSeeIt(FrappeTestCase):
             self.skipTest("the reconcile poller is live again, so a retry can be promised")
         source = open(frappe.get_app_path("ipay", "ipay", "main", "main.py")).read()
         self.assertNotIn("retried automatically", source)
+
+
+class TestReceivedSurvives(FrappeTestCase):
+    """Recording the state is worthless if something else quietly erases it."""
+
+    def test_the_reconcile_poller_never_abandons_a_received_payment(self):
+        # The abandon check keys off a missing payment_entry — and Received has none by
+        # definition. Without Received in this set the poller would mark it Abandoned, which
+        # is not in MONEY_ARRIVED, so the request would become chargeable again and the
+        # double-charge loop this change closes would reopen.
+        from ipay.ipay.main.utils.reconcile_payments import PAID_STATUSES
+
+        self.assertIn("Received", PAID_STATUSES)
+        for status in MONEY_ARRIVED:
+            with self.subTest(status=status):
+                self.assertIn(status, PAID_STATUSES)
+
+    def test_a_fresh_payment_link_is_refused_once_the_money_is_in(self):
+        # Underpaid is deliberately still allowed: that request owes a balance.
+        with patch.object(rd, "_require_operator"), \
+             patch.object(rd, "_require_redirect_enabled"), \
+             patch.object(rd, "_require_request_access"), \
+             patch.object(rd, "_request_awaits_cheque", side_effect=PASSED):
+            for status in ("Success", "Overpaid", "Received"):
+                with self.subTest(status=status):
+                    with patch.object(frappe.db, "get_value", return_value=status):
+                        with self.assertRaises(frappe.ValidationError):
+                            rd.regenerate_payment_link("REQ-1")
+            with self.subTest(status="Underpaid"):
+                with patch.object(frappe.db, "get_value", return_value="Underpaid"):
+                    with self.assertRaises(RuntimeError):
+                        rd.regenerate_payment_link("REQ-1")
+
+    def test_the_operator_page_treats_every_money_arrived_status_as_settled(self):
+        # RequestDetail.vue hides the prompt button for a settled request. Its list is
+        # hand-written in JS while MONEY_ARRIVED lives here, so nothing but this test keeps
+        # the two in step — and a status missing there means the UI invites the exact action
+        # the server then refuses.
+        path = frappe.get_app_path("ipay", "..", "frontend", "src", "pages", "RequestDetail.vue")
+        settled = open(path).read().split("const SETTLED = ")[1].split("\n")[0]
+        for status in MONEY_ARRIVED:
+            with self.subTest(status=status):
+                self.assertIn(status, settled)
+
+
+class TestThePayerIsTold(FrappeTestCase):
+    """The customer's own surfaces. Money left their phone; they must not be shown a form
+    inviting them to send it again, nor told we are still waiting for it."""
+
+    def test_the_checkout_return_page_says_received_not_confirming(self):
+        from ipay.www import payment_status
+
+        for status, expected in (
+            ("Received", "received"),
+            ("Success", "confirmed"),
+            ("Underpaid", "mismatch"),
+        ):
+            with self.subTest(status=status):
+                ctx = frappe._dict()
+                with patch.dict(frappe.form_dict, {"request": "REQ-1"}), \
+                     patch.object(frappe.db, "exists", return_value=True), \
+                     patch.object(frappe.db, "get_value", return_value=status):
+                    payment_status.get_context(ctx)
+                self.assertTrue(ctx[expected], f"{status} should set context.{expected}")
+                # Received must not masquerade as a fully confirmed payment.
+                if status == "Received":
+                    self.assertFalse(ctx.confirmed)
+                    self.assertFalse(ctx.mismatch)
+
+    def test_the_payment_link_page_stops_asking_for_money_already_sent(self):
+        from ipay.www import pay
+
+        def context_for(status):
+            ctx = frappe._dict()
+            req = frappe._dict(sales_invoice="INV-1", amount=100, status=status)
+            with patch.object(pay, "resolve_pay_token", return_value=("REQ-1", status)), \
+                 patch.object(pay, "_mpesa_max_amount", return_value=0), \
+                 patch.object(frappe.db, "get_value", return_value=req), \
+                 patch.object(frappe.db, "get_single_value", return_value=0), \
+                 patch.object(frappe, "get_all", return_value=["INV-1"]), \
+                 patch.object(frappe, "get_roles", return_value=[]), \
+                 patch.object(frappe.utils, "get_url", return_value="http://x/pay"), \
+                 patch.dict(frappe.form_dict, {"token": "tok"}):
+                pay.get_context(ctx)
+            return ctx
+
+        received = context_for("Received")
+        self.assertTrue(received.received)
+        # Not "paid": nothing is posted. The template branches on them separately.
+        self.assertFalse(received.paid)
+
+        pending = context_for("Pending")
+        self.assertFalse(pending.received)
+
+    def test_the_payment_form_is_gated_on_the_new_state(self):
+        # The context flag only helps if the template actually withholds the form. The
+        # defect was a customer being shown "pay now" for money they had already sent.
+        path = frappe.get_app_path("ipay", "www", "pay.html")
+        html = open(path).read()
+        gate = [ln for ln in html.splitlines() if "not invalid" in ln and "not paid" in ln]
+        self.assertTrue(gate, "could not find the payment-form gate in pay.html")
+        self.assertIn("not received", gate[0])

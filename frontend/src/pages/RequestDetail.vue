@@ -35,7 +35,7 @@ const chequing = ref(null)
 const chequeRecorded = ref(false) // a cheque was just taken here — even on-account, don't also charge it
 let pollTimer = null
 
-const SETTLED = ['Success', 'Underpaid', 'Overpaid', 'Cancelled']
+const SETTLED = ['Success', 'Underpaid', 'Overpaid', 'Received', 'Cancelled']
 // A cheque already collected here makes the request unchargeable (the server refuses every rail for
 // a per-invoice cheque), so it drops out of promptable like a settled one. A cheque just taken on
 // this page also drops out, so an on-account one can't be double-charged from the same screen.
@@ -56,6 +56,8 @@ const statusPill = computed(() => {
   const s = detail.value?.status
   if (s === 'Success') return 'bg-landed text-white'
   if (s === 'Underpaid' || s === 'Overpaid') return 'bg-owed text-white'
+  // Money in, ledger not — the one state that needs someone to act on it.
+  if (s === 'Received') return 'bg-owed text-white'
   if (s === 'Failed' || s === 'Abandoned' || s === 'Cancelled') return 'bg-danger text-white'
   return 'bg-paper/20 text-paper'
 })

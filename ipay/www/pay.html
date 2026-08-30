@@ -29,6 +29,9 @@
       {% elif invalid %}
         <h4>Invalid payment link</h4>
         <p class="muted">This payment link is invalid or has expired. Please request a new one.</p>
+      {% elif received %}
+        <h4 class="text-success">Payment received</h4>
+        <p class="muted">We have your payment and it is being recorded. There is nothing more to pay &mdash; please do not pay again.</p>
       {% elif paid %}
         <h4 class="text-success">Already paid</h4>
         {% if invoices | length > 1 %}
@@ -101,7 +104,7 @@
   </div>
 </div>
 
-{% if not invalid and not paid %}
+{% if not invalid and not paid and not received %}
 <script>
 var IPAY_TOKEN = "{{ token }}";
 var IPAY_REQUEST = "{{ request_name }}";
@@ -154,6 +157,11 @@ function ipayPayPoll() {
         } else if (s.partial) {
           clearInterval(iv);
           ipayPayNotify("<strong>Payment received.</strong> The amount differs from the balance &mdash; our team will reconcile it shortly.", "info");
+        } else if (s.received) {
+          // Money in, ledger not. Terminal, and emphatically not "keep waiting" — the payer
+          // has already sent it and must not be nudged into sending it again.
+          clearInterval(iv);
+          ipayPayNotify("<strong>Payment received.</strong> It is being recorded &mdash; there is nothing more to pay.", "success");
         } else if (s.failed) {
           clearInterval(iv);
           // s.detail is the specific M-Pesa reason; escape it (www pages don't autoescape

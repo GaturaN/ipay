@@ -571,7 +571,9 @@ def regenerate_payment_link(request):
     _require_redirect_enabled()
     _require_request_access(request)
     status = frappe.db.get_value("iPay Request", request, "status")
-    if status in ("Success", "Overpaid"):
+    # Underpaid is deliberately absent: a partly-paid request still owes a balance and a
+    # fresh link is how it gets collected. Received is fully paid, just not yet recorded.
+    if status in ("Success", "Overpaid", "Received"):
         frappe.throw("This request is already paid; a new payment link is not needed.")
     if _request_awaits_cheque(request):
         frappe.throw(CHEQUE_HELD)
