@@ -12,7 +12,7 @@ import frappe
 from ipay.ipay.main.utils.make_payment_entry import make_payment_entry
 from ipay.ipay.main.utils.send_callback import deliver_callback
 from ipay.ipay.main.utils.constants import amounts_match
-from ipay.ipay.main.utils.notifications import notify_collection_success
+from ipay.ipay.main.utils.notifications import notify_collection_error, notify_collection_success
 
 
 def build_response_data(data):
@@ -45,8 +45,8 @@ def finalize_payment(
     exactly once. Any field not supplied is read from the request itself.
 
     Returns the ``make_payment_entry`` result augmented with ``request_status``
-    (the resolved iPay Request status, or None if the payment could not be
-    recorded) and ``response_data`` (the canonical payload).
+    (the resolved iPay Request status, or "Received" when the money arrived but
+    could not be posted) and ``response_data`` (the canonical payload).
     """
     # Lock the request row for the duration of this transaction so two finalisers
     # of the SAME request (e.g. the browser-return handler and the 5-min poller
@@ -83,26 +83,43 @@ def finalize_payment(
         customer, customer_email, sales_invoice, response_data, ipay_request=request_name
     )
     if result.get("status") not in ("success", "duplicate"):
-        # Could not record the payment — leave the request untouched so the
-        # poller retries it on the next run.
-        result["request_status"] = None
+        # The money is real; only the ledger write failed. Say so on the request, because
+        # leaving it 'Pending' reads as "the customer has not paid" — that is what let a
+        # collector re-prompt a paid request twice in #111. Received also makes the charge
+        # guards refuse it (constants.MONEY_ARRIVED).
+        #
+        # Deliberately NO callback and no callback_payload: downstream must not be told a
+        # payment succeeded when nothing reached the ledger. The row lock taken above is
+        # already gone — make_payment_entry rolls back on a failed insert — so this is a
+        # fresh write, and it is idempotent if two finalisers land here at once.
+        frappe.db.set_value(
+            "iPay Request",
+            request_name,
+            {
+                "status": "Received",
+                "result_detail": (
+                    f"{_received_detail(response_data)}. NOT YET RECORDED: "
+                    f"{result.get('message')}. Use Verify Payment to retry."
+                ),
+            },
+        )
+        frappe.db.commit()
+        notify_collection_error(
+            request_name, "Payment received but not yet recorded — do not charge again."
+        )
+        result["request_status"] = "Received"
         result["response_data"] = response_data
         return result
 
     paid = response_data.get("transaction_amount")
     status = _resolve_status(result, paid, expected_amount)
 
-    result_detail = (
-        f"KES {paid} received from {response_data.get('payee')} "
-        f"({response_data.get('telephone')}) — M-Pesa ref "
-        f"{response_data.get('transaction_code')}, {response_data.get('paid_at')}"
-    )
     frappe.db.set_value(
         "iPay Request",
         request_name,
         {
             "status": status,
-            "result_detail": result_detail,
+            "result_detail": _received_detail(response_data),
             # Store the payload so the poller can retry a failed callback without
             # re-querying iPay.
             "callback_payload": frappe.as_json(response_data),
@@ -122,6 +139,16 @@ def finalize_payment(
     result["request_status"] = status
     result["response_data"] = response_data
     return result
+
+
+def _received_detail(response_data):
+    """How a received payment reads on the request — the same sentence whether or not it
+    reached the ledger, so an operator sees one format either way."""
+    return (
+        f"KES {response_data.get('transaction_amount')} received from "
+        f"{response_data.get('payee')} ({response_data.get('telephone')}) — M-Pesa ref "
+        f"{response_data.get('transaction_code')}, {response_data.get('paid_at')}"
+    )
 
 
 def _resolve_status(result, paid, expected):

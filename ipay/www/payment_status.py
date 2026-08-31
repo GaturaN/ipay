@@ -12,3 +12,6 @@ def get_context(context):
 
     context.confirmed = status == "Success"
     context.mismatch = status in ("Underpaid", "Overpaid")
+    # Arrived at iPay but not yet posted. Says "received", never "confirming" — the payer
+    # has paid, and telling them otherwise is what sends them round again.
+    context.received = status == "Received"

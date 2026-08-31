@@ -12,6 +12,9 @@
       {% elif mismatch %}
         <h2 class="text-warning">Payment received &mdash; under review</h2>
         <p>We received a payment with a different amount than expected. Our team will reconcile it shortly.</p>
+      {% elif received %}
+        <h2 class="text-success">Payment received</h2>
+        <p>Thank you. We have your payment and it is being recorded.</p>
       {% else %}
         <h2>Confirming the payment&hellip;</h2>
         <p>If payment was made, it is being confirmed and will reflect within a few minutes.</p>

@@ -37,6 +37,13 @@ COLLECTION_NOTE_MAX_LENGTH = 500
 CHEQUE_MODE = "Cheque"
 CHEQUE_NO_MAX_LENGTH = 30
 
+# Statuses that mean the customer's money has arrived. A request in one of these must never be
+# charged again, split, or cancelled — the money is already against it. Success/Underpaid/
+# Overpaid are posted to a Payment Entry; Received is money iPay confirmed that could NOT be
+# posted, and it guards identically because the money is just as real. Defined once because
+# the guards that use it are the difference between a re-prompt and charging a customer twice.
+MONEY_ARRIVED = ("Success", "Underpaid", "Overpaid", "Received")
+
 
 def note_filters(reference_name):
     """Comment filters for the collection notes on one invoice, or on a list of them."""

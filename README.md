@@ -25,8 +25,11 @@ iPay has three surfaces over one Frappe backend:
   through iPay Africa; every confirmation route — the in-session flow, the manual desk *Verify
   Payment*, the hosted-checkout return, and the reconcile backstop — funnels through one
   `finalize_payment`, which records a **Payment Entry**, resolves the request to
-  Success / Underpaid / Overpaid, and delivers an n8n callback exactly once. Configuration lives
-  in **iPay Settings**; every step is written to **iPay Logs**.
+  Success / Underpaid / Overpaid, and delivers an n8n callback exactly once. If the money
+  arrives but the Payment Entry cannot be written, the request is resolved to **Received**
+  instead — no callback, and every rail refuses to charge it again — so a payment is never
+  left looking unpaid. Configuration lives in **iPay Settings**; every step is written to
+  **iPay Logs**.
 - **iPay Collect (the `/collect` PWA).** An installable, mobile-first Vue app for field, sales,
   and operator teams to prompt and track payments, record cheques, and — now — receive push
   notifications. It shares the logged-in Frappe session and the same whitelisted APIs.

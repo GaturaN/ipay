@@ -10,6 +10,7 @@ from ipay.ipay.main.utils.make_payment_entry import allocate_references
 from ipay.ipay.main.utils.reconcile_payments import reconcile_request
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
 from ipay.ipay.main.utils.constants import (
+    MONEY_ARRIVED,
     clean_oid,
     note_content,
     note_filters,
@@ -262,11 +263,11 @@ def _ensure_request(invoice):
         fields=["name", "status"],
         order_by="creation desc",
     ):
-        # A settled request (Success/Underpaid/Overpaid) is the permanent record of
+        # A request with money against it is the permanent record of
         # that payment — never reuse it. Collect any remaining balance (an Underpaid
         # invoice reappears in the list) through a FRESH request, so each collection
         # keeps its own Payment Entry and callback.
-        if req.status in ("Success", "Underpaid", "Overpaid"):
+        if req.status in MONEY_ARRIVED:
             continue
         if not frappe.db.exists("iPay Request Invoice", {"parent": req.name}):
             return req.name
@@ -383,6 +384,10 @@ def _payment_state(request_name, include_detail=False):
         # polling, but distinct from a clean full payment.
         "partial": status in ("Underpaid", "Overpaid"),
         "failed": status in ("Failed", "Abandoned"),
+        # Money confirmed at iPay that could not be posted to the ledger. Terminal for
+        # polling — the collector must be told to stop, not to keep waiting — but explicitly
+        # not "paid": nothing has been recorded yet.
+        "received": status == "Received",
     }
     # result_detail embeds payer name/phone/txn — only expose to authorised operators.
     if include_detail:
@@ -436,7 +441,7 @@ def _enqueue_stk(request_name, phone):
     # re-prompt one that already settled, matching the customer (token) path.
     if not req or req.docstatus == 2:
         return {"status": "error", "message": "This request is no longer chargeable."}
-    if req.status in ("Success", "Underpaid", "Overpaid"):
+    if req.status in MONEY_ARRIVED:
         return {"status": "error", "message": "This request has already been paid."}
     # A request raised before the cheque was collected is still chargeable on its own — the
     # invoice's outstanding does not move until accounts bank it.
@@ -566,7 +571,9 @@ def regenerate_payment_link(request):
     _require_redirect_enabled()
     _require_request_access(request)
     status = frappe.db.get_value("iPay Request", request, "status")
-    if status in ("Success", "Overpaid"):
+    # Underpaid is deliberately absent: a partly-paid request still owes a balance and a
+    # fresh link is how it gets collected. Received is fully paid, just not yet recorded.
+    if status in ("Success", "Overpaid", "Received"):
         frappe.throw("This request is already paid; a new payment link is not needed.")
     if _request_awaits_cheque(request):
         frappe.throw(CHEQUE_HELD)
@@ -681,7 +688,7 @@ def split_bundle(request):
     locked = frappe.db.get_value(
         "iPay Request", request, ["status", "payment_entry"], as_dict=True, for_update=True
     ) or {}
-    if locked.get("status") in ("Success", "Underpaid", "Overpaid") or locked.get("payment_entry"):
+    if locked.get("status") in MONEY_ARRIVED or locked.get("payment_entry"):
         frappe.throw("This request has a recorded payment and cannot be split.")
     bundle = frappe.get_doc("iPay Request", request)
     invoice_names = [row.sales_invoice for row in (bundle.invoices or []) if row.sales_invoice]
@@ -732,7 +739,7 @@ def discard_bundle(request):
     # already-cancelled request is a no-op rather than an error.
     if locked.get("docstatus") != 1:
         return {"cancelled": False}
-    if locked.get("status") in ("Success", "Underpaid", "Overpaid") or locked.get("payment_entry"):
+    if locked.get("status") in MONEY_ARRIVED or locked.get("payment_entry"):
         return {"cancelled": False}
     bundle = frappe.get_doc("iPay Request", request)
     if not (bundle.invoices or []):

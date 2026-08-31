@@ -6,7 +6,7 @@ from ipay.ipay.main.utils.verify_mpesa_payment import verify_mpesa_payment
 from ipay.ipay.main.utils.finalize_payment import finalize_payment
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
 from ipay.ipay.main.utils.notifications import notify_collection_error
-from ipay.ipay.main.utils.constants import clean_oid
+from ipay.ipay.main.utils.constants import MONEY_ARRIVED, clean_oid
 from ipay.ipay.main.utils.alerts import iPayDeclined
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,7 @@ def lipana_mpesa(
     if not state:
         create_log_entry("INF", f"Skipping STK for {docid}: request no longer exists")
         return {"status": "skipped", "message": "This request is no longer chargeable."}
-    if state.get("docstatus") == 2 or state.get("status") in ("Success", "Underpaid", "Overpaid"):
+    if state.get("docstatus") == 2 or state.get("status") in MONEY_ARRIVED:
         create_log_entry(
             "INF",
             f"Skipping STK for {docid}: no longer chargeable "
@@ -223,9 +223,13 @@ def lipana_mpesa(
                     create_log_entry(
                         "ERR", f"Payment Entry creation failed: {result.get('message')}"
                     )
+                    # No promise of an automatic retry: the reconcile poller is paused
+                    # (reconcile_payments.RECONCILE_PAUSED), so the only recovery is the
+                    # Verify Payment button. Saying otherwise tells the operator to stand
+                    # down while the money sits unrecorded.
                     frappe.msgprint(
-                        "Payment received, but creating the Payment Entry failed. "
-                        "It will be retried automatically."
+                        "Payment received, but it could not be recorded. The request is "
+                        "marked Received — do not charge again. Use Verify Payment to retry."
                     )
 
                 return response_data

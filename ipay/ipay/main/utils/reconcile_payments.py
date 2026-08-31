@@ -25,7 +25,10 @@ SEARCH_URL = "https://apis.ipayafrica.com/payments/v2/transaction/search"
 # Statuses that mean a payment was recorded — these are never abandoned and stay
 # eligible for callback retry. Everything else (Pending, blank legacy rows,
 # Failed) with no Payment Entry is fair game for the Abandoned sweep.
-PAID_STATUSES = ["Success", "Underpaid", "Overpaid"]
+# Never abandon a request in one of these: the money arrived. Success/Underpaid/Overpaid
+# reached a Payment Entry; Received did not, which is precisely why it must not be abandoned
+# — the abandon check below keys off a missing payment_entry, and Received has none.
+PAID_STATUSES = ["Success", "Underpaid", "Overpaid", "Received"]
 
 REQUEST_FIELDS = [
     "name", "sales_invoice", "amount", "customer", "customer_email",

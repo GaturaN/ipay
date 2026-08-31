@@ -47,6 +47,10 @@ def get_context(context):
         req.amount
     )
     context.paid = req.status == "Success"
+    # Money confirmed at iPay that has not reached the ledger yet. Kept distinct from paid:
+    # the payer must be told it arrived, and must NOT be shown a form inviting them to pay a
+    # second time for money they have already sent.
+    context.received = req.status == "Received"
     context.enable_redirect = frappe.db.get_single_value(
         "iPay Settings", "enable_redirect"
     )

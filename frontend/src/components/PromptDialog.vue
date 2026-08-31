@@ -107,6 +107,13 @@ function startPolling(request) {
       } else if (state.partial) {
         settle('warn', state.detail || 'Paid, but the amount differs — the team will reconcile it.')
         emit('changed')
+      } else if (state.received) {
+        // Money arrived, but nothing reached the ledger yet. Terminal for polling: the
+        // collector must be told to STOP, not to keep waiting. Falling through to the
+        // timeout used to tell them the customer had not paid, which is what invited a
+        // second charge on a request already paid.
+        settle('warn', 'Payment received — being recorded. Do not charge again.')
+        emit('changed')
       } else if (state.failed) {
         // state.detail carries the specific M-Pesa reason (insufficient balance,
         // wrong PIN, cancelled) the backend classified — show it, not just "failed".
