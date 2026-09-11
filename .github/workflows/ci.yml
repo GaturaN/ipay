@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Collect PWA tests (vitest)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # vitest 1.6 declares engines ^18 || >=20, and 18 and 20 are both EOL, so 24 LTS.
+          # Exact patch, not a major: a floating runtime turns CI red for reasons nobody changed.
+          node-version: '24.12.0'
+      - run: yarn install --frozen-lockfile
+        working-directory: frontend
+      - run: yarn test
+        working-directory: frontend
+
+  python-syntax:
+    name: 'python: compile only — no tests (suite needs a bench, see ipay/tests/README.md)'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          # The version of the bench this app runs on, so CI compiles what production executes.
+          python-version: '3.11.9'
+      # This job compiles; it runs no tests. The money-path suite needs a bench and a database
+      # (ipay/tests/README.md), so a green tick here says "the Python parses" and nothing more.
+      # compileall also exits 0 when it cannot list a directory, so a renamed or moved ipay/
+      # would pass green having compiled nothing. This step is what stops that.
+      - name: Refuse to pass vacuously when there is nothing to compile
+        run: test -n "$(find ipay -name '*.py' -print -quit)"
+      - run: python -m compileall -q ipay
