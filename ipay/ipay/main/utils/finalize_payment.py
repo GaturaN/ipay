@@ -67,10 +67,16 @@ def finalize_payment(
     # invoice already collected elsewhere takes nothing here (the excess becomes
     # customer credit) and can't be double-charged. Flag it for an operator to eye.
     if defaults.get("docstatus") == 2:
+        # Keyword args for the same reason as alerts.notify_money_at_risk: passed
+        # positionally the detail became the title, and Error Log.method is a varchar(140).
+        # At 137 characters this had three to spare, and unlike the alert it is unguarded —
+        # an overflow would abort finalisation here, before the Payment Entry is created.
         frappe.log_error(
-            f"Payment finalised on cancelled iPay Request {request_name} — likely a "
-            f"post-discard race. Recorded against live outstanding (excess = credit).",
-            "iPay: payment on cancelled request",
+            title="iPay: payment on cancelled request",
+            message=(
+                f"Payment finalised on cancelled iPay Request {request_name} — likely a "
+                f"post-discard race. Recorded against live outstanding (excess = credit)."
+            ),
         )
     sales_invoice = sales_invoice or defaults.get("sales_invoice")
     customer = customer or defaults.get("customer")

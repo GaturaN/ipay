@@ -30,6 +30,20 @@ def _row(name, poll_attempts=0):
     )
 
 
+def _log_error_like_frappe(written):
+    """Stand-in for frappe.log_error's routing (frappe/utils/error.py:46-64): the title goes
+    to Error Log.method — a Data field, so varchar(140) — unless the title is a traceback, in
+    which case the two are swapped. Over the limit Document.insert throws."""
+
+    def log_error(title=None, message=None, **kwargs):
+        method = message if (message and "\n" in (title or "")) else title
+        if len(method or "") > 140:
+            raise frappe.ValidationError("Value too big")
+        written.append(method)
+
+    return log_error
+
+
 class TestPollBackoff(FrappeTestCase):
     """How long the backstop waits before looking a request up again. Too eager and it is
     the call-volume problem d1e8472 paused it for; too lazy and money sits unrecorded."""
@@ -444,14 +458,7 @@ class TestTheAlertActuallyLands(FrappeTestCase):
         the title in Error Log.method unless the title is a traceback, and over 140
         characters the insert throws."""
         written = []
-
-        def log_error_like_frappe(title=None, message=None, **kwargs):
-            method = message if (message and "\n" in (title or "")) else title
-            if len(method or "") > 140:
-                raise frappe.ValidationError("Value too big")
-            written.append(method)
-
-        self._notify(log_error_like_frappe)
+        self._notify(_log_error_like_frappe(written))
         self.assertEqual(len(written), 1)
 
     def test_the_email_carries_the_full_detail(self):
@@ -473,3 +480,51 @@ class TestTheAlertActuallyLands(FrappeTestCase):
             alerts.notify_money_at_risk("Payment not recorded for IPREQ-1", self.LONG_MESSAGE)
         self.assertTrue(captured)
         self.assertFalse(sendmail.called)
+
+
+class TestCancelledRequestFlagSurvives(FrappeTestCase):
+    """finalize_payment's cancelled-request flag had the same positional log_error shape as
+    the money-at-risk alert, at 137 of the 140 characters Error Log.method allows. It is
+    worse placed than the alert: nothing guards it, and it runs before make_payment_entry,
+    so an overflow aborted finalisation — main.py's handler then marks the request Failed
+    while the customer's money has already arrived."""
+
+    def _finalize_on_a_cancelled_request(self, log_error, request_name="IPREQ00001"):
+        defaults = frappe._dict(
+            sales_invoice="SINV-1", amount=100, customer="C-1",
+            customer_email="c@example.com", docstatus=2,
+        )
+        with patch.object(frappe, "log_error", side_effect=log_error), \
+             patch.object(fp, "make_payment_entry",
+                          return_value={"status": "success", "allocated": 100}), \
+             patch.object(fp, "notify_collection_success"), \
+             patch.object(fp, "deliver_callback"), \
+             patch.object(frappe.db, "get_value", return_value=defaults), \
+             patch.object(frappe.db, "set_value"), \
+             patch.object(frappe.db, "commit"):
+            return fp.finalize_payment(
+                request_name, {"transaction_code": "ABC123", "transaction_amount": 100}
+            )
+
+    def test_the_flag_is_written_and_finalisation_completes(self):
+        written = []
+        result = self._finalize_on_a_cancelled_request(_log_error_like_frappe(written))
+        self.assertEqual(len(written), 1)
+        # The point of the fix: the payment is still recorded.
+        self.assertEqual(result["request_status"], "Success")
+
+    def test_the_flag_survives_a_long_request_name(self):
+        # An amended request carries a -N suffix. At the old 137-character baseline a
+        # three-character suffix was enough to overflow and abort finalisation.
+        written = []
+        result = self._finalize_on_a_cancelled_request(
+            _log_error_like_frappe(written), request_name="IPREQ00001-1000"
+        )
+        self.assertEqual(len(written), 1)
+        self.assertEqual(result["request_status"], "Success")
+
+    def test_the_request_name_is_in_the_body_where_length_does_not_matter(self):
+        captured = {}
+        self._finalize_on_a_cancelled_request(lambda **kw: captured.update(kw))
+        self.assertLessEqual(len(captured["title"]), 140)
+        self.assertIn("IPREQ00001", captured["message"])
