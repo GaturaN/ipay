@@ -11,8 +11,8 @@ the payment is graded against, and the M-Pesa ceiling.
 
 The Sales Invoice reads are stubbed per field rather than stubbing the helper, so a
 helper that reached for ``grand_total`` instead of ``outstanding_amount`` fails here.
-The caller names a different invoice from the one the request covers, for the same
-reason: deriving from the caller's invoice must fail rather than pass unnoticed.
+The caller names a different invoice from the one the request covers, and supplies an
+amount, for the same reason: deriving from either must fail rather than pass unnoticed.
 """
 
 from contextlib import ExitStack
@@ -104,7 +104,8 @@ class ChargedAmountTestCase(FrappeTestCase):
     def _record(self, doctype, name, fieldname, value=None, **kwargs):
         self.stored.update(fieldname if isinstance(fieldname, dict) else {fieldname: value})
 
-    def _prompt(self, outstanding, total=None, request_type="Mpesa Express", bundle=(), **gateway):
+    def _prompt(self, outstanding, total=None, request_type="Mpesa Express", bundle=(),
+                amount=None, **gateway):
         """Call the endpoint as the enqueued worker does, with the gateway stubbed.
 
         ``bundle`` names the request's child invoice rows; empty means a single-invoice
@@ -129,7 +130,7 @@ class ChargedAmountTestCase(FrappeTestCase):
             for each in patches:
                 stack.enter_context(each)
             return main.lipana_mpesa(
-                REQUEST, EMAIL, PHONE, CALLER_INVOICE, EMAIL, request_type,
+                REQUEST, EMAIL, PHONE, CALLER_INVOICE, EMAIL, request_type, amount=amount,
             )
 
     def _charge(self, **kwargs):
@@ -168,22 +169,22 @@ class TestChargedAmountIsServerDerived(ChargedAmountTestCase):
         self.assertEqual(self._charge(outstanding=BUNDLE, bundle=tuple(BUNDLE)), 0.3)
 
 
-class TestTheCallerCannotSupplyAnAmount(FrappeTestCase):
-    """The amount is not merely ignored — it cannot be expressed by a caller at all."""
+class TestASuppliedAmountIsInert(ChargedAmountTestCase):
+    """``amount`` is still accepted, for one release, so jobs enqueued by the previous
+    release survive the deploy — RQ passes their kwargs through unfiltered.
 
-    def test_the_endpoint_takes_no_amount_parameter(self):
-        self.assertNotIn("amount", signature(main.lipana_mpesa).parameters)
+    It must change nothing. These are the tests that stop it quietly becoming live again.
+    """
 
-    def test_a_supplied_amount_is_dropped_before_the_endpoint_is_reached(self):
-        # frappe.call routes every whitelisted HTTP request through get_newargs, which
-        # discards arguments outside the signature — so an amount in the request body
-        # never becomes a value this endpoint could act on.
-        delivered = frappe.get_newargs(
-            main.lipana_mpesa,
-            {"docid": REQUEST, "amount": CALLER_AMOUNT, "payment_request_type": "Mpesa Express"},
-        )
-        self.assertNotIn("amount", delivered)
-        self.assertEqual(delivered["docid"], REQUEST)
+    def test_a_supplied_amount_does_not_change_what_is_charged(self):
+        self.assertEqual(self._charge(outstanding=OUTSTANDING, amount=CALLER_AMOUNT), OUTSTANDING)
+
+    def test_a_supplied_amount_does_not_change_what_is_stored(self):
+        self._charge(outstanding=OUTSTANDING, amount=CALLER_AMOUNT)
+        self.assertEqual(self.stored["amount"], OUTSTANDING)
+
+    def test_the_parameter_is_optional_so_this_release_can_stop_sending_it(self):
+        self.assertIsNone(signature(main.lipana_mpesa).parameters["amount"].default)
 
 
 class TestGradingUsesTheServerAmount(ChargedAmountTestCase):
@@ -198,6 +199,7 @@ class TestGradingUsesTheServerAmount(ChargedAmountTestCase):
 
         self._prompt(
             outstanding=OUTSTANDING,
+            amount=CALLER_AMOUNT,
             get_sid=lambda *a, **k: {"data": {"sid": "SID"}},
             trigger_stk_push=lambda *a, **k: {"header_status": 200},
             verify_mpesa_payment=lambda *a, **k: {"data": {}},

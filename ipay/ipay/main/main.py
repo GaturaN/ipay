@@ -14,8 +14,9 @@ logger = logging.getLogger(__name__)
 
 @frappe.whitelist(methods=["POST"])
 def lipana_mpesa(
-    docid, user_id, phone, oid, customer_email, payment_request_type
+    docid, user_id, phone, oid, customer_email, payment_request_type, amount=None
 ):
+    # amount: accepted and ignored, so in-flight jobs from the previous release survive. Remove next cycle.
     # Direct HTTP callers (the desk "Prompt iPay" button — or an attacker) must
     # be an authorised operator acting on their own request. Background calls
     # (enqueued by prompt_mpesa / pay_prompt_mpesa) have no HTTP request and were
