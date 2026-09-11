@@ -30,6 +30,8 @@
   "result_detail",
   "pay_token",
   "pay_token_expiry",
+  "poll_attempts",
+  "next_poll_at",
   "payment_link",
   "payment_entry"
  ],
@@ -207,6 +209,25 @@
    "fieldtype": "Datetime",
    "label": "Payment Link Expiry",
    "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "poll_attempts",
+   "fieldtype": "Int",
+   "label": "Poll Attempts",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "How many times the reconcile backstop has looked this payment up at iPay."
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "next_poll_at",
+   "fieldtype": "Datetime",
+   "label": "Next Poll At",
+   "read_only": 1,
+   "no_copy": 1,
+   "search_index": 1,
+   "description": "When the reconcile backstop may look this payment up again. Blank means never looked up."
   },
   {
    "depends_on": "eval:doc.docstatus===1",

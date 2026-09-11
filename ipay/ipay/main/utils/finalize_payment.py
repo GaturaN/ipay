@@ -13,6 +13,7 @@ from ipay.ipay.main.utils.make_payment_entry import make_payment_entry
 from ipay.ipay.main.utils.send_callback import deliver_callback
 from ipay.ipay.main.utils.constants import amounts_match
 from ipay.ipay.main.utils.notifications import notify_collection_error, notify_collection_success
+from ipay.ipay.main.utils.alerts import notify_money_at_risk
 
 
 def build_response_data(data):
@@ -66,10 +67,16 @@ def finalize_payment(
     # invoice already collected elsewhere takes nothing here (the excess becomes
     # customer credit) and can't be double-charged. Flag it for an operator to eye.
     if defaults.get("docstatus") == 2:
+        # Keyword args for the same reason as alerts.notify_money_at_risk: passed
+        # positionally the detail became the title, and Error Log.method is a varchar(140).
+        # At 137 characters this had three to spare, and unlike the alert it is unguarded —
+        # an overflow would abort finalisation here, before the Payment Entry is created.
         frappe.log_error(
-            f"Payment finalised on cancelled iPay Request {request_name} — likely a "
-            f"post-discard race. Recorded against live outstanding (excess = credit).",
-            "iPay: payment on cancelled request",
+            title="iPay: payment on cancelled request",
+            message=(
+                f"Payment finalised on cancelled iPay Request {request_name} — likely a "
+                f"post-discard race. Recorded against live outstanding (excess = credit)."
+            ),
         )
     sales_invoice = sales_invoice or defaults.get("sales_invoice")
     customer = customer or defaults.get("customer")
@@ -106,6 +113,15 @@ def finalize_payment(
         frappe.db.commit()
         notify_collection_error(
             request_name, "Payment received but not yet recorded — do not charge again."
+        )
+        # The collector notice above reaches whoever started the collection; this reaches
+        # accounts (Error Log + the configured alert address), who would otherwise never
+        # learn that money arrived and never made it into the books. Raised here rather
+        # than per caller because this is the single finalisation path.
+        notify_money_at_risk(
+            f"Payment not recorded for {request_name}",
+            f"{_received_detail(response_data)} — but the Payment Entry could not be "
+            f"created: {result.get('message')}",
         )
         result["request_status"] = "Received"
         result["response_data"] = response_data
