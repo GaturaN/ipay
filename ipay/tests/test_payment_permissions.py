@@ -5,11 +5,15 @@ unauthenticated: the customer's /pay link and the hosted-checkout return both ar
 Guest (frappe.enqueue carries the enqueuing user into the worker). The collector's STK
 rail arrives as an iPay Collector. None of those identities holds Payment Entry
 permission, and ERPNext's own validation checks it against the SESSION user — which
-ignore_permissions cannot reach. So the write has to be made as Administrator, exactly
-as record_cheque does, and the caller restored afterwards.
+ignore_permissions cannot reach. So those rails write as Administrator and restore the
+caller afterwards.
 
-These tests pin both halves: the write happens elevated, and the session always comes
-back. A leaked Administrator session would be far worse than the bug being fixed.
+Callers who can already write the entry are deliberately NOT elevated: frappe.set_user
+resets the session's data, and an authenticated operator's CSRF token lives there.
+
+These tests pin all of it — the write happens elevated where it must, does not where it
+need not, and the session always comes back. A leaked Administrator session would be far
+worse than the bug being fixed.
 """
 
 from unittest.mock import patch
@@ -81,7 +85,13 @@ class _FakePaymentEntry:
             raise self._d["fail_with"]
         self._d["name"] = "PE-0001"
         self._d["inserted_as"] = self._d["session"].user
+        # frappe stamps owner from the session user (document.py:594-605), so the fake must
+        # too — otherwise a restamp regression shows up as a missing mock, not as wrong owner.
+        self._d["owner"] = self._d["session"].user
         return self
+
+    def db_set(self, field, value, **kwargs):
+        self._d[field] = value
 
     def submit(self):
         self._check()
@@ -200,9 +210,12 @@ class TestPaymentEntryIsWrittenWithPermission(FrappeTestCase):
         # (ipay_redirect.py:1093) so a physical cheque can be traced from field to bank. There
         # is no custody chain for M-Pesa and on the guest rails there is no person to credit —
         # "Guest" as the owner of a submitted Payment Entry would be worse than Administrator.
-        # The payer is identified in remarks instead. Pinned so the choice stays deliberate.
+        # The payer is identified in remarks instead. Both branches are pinned, because the
+        # unelevated rail keeping its own owner is the reason this divergence is safe.
         _, entry, _, _ = self._finalize(GUEST)
-        self.assertIsNone(getattr(entry, "owner", None))
+        self.assertEqual(entry.owner, "Administrator")
+        _, entry, _, _ = self._finalize(ACCOUNTS)
+        self.assertEqual(entry.owner, ACCOUNTS)
 
     # --- and the session always comes back ----------------------------------------------
 
