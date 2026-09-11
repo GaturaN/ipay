@@ -67,12 +67,17 @@ class TestDueGate(FrappeTestCase):
     """Which requests a run is allowed to look up."""
 
     def test_a_request_whose_wait_has_not_elapsed_is_not_polled(self):
+        """Proves the gate is built as an upper bound on next_poll_at. The exclusion itself
+        happens in SQL, so this asserts the contract handed to frappe, not the rows it
+        returns — that needs a site."""
         now = frappe.utils.now_datetime()
-        conditions = rp._due_or_filters(now)
-        self.assertIn(["next_poll_at", "<=", now], conditions)
-        # The gate is an upper bound on next_poll_at, so a future stamp cannot match it.
-        future = frappe.utils.add_to_date(now, minutes=30)
-        self.assertGreater(future, now)
+        self.assertIn(["next_poll_at", "<=", now], rp._due_or_filters(now))
+        # No condition may admit a stamp later than now, or a request would be polled early.
+        for _field, operator, value in rp._due_or_filters(now):
+            with self.subTest(operator=operator):
+                self.assertIn(operator, ("<=", "is"))
+                if operator == "<=":
+                    self.assertEqual(value, now)
 
     def test_a_request_never_polled_is_due(self):
         # Blank next_poll_at means the backstop has never seen it. It must be polled, not
