@@ -11,3 +11,4 @@ ipay.patches.v1_0.set_default_mpesa_max
 ipay.patches.v1_0.set_cheque_per_invoice_default
 ipay.patches.v1_0.create_payment_email_notifications
 ipay.patches.v1_0.mark_ipay_payment_entries
+ipay.patches.v1_0.backfill_reconcile_poll_schedule
