@@ -97,10 +97,11 @@ def reconcile_pending_payments():
 
     Within the reconcile window, a submitted request whose callback has not been delivered
     is polled once its own backoff has elapsed (POLL_BACKOFF_MINUTES) — not on every run.
-    Past the window, a final lookup is attempted and, if still unpaid, the request is
-    marked Abandoned so it reaches a terminal state and is no longer polled. One run makes
-    at most RECONCILE_BATCH_SIZE lookups. Idempotent and safe to re-run: the Payment Entry
-    is deduped on the transaction code and the callback on the callback_delivered flag.
+    Past the window it gets one last lookup, again when due, and is then marked Abandoned
+    unless a payment was recorded, so it reaches a terminal state and is no longer polled.
+    One run touches at most RECONCILE_BATCH_SIZE requests across both sweeps. Idempotent
+    and safe to re-run: the Payment Entry is deduped on the transaction code and the
+    callback on the callback_delivered flag.
     """
     if RECONCILE_PAUSED:
         return
