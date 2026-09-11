@@ -7,10 +7,9 @@ from ipay.ipay.main.utils.ipay_logs import create_log_entry
 from ipay.ipay.main.utils.constants import clean_oid, search_hash
 from ipay.ipay.main.utils.alerts import notify_money_at_risk
 
-# Master switch for the scheduled backstop. Set False to resume once it polls selectively
-# (only genuinely-unknown requests) and backs off per request instead of re-querying the
-# whole backlog every run.
-RECONCILE_PAUSED = True
+# Kill switch for the scheduled backstop, kept so a paid external dependency can be turned
+# off without a deploy. Off (False) since it polls selectively and backs off per request.
+RECONCILE_PAUSED = False
 
 # Only reconcile requests created within this window; older unconfirmed requests
 # are assumed abandoned (marked terminal below) so we don't poll them forever.
@@ -22,6 +21,19 @@ HEARTBEAT_STALE_SECONDS = 900
 
 SEARCH_URL = "https://apis.ipayafrica.com/payments/v2/transaction/search"
 
+# Minutes to wait before looking a request up at iPay again, indexed by how many lookups
+# have already been made; the last value repeats until the reconcile window closes. The
+# first rung catches the common case — a customer who took longer than the in-session
+# verify window to enter their PIN — while the later rungs keep a request that is never
+# going to be paid from costing a lookup every 5 minutes for a day.
+POLL_BACKOFF_MINUTES = (1, 2, 5, 10, 30, 60)
+
+# Most iPay lookups one run may make, shared across both sweeps below. Sized so a run
+# cannot outlast the 5-minute interval it is scheduled on: a lookup times out at 15s
+# (_search_transaction), so 16 x 15s = 4 minutes. Whatever is still due waits for the next
+# run, and ordering by next_poll_at means the longest-overdue request goes first.
+RECONCILE_BATCH_SIZE = 16
+
 # Statuses that mean a payment was recorded — these are never abandoned and stay
 # eligible for callback retry. Everything else (Pending, blank legacy rows,
 # Failed) with no Payment Entry is fair game for the Abandoned sweep.
@@ -32,8 +44,49 @@ PAID_STATUSES = ["Success", "Underpaid", "Overpaid", "Received"]
 
 REQUEST_FIELDS = [
     "name", "sales_invoice", "amount", "customer", "customer_email",
-    "payment_entry", "callback_payload",
+    "payment_entry", "callback_payload", "poll_attempts",
 ]
+
+
+def _next_poll_delay(poll_attempts):
+    """Minutes until the next lookup, for a request looked up this many times already."""
+    rung = min(frappe.utils.cint(poll_attempts), len(POLL_BACKOFF_MINUTES) - 1)
+    return POLL_BACKOFF_MINUTES[rung]
+
+
+def _due_or_filters(now):
+    """Match a request the backstop may look up now.
+
+    An unset next_poll_at means it has never been looked up, and counts as due: a request
+    that somehow never got stamped must be polled, never skipped forever.
+    """
+    return [
+        ["next_poll_at", "is", "not set"],
+        ["next_poll_at", "<=", now],
+    ]
+
+
+def _claim_for_polling(requests, now):
+    """Push every request in the batch down its backoff, and commit, BEFORE any lookup runs.
+
+    Committing up front is what makes the backoff hold: _search_transaction raises on an
+    errored lookup by design, and the callers below roll back on that, so a stamp written
+    afterwards would be undone and an erroring request would be re-queried every run.
+    It also keeps two concurrent sweeps from selecting the same rows.
+    """
+    for req in requests:
+        frappe.db.set_value(
+            "iPay Request",
+            req.name,
+            {
+                "poll_attempts": frappe.utils.cint(req.get("poll_attempts")) + 1,
+                "next_poll_at": frappe.utils.add_to_date(
+                    now, minutes=_next_poll_delay(req.get("poll_attempts"))
+                ),
+            },
+            update_modified=False,
+        )
+    frappe.db.commit()
 
 
 def reconcile_pending_payments():
@@ -41,17 +94,13 @@ def reconcile_pending_payments():
     callback delivered even when the in-session flow never completed (abandoned
     redirect, unattended Paybill, or a failed callback).
 
-    Within the reconcile window, every submitted request whose callback has not
-    been delivered is polled. Past the window, a final lookup is attempted and,
-    if still unpaid, the request is marked Abandoned so it reaches a terminal
-    state and is no longer polled. Idempotent and safe to re-run: the Payment
-    Entry is deduped on the transaction code and the callback on the
-    callback_delivered flag.
+    Within the reconcile window, a submitted request whose callback has not been delivered
+    is polled once its own backoff has elapsed (POLL_BACKOFF_MINUTES) — not on every run.
+    Past the window, a final lookup is attempted and, if still unpaid, the request is
+    marked Abandoned so it reaches a terminal state and is no longer polled. One run makes
+    at most RECONCILE_BATCH_SIZE lookups. Idempotent and safe to re-run: the Payment Entry
+    is deduped on the transaction code and the callback on the callback_delivered flag.
     """
-    # PAUSED pending a rework: one iPay lookup per undelivered request per run, with no
-    # per-request backoff, so the call volume grows with the backlog. Guarded here as well as
-    # in hooks so an already-registered Scheduled Job Type stops the moment this code deploys,
-    # without waiting for the migrate that removes it.
     if RECONCILE_PAUSED:
         return
 
@@ -62,13 +111,14 @@ def reconcile_pending_payments():
         create_log_entry("ERR", "Reconcile skipped: vendor id or api key not set")
         return
 
-    window_start = frappe.utils.add_to_date(
-        frappe.utils.now_datetime(), hours=-RECONCILE_WINDOW_HOURS
-    )
+    now = frappe.utils.now_datetime()
+    window_start = frappe.utils.add_to_date(now, hours=-RECONCILE_WINDOW_HOURS)
 
-    # 1) Active window — poll every not-yet-delivered request. The flag covers
-    #    both "awaiting payment" and "paid but n8n not yet notified", and
-    #    _reconcile_one is idempotent, so this both finalises and (re)delivers.
+    # 1) Active window — poll the not-yet-delivered requests that are due. The flag covers
+    #    both "awaiting payment" and "paid but n8n not yet notified", and _reconcile_one is
+    #    idempotent, so this both finalises and (re)delivers. Longest-overdue first; an
+    #    unset next_poll_at sorts ahead of any timestamp, so a request the backstop has
+    #    never seen is looked up before one it is merely revisiting.
     active = frappe.get_all(
         "iPay Request",
         filters={
@@ -76,8 +126,40 @@ def reconcile_pending_payments():
             "callback_delivered": 0,
             "creation": [">", window_start],
         },
+        or_filters=_due_or_filters(now),
         fields=REQUEST_FIELDS,
+        order_by="next_poll_at asc",
+        limit_page_length=RECONCILE_BATCH_SIZE,
     )
+
+    # 2) Past the window and still undelivered (but not already Abandoned): one last
+    #    lookup, then mark Abandoned UNLESS a payment was recorded. Due-gated like the
+    #    active sweep — a Received request has neither payment_entry nor callback_payload,
+    #    so it takes the iPay lookup path and, being in PAID_STATUSES, is never abandoned;
+    #    without the gate it would be re-queried on every run for as long as it exists.
+    #    In-window money comes first, so this sweep only gets what the budget has left.
+    #    Skipped entirely at zero: frappe reads limit_page_length=0 as "no limit".
+    stale_budget = RECONCILE_BATCH_SIZE - len(active)
+    stale = (
+        frappe.get_all(
+            "iPay Request",
+            filters={
+                "docstatus": 1,
+                "callback_delivered": 0,
+                "creation": ["<=", window_start],
+                "status": ["!=", "Abandoned"],
+            },
+            or_filters=_due_or_filters(now),
+            fields=REQUEST_FIELDS,
+            order_by="next_poll_at asc",
+            limit_page_length=stale_budget,
+        )
+        if stale_budget
+        else []
+    )
+
+    _claim_for_polling(active + stale, now)
+
     for req in active:
         try:
             _reconcile_one(req, vid, secret_key)
@@ -85,21 +167,8 @@ def reconcile_pending_payments():
             frappe.db.rollback()
             create_log_entry("ERR", f"Reconcile failed for {req.name}: {error}")
 
-    # 2) Past the window and still undelivered (but not already Abandoned): one
-    #    last lookup, then mark Abandoned UNLESS a payment was recorded. A paid
-    #    request (Success/Underpaid/Overpaid) keeps its status and stays eligible
-    #    for callback retry; an unpaid one (Pending or Failed, no Payment Entry)
-    #    becomes terminal so it is no longer polled.
-    stale = frappe.get_all(
-        "iPay Request",
-        filters={
-            "docstatus": 1,
-            "callback_delivered": 0,
-            "creation": ["<=", window_start],
-            "status": ["!=", "Abandoned"],
-        },
-        fields=REQUEST_FIELDS,
-    )
+    # A paid request (Success/Underpaid/Overpaid) keeps its status and stays eligible for
+    # callback retry; an unpaid one (Pending or Failed, no Payment Entry) becomes terminal.
     for req in stale:
         try:
             _reconcile_one(req, vid, secret_key)
