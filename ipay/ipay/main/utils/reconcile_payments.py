@@ -27,10 +27,12 @@ SEARCH_URL = "https://apis.ipayafrica.com/payments/v2/transaction/search"
 # going to be paid from costing a lookup every 5 minutes for a day.
 POLL_BACKOFF_MINUTES = (1, 2, 5, 10, 30, 60)
 
-# Most iPay lookups one run may make, shared across both sweeps below. Sized so a run
-# cannot outlast the 5-minute interval it is scheduled on: a lookup times out at 15s
-# (_search_transaction), so 16 x 15s = 4 minutes. Whatever is still due waits for the next
-# run, and ordering by next_poll_at means the longest-overdue request goes first.
+# Most requests one run will touch, shared across both sweeps below. Sized against the 15s
+# timeout on the calls a request can cost — _search_transaction, plus deliver_callback for
+# one that turns out to be paid — so 16 still-unpaid requests take about 4 minutes, inside
+# the 5-minute interval this is scheduled on. A batch that is mostly paid can exceed that,
+# but those requests leave the undelivered set for good, and frappe will not start the next
+# run while this one is still going. Whatever is still due waits, longest-overdue first.
 RECONCILE_BATCH_SIZE = 16
 
 # Statuses that mean a payment was recorded — these are never abandoned and stay
