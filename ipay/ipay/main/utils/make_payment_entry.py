@@ -233,8 +233,19 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
         # the callback. (finalize_payment also row-locks the request to serialise
         # these, so this is the belt-and-braces path / portability for sites
         # without the unique index.)
+        # ERPNext's validation resolves frappe.has_permission("Payment Entry") against the session
+        # user, which ignore_permissions cannot reach, so a rail holding no Payment Entry
+        # permission (guest pay link, checkout return, collector) writes as Administrator.
+        # Only where it is needed: set_user also resets the session's data, which would cost an
+        # authenticated operator the CSRF token stored there.
+        collector = frappe.session.user
+        elevated = not all(
+            frappe.has_permission("Payment Entry", ptype) for ptype in ("read", "create", "submit")
+        )
+        if elevated:
+            frappe.set_user("Administrator")
         try:
-            payment_entry.insert()
+            payment_entry.insert(ignore_permissions=True)
             payment_entry.submit()
         except Exception as insert_error:
             # Roll back FIRST, then re-read: under REPEATABLE READ a read earlier
@@ -267,6 +278,9 @@ def make_payment_entry(user_id, customer_email, inv, response_data, ipay_request
                 ),
                 "message": "Payment Entry already exists (concurrent)",
             }
+        finally:
+            if elevated:
+                frappe.set_user(collector)
 
         # Log success
         logger.info(
