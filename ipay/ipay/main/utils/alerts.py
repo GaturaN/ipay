@@ -11,7 +11,11 @@ def notify_money_at_risk(subject, message):
     where a human will see it: always an Error Log, plus an email to the configured
     operations address. Best-effort — alerting must never break the payment path."""
     try:
-        frappe.log_error(message, f"iPay money-at-risk: {subject}"[:140])
+        # Keyword args on purpose: frappe.log_error is (title, message), and passing them
+        # positionally put the long detail in `title` -> Error Log.method, a varchar(140).
+        # That overflowed, threw, and was swallowed below, so the "always an Error Log"
+        # promise above silently did not hold.
+        frappe.log_error(title=f"iPay money-at-risk: {subject}"[:140], message=message)
     except Exception:
         pass
 

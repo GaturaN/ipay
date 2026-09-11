@@ -27,13 +27,17 @@ SEARCH_URL = "https://apis.ipayafrica.com/payments/v2/transaction/search"
 # going to be paid from costing a lookup every 5 minutes for a day.
 POLL_BACKOFF_MINUTES = (1, 2, 5, 10, 30, 60)
 
-# Most requests one run will touch, shared across both sweeps below. Sized against the 15s
-# timeout on the calls a request can cost — _search_transaction, plus deliver_callback for
-# one that turns out to be paid — so 16 still-unpaid requests take about 4 minutes, inside
-# the 5-minute interval this is scheduled on. A batch that is mostly paid can exceed that,
-# but those requests leave the undelivered set for good, and frappe will not start the next
-# run while this one is still going. Whatever is still due waits, longest-overdue first.
-RECONCILE_BATCH_SIZE = 16
+# Most requests one run will touch, shared across both sweeps below. A request can cost two
+# 15s calls — the iPay lookup, plus the n8n callback once it is paid — so the worst case is
+# 8 x 30s = 4 minutes, inside the 300s timeout of the `default` queue a cron job runs on
+# (frappe background_jobs.default_timeout). Above this a run would be killed mid-sweep.
+# Whatever is still due waits for the next run, longest-overdue first.
+RECONCILE_BATCH_SIZE = 8
+
+# A request that only needs its n8n callback redelivered makes no iPay call, so the backoff
+# — which exists to limit iPay call volume — must not apply to it. Keeps the cadence the
+# cron always had instead of backing an n8n outage off to hourly.
+CALLBACK_RETRY_MINUTES = 5
 
 # Statuses that mean a payment was recorded — these are never abandoned and stay
 # eligible for callback retry. Everything else (Pending, blank legacy rows,
@@ -76,13 +80,18 @@ def _claim_for_polling(requests, now):
     It also keeps two concurrent sweeps from selecting the same rows.
     """
     for req in requests:
+        # Mirrors _reconcile_one's own cheap-path condition: with both of these the sweep
+        # redelivers the stored payload and never calls iPay.
+        callback_only = bool(req.get("payment_entry") and req.get("callback_payload"))
+        attempts = frappe.utils.cint(req.get("poll_attempts"))
         frappe.db.set_value(
             "iPay Request",
             req.name,
             {
-                "poll_attempts": frappe.utils.cint(req.get("poll_attempts")) + 1,
+                "poll_attempts": attempts if callback_only else attempts + 1,
                 "next_poll_at": frappe.utils.add_to_date(
-                    now, minutes=_next_poll_delay(req.get("poll_attempts"))
+                    now,
+                    minutes=CALLBACK_RETRY_MINUTES if callback_only else _next_poll_delay(attempts),
                 ),
             },
             update_modified=False,

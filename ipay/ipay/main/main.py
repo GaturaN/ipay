@@ -229,8 +229,8 @@ def lipana_mpesa(
                     # unrecorded is the failure this wording exists to prevent.
                     frappe.msgprint(
                         "Payment received, but it could not be recorded. The request is "
-                        "marked Received — do not charge again. Accounts has been alerted; "
-                        "use Verify Payment to retry."
+                        "marked Received — do not charge again. It has been logged for "
+                        "accounts; use Verify Payment to retry."
                     )
 
                 return response_data

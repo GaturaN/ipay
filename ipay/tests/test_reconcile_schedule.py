@@ -18,6 +18,7 @@ from ipay.ipay.main import main
 from ipay.ipay.main.utils import ipay_redirect as rd
 from ipay.ipay.main.utils import reconcile_payments as rp
 from ipay.ipay.main.utils import finalize_payment as fp
+from ipay.ipay.main.utils import alerts
 from ipay.ipay.main.utils.constants import MONEY_ARRIVED
 
 # Stands in for an iPay Request row as frappe.get_all returns it.
@@ -145,6 +146,35 @@ class TestClaimBeforePolling(FrappeTestCase):
             [("poll", "IPREQ-1"), ("poll", "IPREQ-2"), ("poll", "IPREQ-OLD")],
         )
 
+    def test_a_callback_only_retry_does_not_burn_a_backoff_rung(self):
+        """The backoff exists to limit iPay call volume. A request that only needs its
+        stored callback redelivered makes no iPay call, so backing it off would push an n8n
+        outage out to hourly retries for no benefit."""
+        now = frappe.utils.now_datetime()
+        needs_callback = _row("IPREQ-1", poll_attempts=5)
+        needs_callback.payment_entry = "PE-1"
+        needs_callback.callback_payload = '{"transaction_code": "ABC123"}'
+        written = {}
+        with patch.object(frappe.db, "set_value", side_effect=lambda dt, n, v, **kw: written.__setitem__(n, v)), \
+             patch.object(frappe.db, "commit"):
+            rp._claim_for_polling([needs_callback], now)
+
+        self.assertEqual(written["IPREQ-1"]["poll_attempts"], 5)
+        self.assertEqual(
+            written["IPREQ-1"]["next_poll_at"],
+            frappe.utils.add_to_date(now, minutes=rp.CALLBACK_RETRY_MINUTES),
+        )
+
+    def test_a_request_still_awaiting_payment_does_advance(self):
+        # The other side of the branch above: no Payment Entry means the sweep will call
+        # iPay, so the backoff must apply.
+        now = frappe.utils.now_datetime()
+        written = {}
+        with patch.object(frappe.db, "set_value", side_effect=lambda dt, n, v, **kw: written.__setitem__(n, v)), \
+             patch.object(frappe.db, "commit"):
+            rp._claim_for_polling([_row("IPREQ-1", poll_attempts=5)], now)
+        self.assertEqual(written["IPREQ-1"]["poll_attempts"], 6)
+
     def test_the_claim_is_committed_before_any_lookup_runs(self):
         """_search_transaction raises on an errored lookup by design and the sweep rolls
         back on that, so a stamp written after the lookup would be undone — and an
@@ -214,6 +244,12 @@ class TestSweepSelection(FrappeTestCase):
         for kwargs in self._run_and_capture(many, many):
             with self.subTest(filters=kwargs["filters"]):
                 self.assertTrue(kwargs["limit_page_length"])
+
+    def test_the_batch_cannot_outlast_the_scheduled_job_timeout(self):
+        """A cron job runs on frappe's `default` queue, whose timeout is 300s
+        (background_jobs.default_timeout); over that the run is killed mid-sweep. A request
+        can cost two 15s calls — the iPay lookup and the n8n callback."""
+        self.assertLessEqual(rp.RECONCILE_BATCH_SIZE * 30, 300)
 
     def test_a_cancelled_request_is_never_polled(self):
         # The negative persona. The due gate is an OR group, and an OR evaluated at the top
@@ -370,3 +406,70 @@ class TestMoneyAtRiskReachesAccounts(FrappeTestCase):
         # finalize_payment covers every caller, so a second call here would mean two
         # alerts for one failure.
         self.assertFalse(hasattr(rp, "notify_money_at_risk"))
+
+
+class TestTheAlertActuallyLands(FrappeTestCase):
+    """notify_money_at_risk swallows its own exceptions so alerting can never break the
+    payment path — which also means a malformed call fails silently. These tests execute it
+    instead of patching it out, because patching it out is how a broken call went unnoticed."""
+
+    # The realistic worst case: a real amount, payer, MSISDN, M-Pesa reference, timestamp,
+    # and an ERPNext validation sentence. 201 characters.
+    LONG_MESSAGE = (
+        "KES 12500.0 received from JOHN KAMAU (254712345678) — M-Pesa ref SGH7XKL9QP, "
+        "2026-09-11 12:00:00 — but the Payment Entry could not be created: Allocated "
+        "amount cannot be greater than outstanding amount"
+    )
+
+    def _notify(self, log_error):
+        with patch.object(frappe, "log_error", side_effect=log_error), \
+             patch.object(frappe.db, "get_single_value", return_value=None):
+            alerts.notify_money_at_risk("Payment not recorded for IPREQ-1", self.LONG_MESSAGE)
+
+    def test_the_error_log_title_fits_the_field(self):
+        # Error Log.method is a Data field, so varchar(140). A longer title throws inside
+        # Document.insert and the except above hides it.
+        captured = {}
+        self._notify(lambda **kw: captured.update(kw))
+        self.assertLessEqual(len(captured["title"]), 140)
+
+    def test_the_detail_goes_to_the_log_body_not_its_title(self):
+        captured = {}
+        self._notify(lambda **kw: captured.update(kw))
+        self.assertEqual(captured["message"], self.LONG_MESSAGE)
+        self.assertIn("IPREQ-1", captured["title"])
+
+    def test_the_alert_is_not_silently_lost_to_the_field_limit(self):
+        """The regression guard, standing in for frappe's own validation: log_error puts
+        the title in Error Log.method unless the title is a traceback, and over 140
+        characters the insert throws."""
+        written = []
+
+        def log_error_like_frappe(title=None, message=None, **kwargs):
+            method = message if (message and "\n" in (title or "")) else title
+            if len(method or "") > 140:
+                raise frappe.ValidationError("Value too big")
+            written.append(method)
+
+        self._notify(log_error_like_frappe)
+        self.assertEqual(len(written), 1)
+
+    def test_the_email_carries_the_full_detail(self):
+        sent = {}
+        with patch.object(frappe, "log_error"), \
+             patch.object(frappe.db, "get_single_value", return_value="accounts@example.com"), \
+             patch.object(frappe, "sendmail", side_effect=lambda **kw: sent.update(kw)):
+            alerts.notify_money_at_risk("Payment not recorded for IPREQ-1", self.LONG_MESSAGE)
+        self.assertEqual(sent["recipients"], ["accounts@example.com"])
+        self.assertEqual(sent["message"], self.LONG_MESSAGE)
+
+    def test_the_log_is_written_even_with_no_alert_address_configured(self):
+        # The email is optional; the Error Log is the part that must always happen, which is
+        # why the operator message promises only the log.
+        captured = {}
+        with patch.object(frappe, "log_error", side_effect=lambda **kw: captured.update(kw)), \
+             patch.object(frappe.db, "get_single_value", return_value=None), \
+             patch.object(frappe, "sendmail") as sendmail:
+            alerts.notify_money_at_risk("Payment not recorded for IPREQ-1", self.LONG_MESSAGE)
+        self.assertTrue(captured)
+        self.assertFalse(sendmail.called)
