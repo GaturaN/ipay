@@ -5,7 +5,6 @@ from ipay.ipay.main.utils.finalize_payment import finalize_payment
 from ipay.ipay.main.utils.send_callback import deliver_callback
 from ipay.ipay.main.utils.ipay_logs import create_log_entry
 from ipay.ipay.main.utils.constants import clean_oid, search_hash
-from ipay.ipay.main.utils.alerts import notify_money_at_risk
 
 # Kill switch for the scheduled backstop, kept so a paid external dependency can be turned
 # off without a deploy. Off (False) since it polls selectively and backs off per request.
@@ -262,12 +261,12 @@ def _reconcile_one(req, vid, secret_key):
     )
     if result.get("status") not in ("success", "duplicate"):
         # Payment confirmed at iPay but the Payment Entry would not save — money is
-        # collected yet unrecorded. Alert a human; leave undelivered to retry next run.
-        message = (
-            f"Reconcile could not create Payment Entry for {req.name}: {result.get('message')}"
+        # collected yet unrecorded. finalize_payment has already alerted accounts; this is
+        # the iPay Log trail for the sweep. Left undelivered so the next run retries.
+        create_log_entry(
+            "ERR",
+            f"Reconcile could not create Payment Entry for {req.name}: {result.get('message')}",
         )
-        create_log_entry("ERR", message)
-        notify_money_at_risk(f"Payment Entry failed for {req.name}", message)
         return
 
     request_status = result.get("request_status")

@@ -13,6 +13,7 @@ from ipay.ipay.main.utils.make_payment_entry import make_payment_entry
 from ipay.ipay.main.utils.send_callback import deliver_callback
 from ipay.ipay.main.utils.constants import amounts_match
 from ipay.ipay.main.utils.notifications import notify_collection_error, notify_collection_success
+from ipay.ipay.main.utils.alerts import notify_money_at_risk
 
 
 def build_response_data(data):
@@ -106,6 +107,15 @@ def finalize_payment(
         frappe.db.commit()
         notify_collection_error(
             request_name, "Payment received but not yet recorded — do not charge again."
+        )
+        # The collector notice above reaches whoever started the collection; this reaches
+        # accounts (Error Log + the configured alert address), who would otherwise never
+        # learn that money arrived and never made it into the books. Raised here rather
+        # than per caller because this is the single finalisation path.
+        notify_money_at_risk(
+            f"Payment not recorded for {request_name}",
+            f"{_received_detail(response_data)} — but the Payment Entry could not be "
+            f"created: {result.get('message')}",
         )
         result["request_status"] = "Received"
         result["response_data"] = response_data
