@@ -407,7 +407,7 @@ def _request_awaits_cheque(request_name, sales_invoice=None):
     return bool(awaiting_cheque_amounts(_request_invoices(request_name, sales_invoice)))
 
 
-def _live_request_amount(request_name, sales_invoice):
+def _live_request_amount(request_name, sales_invoice=None):
     """Sum the live outstanding of a request's invoices (a bundle's child rows, or
     the single sales invoice) so an STK charges what is actually owed now — not a
     stored amount that goes stale when a member invoice is paid separately."""
@@ -495,7 +495,6 @@ def _enqueue_stk(request_name, phone):
         docid=request_name,
         user_id=req.customer,
         phone=phone,
-        amount=amount,
         oid=req.sales_invoice,
         customer_email=req.customer_email,
         payment_request_type="Mpesa Express",

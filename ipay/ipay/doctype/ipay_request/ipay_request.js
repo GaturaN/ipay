@@ -149,13 +149,6 @@ frappe.ui.form.on('iPay Request', {
                frappe.prompt(
                   [
                      {
-                        label: 'Amount',
-                        fieldname: 'amount',
-                        fieldtype: 'Data',
-                        default: frm.doc.amount,
-                        read_only: 1,
-                     },
-                     {
                         label: 'Invoice Number',
                         fieldname: 'invoice_number',
                         fieldtype: 'Data',
@@ -227,7 +220,6 @@ frappe.ui.form.on('iPay Request', {
                               args: {
                                  docid: frm.doc.name,
                                  oid: values.invoice_number,
-                                 amount: values.amount,
                                  customer_email: values.customer_email,
                                  phone: values.customer_phone,
                                  user_id: values.user_id,

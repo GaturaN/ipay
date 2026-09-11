@@ -65,7 +65,7 @@ class TestMoneyArrivedGuards(FrappeTestCase):
              patch.object(frappe.db, "get_value", return_value=row), \
              patch.object(rd, "_request_awaits_cheque", side_effect=PASSED), \
              patch.object(main, "create_log_entry"):
-            return main.lipana_mpesa("REQ-1", "u@x.com", "254700000000", 1, "REQ1", "c@x.com", "")
+            return main.lipana_mpesa("REQ-1", "u@x.com", "254700000000", "REQ1", "c@x.com", "")
 
     def test_stk_is_refused_once_money_has_arrived(self):
         for status in MONEY_ARRIVED:
