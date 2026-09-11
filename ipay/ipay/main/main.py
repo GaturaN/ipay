@@ -14,8 +14,9 @@ logger = logging.getLogger(__name__)
 
 @frappe.whitelist(methods=["POST"])
 def lipana_mpesa(
-    docid, user_id, phone, amount, oid, customer_email, payment_request_type
+    docid, user_id, phone, oid, customer_email, payment_request_type, amount=None
 ):
+    # amount: accepted and ignored, so in-flight jobs from the previous release survive. Remove next cycle.
     # Direct HTTP callers (the desk "Prompt iPay" button — or an attacker) must
     # be an authorised operator acting on their own request. Background calls
     # (enqueued by prompt_mpesa / pay_prompt_mpesa) have no HTTP request and were
@@ -28,7 +29,7 @@ def lipana_mpesa(
 
     logger.info(
         f"Received doc name: {docid}, Customer Email: {customer_email}, "
-        f"User ID: {user_id}, Phone Number: {phone}, Amount: {amount}, "
+        f"User ID: {user_id}, Phone Number: {phone}, "
         f"OID: {oid}, Payment Request Type: {payment_request_type}"
     )
 
@@ -56,11 +57,30 @@ def lipana_mpesa(
     # The desk "Prompt iPay" button reaches here directly, and a worker picks this up moments
     # after enqueue — so this last line also stops a cheque collected in that gap. Every other
     # rail is refused earlier; this is the one that bypasses them all.
-    from ipay.ipay.main.utils.ipay_redirect import _request_awaits_cheque, CHEQUE_HELD
+    from ipay.ipay.main.utils.ipay_redirect import (
+        _live_request_amount,
+        _request_awaits_cheque,
+        CHEQUE_HELD,
+    )
 
     if _request_awaits_cheque(docid):
         create_log_entry("INF", f"Skipping STK for {docid}: a cheque has been collected")
         return {"status": "skipped", "message": CHEQUE_HELD}
+
+    # What to charge is the server's decision, never the caller's. The desk dialog's amount
+    # field is read-only in the browser only, and this endpoint is reachable without it — so
+    # derive the figure here, from the invoices this request covers, exactly as _enqueue_stk
+    # already does. One number then serves as both the charge and the amount the payment is
+    # graded against, and both come from the ledger rather than from the request body.
+    # Rounded to the cent: summing several invoices' outstanding in float can land on
+    # 20100.699999999999, which would be hashed and charged verbatim by get_sid.
+    amount = frappe.utils.flt(_live_request_amount(docid), 2)
+    logger.info(f"Charging the live outstanding for {docid}: {amount}")
+    if amount <= 0:
+        # Settled elsewhere between raising this request and prompting it (another rail, a
+        # credit note, a cheque banked). Mirrors _enqueue_stk rather than charging zero.
+        create_log_entry("INF", f"Skipping STK for {docid}: nothing left to collect")
+        return {"status": "skipped", "message": "Nothing left to collect on this request."}
 
     # Enforce the M-Pesa STK ceiling on EVERY path — the desk button calls this directly,
     # bypassing _enqueue_stk's check. Over the cap M-Pesa can't process the charge.
@@ -72,10 +92,10 @@ def lipana_mpesa(
                 f"M-Pesa isn't available for amounts over KES {cap:,.0f}. Please pay by card or via iPay."
             )
 
-    # Persist the amount we're about to charge (the live outstanding at prompt time) so EVERY
-    # finaliser — the in-session worker, the reconcile backstop, and the manual Verify Payment —
-    # resolves Success/Under/Overpaid against what was actually charged, not a stale stored
-    # amount that would misread a correct payment as Underpaid.
+    # Persist the amount we're about to charge so EVERY finaliser — the in-session worker, the
+    # reconcile backstop, and the manual Verify Payment — resolves Success/Under/Overpaid
+    # against what was actually charged, not a stale stored amount that would misread a
+    # correct payment as Underpaid.
     frappe.db.set_value("iPay Request", docid, "amount", amount)
 
     # A retry after a terminal failure: clear the old Failed/Abandoned status + reason so any
@@ -135,7 +155,8 @@ def lipana_mpesa(
                 break
         logger.info(f"Account Number: {account_number}, Paybill: {mpesa_paybill}")
 
-        return mpesa_paybill, account_number, amount
+        # To the cent: the customer keys this figure into their handset by hand.
+        return mpesa_paybill, account_number, f"{amount:.2f}"
 
     else:
 
@@ -154,7 +175,6 @@ def lipana_mpesa(
                 docid=docid,
                 user_id=user_id,
                 phone=phone,
-                amount=amount,
                 oid=inv,
                 customer_email=customer_email,
                 payment_request_type=payment_request_type,
